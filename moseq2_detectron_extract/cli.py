@@ -1,23 +1,34 @@
-from moseq2_detectron_extract.io.util import get_last_checkpoint
-from moseq2_detectron_extract.io.annot import register_dataset_metadata
-from detectron2.data.catalog import MetadataCatalog
-from moseq2_detectron_extract.io.proc import apply_roi, overlay_video, colorize_video
-import click
-import tqdm
-from moseq2_detectron_extract.model.model import Predictor
-from moseq2_detectron_extract.model.config import get_base_config, add_dataset_cfg
-from moseq2_detectron_extract.io.session import Session
-from moseq2_detectron_extract.io.video import write_frames_preview
-import os
-import numpy as np
-from detectron2.utils.visualizer import Visualizer, ColorMode
-from detectron2.data.detection_utils import convert_image_to_rgb
-from moseq2_detectron_extract.io.annot import default_keypoint_names
-import cProfile
-from pstats import Stats
 import atexit
+import cProfile
 import math
+import os
+from pstats import Stats
+
+import click
 import cv2
+from moseq2_unet_extract.io.image import write_image
+import numpy as np
+import tqdm
+from detectron2.data.catalog import MetadataCatalog
+from detectron2.data.detection_utils import convert_image_to_rgb
+from detectron2.utils.visualizer import ColorMode, Visualizer
+
+from moseq2_detectron_extract.io.annot import (default_keypoint_names,
+                                               register_dataset_metadata)
+from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video,
+                                              overlay_video)
+from moseq2_detectron_extract.io.session import Session
+from moseq2_detectron_extract.io.util import get_last_checkpoint
+from moseq2_detectron_extract.io.video import write_frames_preview
+from moseq2_detectron_extract.model.config import (add_dataset_cfg,
+                                                   get_base_config)
+from moseq2_detectron_extract.model.model import Predictor
+from moseq2_detectron_extract.io.util import ensure_dir
+from copy import deepcopy
+import json
+
+
+import matplotlib.pyplot as plt
 
 orig_init = click.core.Option.__init__
 def new_init(self, *args, **kwargs):
@@ -41,6 +52,11 @@ def enable_profiling():
             stats.dump_stats('.prof_stats')
             stats.print_stats()
     atexit.register(exit)
+
+def weighted_centroid_points(xs, ys, ws):
+    x = np.sum(xs * ws) / np.sum(ws)
+    y = np.sum(ys * ws) / np.sum(ws)
+    return (x, y)
 
 
 @click.group()
@@ -138,8 +154,13 @@ def infer(model_dir, input_file, frame_trim, chunk_size, chunk_overlap, bg_roi_d
         scale = 2.0
         out_video = np.zeros([rfs[0], int(rfs[1]*scale), int(rfs[2]*scale), 3], dtype='uint8')
         cropped_frames = np.zeros((rfs[0], crop_size[0], crop_size[1], 3), dtype='uint8')
+        border = (crop_size[1], crop_size[1], crop_size[0], crop_size[0])
         for i, (raw_frame, output) in enumerate(zip(raw_frames, outputs)):
-            im = raw_frame[:,:,None]
+            im = raw_frame[:,:,None].copy().astype('uint8')
+            im = (im-min_height)/(max_height-min_height)
+            im[im < min_height] = min_height
+            im[im > max_height] = max_height
+            im = im * 255
             v = Visualizer(convert_image_to_rgb(im, "L"),
                    metadata=MetadataCatalog.get("moseq_train"),
                    scale=scale,
@@ -149,15 +170,44 @@ def infer(model_dir, input_file, frame_trim, chunk_size, chunk_overlap, bg_roi_d
             out = v.draw_instance_predictions(instances)
             out_video[i,:,:,:] = out.get_image()
 
-            try:
-                slope, intercept = np.polyfit(instances.pred_keypoints[0, :7, 0], instances.pred_keypoints[0, :7, 1], 1)
-            except:
-                slope = 0
-            rot_mat = cv2.getRotationMatrix2D((crop_size[0] // 2, crop_size[1] // 2), -np.rad2deg(math.atan(slope)), 1)
-            box = instances.pred_boxes.tensor.numpy()[0]
-            cropped = cv2.warpAffine(raw_frame[int(box[1]):int(box[3]), int(box[0]):int(box[2])], rot_mat, (crop_size[0], crop_size[1]))
+            if len(instances) > 0:
+                try:
+                    keypoints = instances.pred_keypoints[0, :7, :].numpy()
+                    slope, intercept = np.polyfit(keypoints[:, 0], keypoints[:, 1], 1, w=keypoints[:, 2])
+                    front_keypoints = [0, 1, 2, 3]
+                    rear_keypoints = [4, 5, 6]
+                    front_x, front_y = weighted_centroid_points(keypoints[front_keypoints, 0], keypoints[front_keypoints, 1], keypoints[front_keypoints, 2])
+                    rear_x, rear_y = weighted_centroid_points(keypoints[rear_keypoints, 0], keypoints[rear_keypoints, 1], keypoints[rear_keypoints, 2])
+                    if front_x < rear_x:
+                        angle = np.rad2deg(math.atan(slope)) + 180
+                    else:
+                        angle = np.rad2deg(math.atan(slope))
+                except:
+                    angle = 0
+                rot_mat = cv2.getRotationMatrix2D((crop_size[0] // 2, crop_size[1] // 2), angle, 1)
+                box = instances.pred_boxes.tensor.numpy()[0]
+                #xmin = int(np.min(instances.pred_keypoints[0, :7, 0].numpy()))
+                #xmax = int(np.max(instances.pred_keypoints[0, :7, 0].numpy()))
+                #ymin = int(np.min(instances.pred_keypoints[0, :7, 1].numpy()))
+                #ymax = int(np.max(instances.pred_keypoints[0, :7, 1].numpy()))
+                mask = instances.pred_masks[0,...].numpy() * raw_frame
+                y_center, x_center = np.argwhere(mask > 0).sum(0)/np.count_nonzero(mask)
+                xmin = int(x_center - crop_size[1] // 2) + crop_size[1]
+                xmax = int(x_center + crop_size[1] // 2) + crop_size[1]
+                ymin = int(y_center - crop_size[0] // 2) + crop_size[0]
+                ymax = int(y_center + crop_size[0] // 2) + crop_size[0]
+                #plt.imshow(raw_frame)
+                #plt.scatter(x=[x_center], y=[y_center], marker='*', c='r')
+                #plt.scatter(x=instances.pred_keypoints[0, :, 0], y=instances.pred_keypoints[0, :, 1], c=instances.pred_keypoints[0, :, 2], cmap='inferno', label=MetadataCatalog.get("moseq_train").keypoint_names)
+                #plt.legend()
+                #plt.show()
+                use_frame = cv2.copyMakeBorder(raw_frame, *border, cv2.BORDER_CONSTANT, 0)
+                cropped = cv2.warpAffine(use_frame[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
+                #cropped = cv2.warpAffine(raw_frame[int(box[1]):int(box[3]), int(box[0]):int(box[2])], rot_mat, (crop_size[0], crop_size[1]))
+                cropped_frames[i, :, :, :] = colorize_video(cropped)
+            else:
+                tqdm.tqdm.write("WARNING: No instances found for frame #{}".format(frame_idxs[i]))
 
-            cropped_frames[i, :, :, :] = colorize_video(cropped)
 
         out_video_combined = overlay_video(out_video, cropped_frames)
 
@@ -175,6 +225,74 @@ def infer(model_dir, input_file, frame_trim, chunk_size, chunk_overlap, bg_roi_d
         video_pipe.stdin.close()
         video_pipe.wait()
 
+
+
+
+
+@cli.command(name='generate-dataset', help='Generate images from a dataset')
+@click.argument('input_file', nargs=-1, type=click.Path(exists=True))
+@click.option('--num-samples', default=2000, type=int, help='Total number of samples to draw')
+@click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
+@click.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk. Useful for cable tracking')
+@click.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
+@click.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
+@click.option('--bg-roi-index', default=0, type=int, help='Index of which background mask(s) to use')
+@click.option('--bg-roi-weights', default=(1, .1, 1), type=(float, float, float), help='Feature weighting (area, extent, dist) of the background mask')
+@click.option('--bg-roi-depth-range', default=(650, 750), type=(float, float), help='Range to search for floor of arena (in mm)')
+@click.option('--bg-roi-gradient-filter', default=False, type=bool, help='Exclude walls with gradient filtering')
+@click.option('--bg-roi-gradient-threshold', default=3000, type=float, help='Gradient must be < this to include points')
+@click.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
+@click.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
+@click.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
+@click.option('--frame-dtype', default='uint8', type=click.Choice(['uint8', 'uint16']), help='Data type for processed frames')
+@click.option('--output-dir', type=click.Path(), help='Output directory to save the results')
+@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
+@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
+def generate_dataset(input_file, num_samples, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
+            bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir, min_height, max_height):
+
+    num_samples_per_file = int(np.ceil(num_samples / len(input_file)))
+    parameters = deepcopy(locals())
+
+
+    output_dir = ensure_dir(output_dir)
+    images_dir = ensure_dir(os.path.join(output_dir, 'images'))
+    info_dir = ensure_dir(os.path.join(images_dir, '.info'))
+
+
+
+    for in_file in tqdm.tqdm(input_file, desc='Datasets'):
+        #load session
+        print('Processing: {}'.format(in_file))
+        session = Session(in_file)
+
+        session_info_dir = ensure_dir(os.path.join(info_dir, session.session_id))
+
+        # Find image background and ROI
+        bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
+                bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, cache_dir=session_info_dir)
+
+
+        # Dump status information
+        with open(os.path.join(session_info_dir, 'info.json'), 'w') as sf:
+            json.dump({
+                'parameters': parameters,
+                'session_id': session.session_id,
+                'metadata': session.load_metadata(),
+                'true_depth': true_depth,
+            }, sf, indent='\t')
+
+
+        # Iterate Frames and write images
+        for frame_idxs, raw_frames in tqdm.tqdm(session.sample(num_samples_per_file, chunk_size), desc='Processing batches', leave=False):
+            raw_frames = bground_im - raw_frames
+            raw_frames[raw_frames < min_height] = 0
+            raw_frames[raw_frames > max_height] = max_height
+            raw_frames = apply_roi(raw_frames, roi)
+
+            for idx, rf in zip(frame_idxs, raw_frames):
+                write_image(os.path.join(images_dir, '{}_{}.png'.format(session.session_id, idx)), rf, scale=True, scale_factor=(0, max_height))
+# end generate_dataset()
 
 if __name__ == '__main__':
     cli()

@@ -2,32 +2,46 @@ from moseq2_detectron_extract.io.annot import get_dataset_statistics
 from detectron2.config import get_cfg
 from detectron2 import model_zoo
 from detectron2.data.catalog import DatasetCatalog, MetadataCatalog
-
+from detectron2.projects.point_rend import add_pointrend_config
 
 
 def get_base_config():
     cfg = get_cfg()
 
-
-    # USE POINTREND
-    #point_rend.add_pointrend_config(cfg)
-    #cfg.merge_from_file("detectron2_repo/projects/PointRend/configs/InstanceSegmentation/pointrend_rcnn_R_50_FPN_3x_coco.yaml")
-
     # USE Keypoint RCNN
-    #cfg.merge_from_file(model_zoo.get_config_file("COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x.yaml"))
-    #cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Keypoints/keypoint_rcnn_R_101_FPN_3x.yaml")
+    cfg.merge_from_file(model_zoo.get_config_file("COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x.yaml"))
+    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x.yaml")
 
     # USE MASK RCNN
-    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
-    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
+    #cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
+    #cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
 
     cfg.MODEL.MASK_ON = True
+
+    # pointrend config
+    # add_pointrend_config(cfg)
+    # cfg.MODEL.POINT_HEAD.NUM_CLASSES = 1
+    # cfg.MODEL.ROI_BOX_HEAD.TRAIN_ON_PRED_BOXES = True
+    # cfg.MODEL.ROI_MASK_HEAD.POOLER_TYPE = ""  # No RoI pooling, let the head process image features directly
+    # cfg.MODEL.ROI_MASK_HEAD.NAME = "PointRendMaskHead"
+    # cfg.MODEL.ROI_MASK_HEAD.FC_DIM = 1024
+    # cfg.MODEL.ROI_MASK_HEAD.NUM_FC = 2
+    # cfg.MODEL.ROI_MASK_HEAD.OUTPUT_SIDE_RESOLUTION = 7
+    # cfg.MODEL.ROI_MASK_HEAD.IN_FEATURES = ["p2"]  # for the coarse mask head
+    # cfg.MODEL.ROI_MASK_HEAD.POINT_HEAD_ON = True
+    # cfg.MODEL.POINT_HEAD.FC_DIM = 256
+    # cfg.MODEL.POINT_HEAD.NUM_FC = 3
+    # cfg.MODEL.POINT_HEAD.IN_FEATURES = ["p2"]
+    # cfg.INPUT.MASK_FORMAT = "bitmask" # PointRend for instance segmentation does not work with "polygon" mask_format.
+    # end pointrend config
+
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
+    
+    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
+
     cfg.MODEL.ROI_BOX_HEAD.SMOOTH_L1_BETA = 0.5
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 24   # faster, and good enough for this toy dataset (default: 512)
 
     cfg.MODEL.KEYPOINT_ON = True
-
     cfg.MODEL.RPN.POST_NMS_TOPK_TRAIN = 1500
 
 
@@ -41,14 +55,14 @@ def get_base_config():
     cfg.INPUT.RANDOM_FLIP = "none"
 
 
-    cfg.SOLVER.IMS_PER_BATCH = 4
+    cfg.SOLVER.IMS_PER_BATCH = 8
     cfg.SOLVER.BASE_LR = 0.0025  # pick a good LR
     cfg.SOLVER.CHECKPOINT_PERIOD = 500
-    cfg.SOLVER.MAX_ITER = 5000    # 300 iterations seems good enough for this toy dataset; you will need to train longer for a practical dataset
-    cfg.SOLVER.STEPS = (2500,) #(5000, 10000, 15000)        # do not decay learning rate
+    cfg.SOLVER.MAX_ITER = 50000    # 300 iterations seems good enough for this toy dataset; you will need to train longer for a practical dataset
+    cfg.SOLVER.STEPS = (10000, 20000, 30000)        # do not decay learning rate
 
 
-    cfg.OUTPUT_DIR = './output_4'
+    cfg.OUTPUT_DIR = './models/output_4'
     cfg.VIS_PERIOD = 100
     #cfg.MODEL.WEIGHTS = None
 

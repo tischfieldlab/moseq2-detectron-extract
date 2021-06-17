@@ -3,8 +3,12 @@ import random
 
 import cv2
 import numpy as np
+import pycocotools
+from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
-from detectron2.data import MetadataCatalog, DatasetCatalog
+from skimage.draw import polygon
+
+from detectron2.data.detection_utils import transform_instance_annotations
 
 
 def get_dataset_statistics(dset):
@@ -67,7 +71,7 @@ default_keypoint_names = [
     'TailTip'
 ]
 
-def split_test_train(annotations, split=0.75):
+def split_test_train(annotations, split=0.90):
     random.shuffle(annotations)
     split_idx = int(len(annotations) * split)
 
@@ -103,7 +107,21 @@ def register_dataset_metadata(name, keypoint_names):
     ]
 
 
-def read_annotations(annot_file, keypoint_names):
+def poly_to_mask(poly, out_shape):
+    mask = np.zeros((*out_shape, 1), dtype=np.uint8)
+    rr,cc = polygon(poly[:,0], poly[:,1], out_shape)
+    mask[cc, rr, 0] = 1
+    return mask
+
+
+def read_annotations(annot_file, keypoint_names, mask_format='polygon'):
+    ''' Read annotations from json file output by labelstudio (coco-ish) format
+
+        Parameters:
+            annot_file (string): path to the annotation json file
+            keypoint_names (list<string>): list of the keypoint names, in the order desired
+            mask_format (string): 'polygon'|'bitmask'
+    '''
     with open(annot_file, 'r') as fp:
         data = json.load(fp)
 
@@ -120,9 +138,7 @@ def read_annotations(annot_file, keypoint_names):
                     poly = np.array(rslt['value']['points'])
                     poly[:,1] = (poly[:,1] * rslt['original_width']) / 100
                     poly[:,0] = (poly[:,0] * rslt['original_height']) / 100
-                    seg = np.empty((poly.size,), dtype=poly.dtype)
-                    seg[0::2] = poly[:,0]
-                    seg[1::2] = poly[:,1]
+                    
                     
                     annot['bbox'] = [
                         np.min(poly[:,0]),
@@ -132,7 +148,19 @@ def read_annotations(annot_file, keypoint_names):
                     ]
                     annot['bbox_mode'] = BoxMode.XYXY_ABS
                     annot['category_id'] = 0
-                    annot['segmentation'] = [list(seg)]
+                    
+                    if mask_format == 'polygon':
+                        seg = np.empty((poly.size,), dtype=poly.dtype)
+                        seg[0::2] = poly[:,0]
+                        seg[1::2] = poly[:,1]
+                        annot['segmentation'] = [list(seg)]
+                    
+                    elif mask_format == 'bitmask':
+                        mask = poly_to_mask(poly, (rslt['original_height'], rslt['original_width']))
+                        annot['segmentation'] = pycocotools.mask.encode(np.asfortranarray(mask))[0]
+                    
+                    else:
+                        raise RuntimeError("Got unsupported mask_format '{}'".format(mask_format))
                     polyfound = True
                     
                 elif rslt['type'] == 'keypointlabels':

@@ -154,7 +154,10 @@ class Session(object):
         return SessionFramesIterator(self, chunk_size, chunk_overlap)
 
     def sample(self, num_samples, chunk_size=1000):
-        return SessionFramesSampler(self, num_samples, chunk_size, 0)
+        return SessionFramesSampler(self, num_samples, chunk_size=chunk_size, chunk_overlap=0)
+
+    def index(self, frame_idxs, chunk_size=1000):
+        return SessionFramesIndexer(self, frame_idxs, chunk_size=chunk_size, chunk_overlap=0)
 
 #end class Session
 
@@ -202,3 +205,15 @@ class SessionFramesSampler(SessionFramesIterator):
         seq = np.random.choice(seq, self.num_samples, replace=False)
         for i in range(offset, len(seq)-self.chunk_overlap, self.chunk_size-self.chunk_overlap):
             yield seq[i:i+self.chunk_size]
+
+class SessionFramesIndexer(SessionFramesIterator):
+    def __init__(self, session, frame_idxs, chunk_size, chunk_overlap):
+        self.frame_idxs = frame_idxs
+        super().__init__(session, chunk_size, chunk_overlap)
+
+    def generate_samples(self):
+        """Generate a sequence with overlap
+        """
+        offset = self.session.first_frame_idx
+        for i in range(offset, len(self.frame_idxs)-self.chunk_overlap, self.chunk_size-self.chunk_overlap):
+            yield self.frame_idxs[i:i+self.chunk_size]
