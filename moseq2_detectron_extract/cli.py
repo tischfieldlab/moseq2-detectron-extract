@@ -18,7 +18,7 @@ from detectron2.utils.visualizer import ColorMode, Visualizer
 
 from moseq2_detectron_extract.io.annot import (
     augment_annotations_with_rotation, default_keypoint_names,
-    read_annotations, register_dataset_metadata, register_datasets, replace_data_path_in_annotations,
+    read_annotations, register_dataset_metadata, register_datasets,
     show_dataset_info)
 from moseq2_detectron_extract.io.image import write_image
 from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video,
@@ -30,7 +30,7 @@ from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import ensure_dir, get_last_checkpoint
 from moseq2_detectron_extract.io.video import write_frames_preview
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
-                                                   get_base_config)
+                                                   get_base_config, load_config)
 from moseq2_detectron_extract.model.model import Predictor, Trainer
 from moseq2_detectron_extract.model.util import select_frames_kmeans
 
@@ -68,26 +68,48 @@ def cli():
 @click.argument('annot_file', nargs=1, type=click.Path(exists=True))
 @click.argument('model_dir', nargs=1, type=click.Path(exists=False))
 @click.option('--replace-data-path', default=(None, None), type=(str, str), help="Replace data path")
-def train(annot_file, model_dir, replace_data_path):
-    cfg = get_base_config()
+@click.option('--resume', is_flag=True, help='Resume training from a previous checkpoint')
+@click.option('--auto-cd', is_flag=True, help='treat model_dir as a base directory and create a child dir for this specific run')
+def train(annot_file, model_dir, replace_data_path, resume, auto_cd):
+    print()
+    if resume:
+        print("Resuming Model Training from: {}".format(model_dir))
+        cfg = load_config(os.path.join(model_dir, "config.yaml"))
+    else:
+        cfg = get_base_config()
+        if auto_cd:
+            cfg.OUTPUT_DIR = os.path.join(model_dir, datetime.datetime.now().strftime("%Y-%m-%dT%H-%M_%S"))
+        else:
+            cfg.OUTPUT_DIR = model_dir
+
+        if os.path.exists(os.path.join(cfg.OUTPUT_DIR, "config.yaml")):
+            print("Hmmm... it looks like there is already a model located here.... ({})".format(cfg.OUTPUT_DIR))
+            print("If you wish to resume training, please use the --resume flag")
+            print("Otherwise please change the `model_dir` argument to another location.")
+            print("Exiting...")
+            return
+        
+        print("Model output: {}".format(cfg.OUTPUT_DIR))
+
+    ensure_dir(cfg.OUTPUT_DIR)
+
+
     annotations = read_annotations(annot_file, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, replace_path=replace_data_path)
-    print(len(annotations))
     annotations = augment_annotations_with_rotation(annotations)
-    print('Dataset information')
+    print('Dataset information:')
     show_dataset_info(annotations)
     register_datasets(annotations, default_keypoint_names)
-    cfg = add_dataset_cfg(cfg)
+
+
+    if not resume:
+        cfg = add_dataset_cfg(cfg)
+        with open(os.path.join(cfg.OUTPUT_DIR, "config.yaml"), 'w') as f:
+            f.write(cfg.dump())
+
     print(cfg)
 
-
-    cfg.OUTPUT_DIR = os.path.join(model_dir, datetime.datetime.now().strftime("%Y-%m-%dT%H-%M_%S"))
-    print("Model output: {}".format(cfg.OUTPUT_DIR))
-    os.makedirs(cfg.OUTPUT_DIR, exist_ok=False)
-    with open(os.path.join(cfg.OUTPUT_DIR, "config.yaml"), 'w') as f:
-        f.write(cfg.dump())
-
     trainer = Trainer(cfg)
-    trainer.resume_or_load(resume=True)
+    trainer.resume_or_load(resume=resume)
     trainer.train()
 
 

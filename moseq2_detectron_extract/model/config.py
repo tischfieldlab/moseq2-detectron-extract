@@ -1,9 +1,14 @@
+from detectron2 import config
 from moseq2_detectron_extract.io.annot import get_dataset_statistics
-from detectron2.config import get_cfg
+from detectron2.config import get_cfg, CfgNode
 from detectron2 import model_zoo
 from detectron2.data.catalog import DatasetCatalog, MetadataCatalog
 from detectron2.projects.point_rend import add_pointrend_config
 
+def load_config(config_file):
+    with open(config_file, 'r') as cf:
+        config = CfgNode.load_cfg(cf)
+    return config
 
 def get_base_config():
     cfg = get_cfg()
@@ -57,9 +62,10 @@ def get_base_config():
 
     cfg.SOLVER.IMS_PER_BATCH = 8
     cfg.SOLVER.BASE_LR = 0.0025  # pick a good LR
-    cfg.SOLVER.CHECKPOINT_PERIOD = 500
-    cfg.SOLVER.MAX_ITER = 50000    # 300 iterations seems good enough for this toy dataset; you will need to train longer for a practical dataset
-    cfg.SOLVER.STEPS = (10000, 20000, 30000)        # do not decay learning rate
+    cfg.SOLVER.CHECKPOINT_PERIOD = 100
+    cfg.SOLVER.MAX_ITER = 15000    # 300 iterations seems good enough for this toy dataset; you will need to train longer for a practical dataset
+    cfg.SOLVER.STEPS = (3000, 9000, 12000)        # do not decay learning rate
+    cfg.SOLVER.GAMMA = 0.05
 
 
     cfg.OUTPUT_DIR = './models/output_4'
