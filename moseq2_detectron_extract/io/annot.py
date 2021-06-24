@@ -226,6 +226,11 @@ def read_annotations(annot_file, keypoint_names, mask_format='polygon'):
         
         return completions
 
+def replace_data_path(annotations, search, replace):
+    for annot in annotations:
+        annotations['file_name'].replace(search, replace)
+    return annotations
+
 
 def show_dataset_info(annotations):
     print("Num Items: ", len(annotations))

@@ -67,9 +67,12 @@ def cli():
 @cli.command(name='train', help='run training')
 @click.argument('annot_file', nargs=1, type=click.Path(exists=True))
 @click.argument('model_dir', nargs=1, type=click.Path(exists=False))
-def train(annot_file, model_dir):
+@click.option('--replace-data-path', default=None, type=(str, str), help="Replace data path")
+def train(annot_file, model_dir, replace_data_path):
     cfg = get_base_config()
     annotations = read_annotations(annot_file, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT)
+    if replace_data_path is not None:
+        annotations = replace_data_path(annotations, replace_data_path[0], replace_data_path[1])
     print(len(annotations))
     annotations = augment_annotations_with_rotation(annotations)
     print('Dataset information')
