@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import random
 
 import cv2
@@ -208,7 +209,9 @@ def read_annotations(annot_file, keypoint_names, mask_format='polygon'):
                 #o = parse.urlparse(entry['data']['image'])
                 #q = parse.parse_qs(o.query)
                 #tsk_path = os.path.join(q['d'][0], os.path.basename(o.path))
-                
+            
+            if not os.path.isfile(tsk_path):
+                raise FileNotFoundError(tsk_path)
                 
             if not polyfound:
                 print('poly not found!')
