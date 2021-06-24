@@ -70,7 +70,7 @@ def cli():
 @click.option('--replace-data-path', default=(None, None), type=(str, str), help="Replace data path")
 def train(annot_file, model_dir, replace_data_path):
     cfg = get_base_config()
-    annotations = read_annotations(annot_file, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT)
+    annotations = read_annotations(annot_file, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, replace_path=replace_data_path)
     print(len(annotations))
     annotations = augment_annotations_with_rotation(annotations)
     print('Dataset information')
