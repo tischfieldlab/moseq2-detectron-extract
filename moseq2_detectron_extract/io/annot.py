@@ -128,7 +128,7 @@ def augment_annotations_with_rotation(annotations, angles=None):
     return out_annotations
 
 
-def read_annotations(annot_file, keypoint_names, mask_format='polygon'):
+def read_annotations(annot_file, keypoint_names, mask_format='polygon', replace_path=None):
     ''' Read annotations from json file output by labelstudio (coco-ish) format
 
         Parameters:
@@ -209,6 +209,9 @@ def read_annotations(annot_file, keypoint_names, mask_format='polygon'):
                 #o = parse.urlparse(entry['data']['image'])
                 #q = parse.parse_qs(o.query)
                 #tsk_path = os.path.join(q['d'][0], os.path.basename(o.path))
+
+            if replace_path is not None and replace_path[0] is not None and replace_path[1] is not None:
+                tsk_path = tsk_path.replace(replace_path[0], replace_path[1])
             
             if not os.path.isfile(tsk_path):
                 raise FileNotFoundError(tsk_path)

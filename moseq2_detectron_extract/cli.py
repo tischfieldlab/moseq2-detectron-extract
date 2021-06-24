@@ -71,9 +71,6 @@ def cli():
 def train(annot_file, model_dir, replace_data_path):
     cfg = get_base_config()
     annotations = read_annotations(annot_file, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT)
-    if replace_data_path is not None and replace_data_path[0] is not None and replace_data_path[1] is not None:
-        print(replace_data_path)
-        annotations = replace_data_path_in_annotations(annotations, replace_data_path[0], replace_data_path[1])
     print(len(annotations))
     annotations = augment_annotations_with_rotation(annotations)
     print('Dataset information')
