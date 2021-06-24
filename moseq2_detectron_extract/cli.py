@@ -18,7 +18,7 @@ from detectron2.utils.visualizer import ColorMode, Visualizer
 
 from moseq2_detectron_extract.io.annot import (
     augment_annotations_with_rotation, default_keypoint_names,
-    read_annotations, register_dataset_metadata, register_datasets,
+    read_annotations, register_dataset_metadata, register_datasets, replace_data_path_in_annotations,
     show_dataset_info)
 from moseq2_detectron_extract.io.image import write_image
 from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video,
@@ -67,12 +67,13 @@ def cli():
 @cli.command(name='train', help='run training')
 @click.argument('annot_file', nargs=1, type=click.Path(exists=True))
 @click.argument('model_dir', nargs=1, type=click.Path(exists=False))
-@click.option('--replace-data-path', default=None, type=(str, str), help="Replace data path")
+@click.option('--replace-data-path', default=(None, None), type=(str, str), help="Replace data path")
 def train(annot_file, model_dir, replace_data_path):
     cfg = get_base_config()
     annotations = read_annotations(annot_file, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT)
-    if replace_data_path is not None:
-        annotations = replace_data_path(annotations, replace_data_path[0], replace_data_path[1])
+    if replace_data_path is not None and replace_data_path[0] is not None and replace_data_path[1] is not None:
+        print(replace_data_path)
+        annotations = replace_data_path_in_annotations(annotations, replace_data_path[0], replace_data_path[1])
     print(len(annotations))
     annotations = augment_annotations_with_rotation(annotations)
     print('Dataset information')

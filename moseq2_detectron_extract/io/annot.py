@@ -226,7 +226,7 @@ def read_annotations(annot_file, keypoint_names, mask_format='polygon'):
         
         return completions
 
-def replace_data_path(annotations, search, replace):
+def replace_data_path_in_annotations(annotations, search, replace):
     for annot in annotations:
         annotations['file_name'].replace(search, replace)
     return annotations
