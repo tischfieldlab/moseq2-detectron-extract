@@ -1,4 +1,6 @@
 import copy
+import os
+from moseq2_detectron_extract.io.util import ensure_dir
 
 import cv2
 import detectron2.data.detection_utils as utils
@@ -36,8 +38,17 @@ class MoseqDatesetMapper(DatasetMapper):
             sem_seg_gt = None
 
         aug_input = T.AugInput(image, sem_seg=sem_seg_gt)
-        transforms = self.augmentations(aug_input)
+        if "rotate" in dataset_dict:
+            rotate = T.RandomRotation([dataset_dict['rotate']], expand=False, sample_style="choice")
+            transforms = T.AugmentationList(self.augmentations.augs + [rotate])(aug_input)
+        else:
+            transforms = self.augmentations(aug_input)
         image, sem_seg_gt = aug_input.image, aug_input.sem_seg
+
+        if len(image.shape) == 2:
+            # seems the augmentations can cause the last axis to drop
+            # when only a single channel. Lets pop the data into a third dimention!
+            image = image[:,:,None]
 
         image_shape = image.shape[:2]  # h, w
         # Pytorch's dataloader is efficient on torch.Tensor due to shared-memory,
@@ -109,7 +120,11 @@ class Trainer(DefaultTrainer):
 
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
-        return COCOEvaluator(dataset_name, ("bbox", "segm", "keypoints"), False, output_dir=cfg.OUTPUT_DIR)
+        if output_folder is None:
+            output_folder = os.path.join(cfg.OUTPUT_DIR, "coco_eval")
+            ensure_dir(output_folder)
+        
+        return COCOEvaluator(dataset_name, ("bbox", "segm", "keypoints"), False, output_dir=output_folder, kpt_oks_sigmas=cfg.TEST.KEYPOINT_OKS_SIGMAS)
 
 
 class Predictor:
@@ -145,7 +160,9 @@ class Predictor:
         """
         with torch.no_grad():  # https://github.com/sphinx-doc/sphinx/issues/4258
             # Apply pre-processing to image.
+            return_as_list = True
             if len(original_image.shape) == 3:
+                return_as_list = False
                 original_image = original_image[None, ...]
 
             inputs = []
@@ -157,7 +174,7 @@ class Predictor:
                 inputs.append({"image": image, "height": height, "width": width})
                 
             predictions = self.model(inputs)
-            if len(original_image.shape) == 3:
+            if not return_as_list:
                 return predictions[0]
             else:
                 return predictions

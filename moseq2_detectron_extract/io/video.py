@@ -1,9 +1,11 @@
+from copy import Error
 import datetime
 import os
 import subprocess
 import tarfile
 from itertools import groupby
 from operator import itemgetter
+import tempfile
 
 import cv2
 import matplotlib.pyplot as plt
@@ -113,17 +115,24 @@ def collapse_consecutive_values(a):
 #end collapse_adjacent_values()
 
 # https://gist.github.com/hiwonjoon/035a1ead72a767add4b87afe03d0dd7b
-def get_video_info(filename):
+def get_video_info(filename, tar_object=None):
     """
     Get dimensions of data compressed using ffv1, along with duration via ffmpeg
 
     Args:
         filename (string): name of file
     """
+    is_stream = isinstance(filename, tarfile.TarInfo)
+    if is_stream:
+        f = tempfile.NamedTemporaryFile(delete=False)
+        f.write(tar_object.extractfile(filename).read())
+        f.close()
+        filename = f.name
+
     command = ['ffprobe',
                '-v', 'fatal',
                '-show_entries',
-               'stream=width,height,r_frame_rate,nb_frames',
+               'stream=width,height,r_frame_rate,nb_frames,codec_name,pix_fmt',
                '-of',
                'default=noprint_wrappers=1:nokey=1',
                filename,
@@ -132,14 +141,19 @@ def get_video_info(filename):
     ffmpeg = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
     out, err = ffmpeg.communicate()
 
+    if is_stream:
+        os.remove(f.name)
+
     if(err):
         print(err)
-    out = out.decode().split('\n')
+    out = out.decode().split(os.linesep)
 
     return {'file': filename,
-            'dims': (int(out[0]), int(out[1])),
-            'fps': float(out[2].split('/')[0])/float(out[2].split('/')[1]),
-            'nframes': int(out[3])}
+            'codec': out[0],
+            'pixel_format': out[3],
+            'dims': (int(out[1]), int(out[2])),
+            'fps': float(out[4].split('/')[0])/float(out[4].split('/')[1]),
+            'nframes': int(out[5])}
 
 
 # simple command to pipe frames to an ffv1 file
@@ -193,7 +207,7 @@ def write_frames(filename, frames, threads=6, fps=30,
 
 def read_frames(filename, frames=range(0,), threads=6, fps=30,
                 pixel_format='gray16le', frame_size=None,
-                slices=24, slicecrc=1, get_cmd=False):
+                slices=24, slicecrc=1, get_cmd=False, tar_object=None, **_):
     """
     Reads in frames from the .nut/.avi file using a pipe from ffmpeg.
 
@@ -210,44 +224,60 @@ def read_frames(filename, frames=range(0,), threads=6, fps=30,
     Returns:
         3d numpy array:  frames x h x w
     """
+    is_stream = isinstance(filename, tarfile.TarInfo)
+    if is_stream:
+        f = tempfile.NamedTemporaryFile(delete=False)
+        f.write(tar_object.extractfile(filename).read())
+        f.close()
+        filename = f.name
 
     finfo = get_video_info(filename)
 
     if frames is None or len(frames) == 0:
-        finfo = get_video_info(filename)
         frames = np.arange(finfo['nframes']).astype('int16')
 
     if not frame_size:
         frame_size = finfo['dims']
 
-    command = [
-        'ffmpeg',
-        '-loglevel', 'fatal',
-        '-ss', str(datetime.timedelta(seconds=frames[0]/fps)),
-        '-i', filename,
-        '-vframes', str(len(frames)),
-        '-f', 'image2pipe',
-        '-s', '{:d}x{:d}'.format(frame_size[0], frame_size[1]),
-        '-pix_fmt', pixel_format,
-        '-threads', str(threads),
-        '-slices', str(slices),
-        '-slicecrc', str(slicecrc),
-        '-vcodec', 'rawvideo',
-        '-'
-    ]
+    if pixel_format == 'gray16le':
+        dtype = 'uint16'
+        out_shape = (len(frames), frame_size[1], frame_size[0])
+    elif pixel_format == 'rgb24':
+        dtype = 'uint8'
+        out_shape = (len(frames), frame_size[1], frame_size[0], 3)
 
-    if get_cmd:
-        return command
+    out_video = np.empty(out_shape, dtype)
+    for start, nframes in collapse_consecutive_values(sorted(frames)):
+        command = [
+            'ffmpeg',
+            '-loglevel', 'fatal',
+            '-ss', str(datetime.timedelta(seconds=start/fps)),
+            '-i', filename,
+            '-vframes', str(nframes),
+            '-f', 'image2pipe',
+            '-s', '{:d}x{:d}'.format(frame_size[0], frame_size[1]),
+            '-pix_fmt', pixel_format,
+            '-threads', str(threads),
+            '-slices', str(slices),
+            '-slicecrc', str(slicecrc),
+            '-vcodec', 'rawvideo',
+            '-'
+        ]
 
-    pipe = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
-    out, err = pipe.communicate()
-    if(err):
-        print('error', err)
-        return None
-    video = np.frombuffer(out, dtype='uint16').reshape((len(frames), frame_size[1], frame_size[0]))
-    return video
+        pipe = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+        out, err = pipe.communicate()
 
-# simple command to pipe frames to an ffv1 file
+        if(err):
+            raise Error(err)
+
+        idxs = [frames.index(start + i) for i in range(nframes)]
+        out_video[idxs] = np.frombuffer(out, dtype=dtype).reshape((nframes, *out_shape[1:]))
+
+    if is_stream:
+        os.remove(f.name)
+
+    return out_video
+# simple command to pipe frames from an ffv1 file
 
 
 def write_frames_preview(filename, frames=np.empty((0,)), threads=6,
@@ -367,37 +397,38 @@ def load_movie_data(filename, frames=None, frame_dims=(512, 424), bit_depth=16, 
     Reads in frames
     """
 
-    try:
-        if filename.lower().endswith('.dat'):
-            frame_data = read_frames_raw(filename,
-                                         frames=frames,
-                                         frame_dims=frame_dims,
-                                         bit_depth=bit_depth)
-        elif filename.lower().endswith('.avi'):
-            if type(frames) is int:
-                frames = [frames]
-            frame_data = read_frames(filename,
-                                     frames)
+    if isinstance(filename, tarfile.TarInfo):
+        fname =  filename.name.lower()
+    else:
+        fname = filename.lower()
 
-    except AttributeError as e:
+    if type(frames) is int:
+        frames = [frames]
+
+    if fname.endswith('.dat'):
         frame_data = read_frames_raw(filename,
                                      frames=frames,
                                      frame_dims=frame_dims,
                                      bit_depth=bit_depth,
                                      **kwargs)
+    elif fname.endswith(('.avi', '.mp4')):
+        frame_data = read_frames(filename, frames, **kwargs)
+
     return frame_data
 
 
-def get_movie_info(filename, frame_dims=(512, 424), bit_depth=16):
+def get_movie_info(filename, frame_dims=(512, 424), bit_depth=16, tar_object=None):
     """
     Gets movie info
     """
-    try:
-        if filename.lower().endswith('.dat'):
-            metadata = get_raw_info(filename, frame_dims=frame_dims, bit_depth=bit_depth)
-        elif filename.lower().endswith('.avi'):
-            metadata = get_video_info(filename)
-    except AttributeError as e:
-        metadata = get_raw_info(filename)
+    if isinstance(filename, tarfile.TarInfo):
+        fname =  filename.name.lower()
+    else:
+        fname = filename.lower()
+
+    if fname.endswith('.dat'):
+        metadata = get_raw_info(filename, frame_dims=frame_dims, bit_depth=bit_depth)
+    elif fname.endswith(('.avi', '.mp4')):
+        metadata = get_video_info(filename, tar_object=tar_object)
 
     return metadata

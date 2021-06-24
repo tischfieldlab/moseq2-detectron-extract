@@ -9,30 +9,31 @@ def select_frames_kmeans(session, num_frames_to_pick, num_clusters=None, chunk_s
 
     bground_im, roi, true_depth = session.find_roi()
     downsampled = np.zeros((session.nframes, int(roi.shape[0] / scale), int(roi.shape[1] / scale)))
-    for frame_idxs, raw_frames in tqdm.tqdm(session.iterate(chunk_size=chunk_size), desc='Processing batches', leave=True):
+    for frame_idxs, raw_frames in tqdm.tqdm(session.iterate(chunk_size=chunk_size), desc='Processing batches', leave=False):
         raw_frames = bground_im - raw_frames
         raw_frames[raw_frames < min_height] = 0
         raw_frames[raw_frames > max_height] = max_height
         raw_frames = apply_roi(raw_frames, roi)
         raw_frames = raw_frames
         
-        for i, idx in enumerate(tqdm.tqdm(frame_idxs, desc='Resizing Frames', leave=False, disable=True)):
-            downsampled[idx, :, :] = resize(raw_frames[i], downsampled.shape[1:], anti_aliasing=True, preserve_range=True)
+        for i, idx in enumerate(tqdm.tqdm(frame_idxs, desc='Resizing Frames', leave=False, disable=False)):
+            downsampled[idx, :, :] = resize(raw_frames[i], downsampled.shape[1:], anti_aliasing=True, preserve_range=True, mode='constant')
     
-    print("Kmeans clustering ... (this might take a while)")
-    data = downsampled - downsampled.mean(axis=0)
-    data = data.reshape(data.shape[0], -1)  # stacking
+    with tqdm.tqdm(total=1, leave=False, desc="Kmeans clustering ... (this might take a while)") as pbar:
+        data = downsampled - downsampled.mean(axis=0)
+        data = data.reshape(data.shape[0], -1)  # stacking
 
-    if num_clusters is None:
-        num_clusters = num_frames_to_pick
+        if num_clusters is None:
+            num_clusters = num_frames_to_pick
 
-    kmeans = MiniBatchKMeans(
-        n_clusters=num_clusters,
-        tol=1e-3,
-        batch_size=kmeans_batchsize,
-        max_iter=kmeans_max_iter
-    )
-    kmeans.fit(data)
+        kmeans = MiniBatchKMeans(
+            n_clusters=num_clusters,
+            tol=1e-3,
+            batch_size=kmeans_batchsize,
+            max_iter=kmeans_max_iter
+        )
+        kmeans.fit(data)
+        pbar.update(1)
 
     num_frames_per_cluster = num_frames_to_pick // num_clusters
     if num_frames_per_cluster < 1:

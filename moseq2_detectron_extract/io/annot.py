@@ -1,3 +1,4 @@
+import copy
 import json
 import random
 
@@ -112,6 +113,18 @@ def poly_to_mask(poly, out_shape):
     rr,cc = polygon(poly[:,0], poly[:,1], out_shape)
     mask[cc, rr, 0] = 1
     return mask
+
+
+def augment_annotations_with_rotation(annotations, angles=None):
+    if angles is None:
+        angles = [0, 90, 180, 270]
+
+    out_annotations = []
+    for angle in angles:
+        for annot in copy.deepcopy(annotations):
+            annot['rotate'] = angle
+            out_annotations.append(annot)
+    return out_annotations
 
 
 def read_annotations(annot_file, keypoint_names, mask_format='polygon'):

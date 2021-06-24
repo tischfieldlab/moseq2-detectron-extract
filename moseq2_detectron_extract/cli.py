@@ -1,34 +1,38 @@
 import atexit
 import cProfile
+import datetime
+import json
 import math
 import os
+from copy import Error, deepcopy
 from pstats import Stats
 
 import click
 import cv2
-from moseq2_unet_extract.io.image import write_image
+import matplotlib.pyplot as plt
 import numpy as np
 import tqdm
 from detectron2.data.catalog import MetadataCatalog
 from detectron2.data.detection_utils import convert_image_to_rgb
 from detectron2.utils.visualizer import ColorMode, Visualizer
 
-from moseq2_detectron_extract.io.annot import (default_keypoint_names,
-                                               register_dataset_metadata)
+from moseq2_detectron_extract.io.annot import (
+    augment_annotations_with_rotation, default_keypoint_names,
+    read_annotations, register_dataset_metadata, register_datasets,
+    show_dataset_info)
+from moseq2_detectron_extract.io.image import write_image
 from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video,
+                                              hampel_filter,
+                                              hampel_filter_forloop,
+                                              instances_to_features,
                                               overlay_video)
 from moseq2_detectron_extract.io.session import Session
-from moseq2_detectron_extract.io.util import get_last_checkpoint
+from moseq2_detectron_extract.io.util import ensure_dir, get_last_checkpoint
 from moseq2_detectron_extract.io.video import write_frames_preview
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config)
-from moseq2_detectron_extract.model.model import Predictor
-from moseq2_detectron_extract.io.util import ensure_dir
-from copy import deepcopy
-import json
-
-
-import matplotlib.pyplot as plt
+from moseq2_detectron_extract.model.model import Predictor, Trainer
+from moseq2_detectron_extract.model.util import select_frames_kmeans
 
 orig_init = click.core.Option.__init__
 def new_init(self, *args, **kwargs):
@@ -53,11 +57,6 @@ def enable_profiling():
             stats.print_stats()
     atexit.register(exit)
 
-def weighted_centroid_points(xs, ys, ws):
-    x = np.sum(xs * ws) / np.sum(ws)
-    y = np.sum(ys * ws) / np.sum(ws)
-    return (x, y)
-
 
 @click.group()
 def cli():
@@ -65,11 +64,39 @@ def cli():
 
 
 
+@cli.command(name='train', help='run training')
+@click.argument('annot_file', nargs=1, type=click.Path(exists=True))
+@click.argument('model_dir', nargs=1, type=click.Path(exists=False))
+def train(annot_file, model_dir):
+    cfg = get_base_config()
+    annotations = read_annotations(annot_file, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT)
+    print(len(annotations))
+    annotations = augment_annotations_with_rotation(annotations)
+    print('Dataset information')
+    show_dataset_info(annotations)
+    register_datasets(annotations, default_keypoint_names)
+    cfg = add_dataset_cfg(cfg)
+    print(cfg)
+
+
+    cfg.OUTPUT_DIR = os.path.join(model_dir, datetime.datetime.now().strftime("%Y-%m-%dT%H-%M_%S"))
+    print("Model output: {}".format(cfg.OUTPUT_DIR))
+    os.makedirs(cfg.OUTPUT_DIR, exist_ok=False)
+    with open(os.path.join(cfg.OUTPUT_DIR, "config.yaml"), 'w') as f:
+        f.write(cfg.dump())
+
+    trainer = Trainer(cfg)
+    trainer.resume_or_load(resume=True)
+    trainer.train()
+
+
+
 @cli.command(name='infer', help='run inference')
 @click.argument('model_dir', nargs=1, type=click.Path(exists=True))
 @click.argument('input_file', nargs=1, type=click.Path(exists=True))
 @click.option('--frame-trim', default=(0, 0), type=(int, int), help='Frames to trim from beginning and end of data')
-@click.option('--chunk-size', default=25, type=int, help='Number of frames for each processing iteration')
+@click.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
+@click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
 @click.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk. Useful for cable tracking')
 @click.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
 @click.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
@@ -88,7 +115,7 @@ def cli():
 @click.option('--fps', default=30, type=int, help='Frame rate of camera')
 @click.option('--crop-size', default=(80, 80), type=(int, int), help='size of crop region')
 @click.option("--profile", is_flag=True)
-def infer(model_dir, input_file, frame_trim, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
+def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
           bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir,
           min_height, max_height, fps, crop_size, profile):
 
@@ -135,6 +162,17 @@ def infer(model_dir, input_file, frame_trim, chunk_size, chunk_overlap, bg_roi_d
         'disable': True,
     }
 
+    # Prepare keypoint data output file
+    kp_out_file = open(os.path.join(images_dir, 'keypoints.tsv'), 'w')
+    kp_out_file_headers = ["Frame_Idx"]
+    for i, kp in enumerate(MetadataCatalog.get("moseq_train").keypoint_names):
+        kp_out_file_headers.extend([
+            "{}_X".format(kp),
+            "{}_Y".format(kp),
+            "{}_S".format(kp)
+        ])
+    kp_out_file.write("{}\n".format("\t".join(kp_out_file_headers)))
+
 
     # Iterate Frames and write images
     last_frame = None
@@ -142,11 +180,17 @@ def infer(model_dir, input_file, frame_trim, chunk_size, chunk_overlap, bg_roi_d
         raw_frames = bground_im - raw_frames
         raw_frames[raw_frames < min_height] = 0
         raw_frames[raw_frames > max_height] = max_height
-        #raw_frames = raw_frames.astype(frame_dtype)
+        raw_frames = raw_frames.astype(frame_dtype)
         raw_frames = apply_roi(raw_frames, roi)
 
         # Do the inference
-        outputs = predictor(raw_frames[:,:,:,None])
+        outputs = []
+        for i in tqdm.tqdm(range(0, raw_frames.shape[0], batch_size), desc="Inferring", leave=False):
+            outputs.extend(predictor(raw_frames[i:i+batch_size,:,:,None]))
+
+        angles, centroids = instances_to_features(outputs, raw_frames)
+        angles = hampel_filter(angles, 7, 3)
+        # centroids = hampel_filter_forloop(centroids, 50, 3)[0]
 
 
 
@@ -155,10 +199,10 @@ def infer(model_dir, input_file, frame_trim, chunk_size, chunk_overlap, bg_roi_d
         out_video = np.zeros([rfs[0], int(rfs[1]*scale), int(rfs[2]*scale), 3], dtype='uint8')
         cropped_frames = np.zeros((rfs[0], crop_size[0], crop_size[1], 3), dtype='uint8')
         border = (crop_size[1], crop_size[1], crop_size[0], crop_size[0])
-        for i, (raw_frame, output) in enumerate(zip(raw_frames, outputs)):
+        for i, (raw_frame, output, angle, centroid) in enumerate(tqdm.tqdm(zip(raw_frames, outputs, angles, centroids), desc="Postprocessing", leave=False, total=raw_frames.shape[0])):
             im = raw_frame[:,:,None].copy().astype('uint8')
             im = (im-min_height)/(max_height-min_height)
-            im[im < min_height] = min_height
+            im[im < min_height] = 0
             im[im > max_height] = max_height
             im = im * 255
             v = Visualizer(convert_image_to_rgb(im, "L"),
@@ -170,32 +214,26 @@ def infer(model_dir, input_file, frame_trim, chunk_size, chunk_overlap, bg_roi_d
             out = v.draw_instance_predictions(instances)
             out_video[i,:,:,:] = out.get_image()
 
+
+
+
             if len(instances) > 0:
-                try:
-                    keypoints = instances.pred_keypoints[0, :7, :].numpy()
-                    slope, intercept = np.polyfit(keypoints[:, 0], keypoints[:, 1], 1, w=keypoints[:, 2])
-                    front_keypoints = [0, 1, 2, 3]
-                    rear_keypoints = [4, 5, 6]
-                    front_x, front_y = weighted_centroid_points(keypoints[front_keypoints, 0], keypoints[front_keypoints, 1], keypoints[front_keypoints, 2])
-                    rear_x, rear_y = weighted_centroid_points(keypoints[rear_keypoints, 0], keypoints[rear_keypoints, 1], keypoints[rear_keypoints, 2])
-                    if front_x < rear_x:
-                        angle = np.rad2deg(math.atan(slope)) + 180
-                    else:
-                        angle = np.rad2deg(math.atan(slope))
-                except:
-                    angle = 0
+                keypoints = instances.pred_keypoints[0, :, :].numpy()
+                kp_out_data = [str(frame_idxs[i])]
+                for kpi in range(keypoints.shape[0]):
+                    kp_out_data.extend([
+                        "{}".format(keypoints[kpi, 0]),
+                        "{}".format(keypoints[kpi, 1]),
+                        "{}".format(keypoints[kpi, 2])
+                    ])
+                kp_out_file.write("{}\n".format("\t".join(kp_out_data)))
+
                 rot_mat = cv2.getRotationMatrix2D((crop_size[0] // 2, crop_size[1] // 2), angle, 1)
-                box = instances.pred_boxes.tensor.numpy()[0]
-                #xmin = int(np.min(instances.pred_keypoints[0, :7, 0].numpy()))
-                #xmax = int(np.max(instances.pred_keypoints[0, :7, 0].numpy()))
-                #ymin = int(np.min(instances.pred_keypoints[0, :7, 1].numpy()))
-                #ymax = int(np.max(instances.pred_keypoints[0, :7, 1].numpy()))
-                mask = instances.pred_masks[0,...].numpy() * raw_frame
-                y_center, x_center = np.argwhere(mask > 0).sum(0)/np.count_nonzero(mask)
-                xmin = int(x_center - crop_size[1] // 2) + crop_size[1]
-                xmax = int(x_center + crop_size[1] // 2) + crop_size[1]
-                ymin = int(y_center - crop_size[0] // 2) + crop_size[0]
-                ymax = int(y_center + crop_size[0] // 2) + crop_size[0]
+
+                xmin = int(centroid[0] - crop_size[1] // 2) + crop_size[1]
+                xmax = int(centroid[0] + crop_size[1] // 2) + crop_size[1]
+                ymin = int(centroid[1] - crop_size[0] // 2) + crop_size[0]
+                ymax = int(centroid[1] + crop_size[0] // 2) + crop_size[0]
                 #plt.imshow(raw_frame)
                 #plt.scatter(x=[x_center], y=[y_center], marker='*', c='r')
                 #plt.scatter(x=instances.pred_keypoints[0, :, 0], y=instances.pred_keypoints[0, :, 1], c=instances.pred_keypoints[0, :, 2], cmap='inferno', label=MetadataCatalog.get("moseq_train").keypoint_names)
@@ -207,6 +245,10 @@ def infer(model_dir, input_file, frame_trim, chunk_size, chunk_overlap, bg_roi_d
                 cropped_frames[i, :, :, :] = colorize_video(cropped)
             else:
                 tqdm.tqdm.write("WARNING: No instances found for frame #{}".format(frame_idxs[i]))
+                kp_out_data = [str(frame_idxs[i])]
+                for kp in MetadataCatalog.get("moseq_train").keypoint_names:
+                    kp_out_data.extend(['N/A', 'N/A', 'N/A'])
+                kp_out_file.write("{}\n".format("\t".join(kp_out_data)))
 
 
         out_video_combined = overlay_video(out_video, cropped_frames)
@@ -231,7 +273,8 @@ def infer(model_dir, input_file, frame_trim, chunk_size, chunk_overlap, bg_roi_d
 
 @cli.command(name='generate-dataset', help='Generate images from a dataset')
 @click.argument('input_file', nargs=-1, type=click.Path(exists=True))
-@click.option('--num-samples', default=2000, type=int, help='Total number of samples to draw')
+@click.option('--num-samples', default=100, type=int, help='Total number of samples to draw')
+@click.option('--sample-method', default='uniform', type=click.Choice(['random', 'uniform', 'kmeans']), help='Method to sample the data. Random chooses a random sample of frames. Uniform will produce a temporally uniform sample. Kmeans performs clustering on downsampled frames.')
 @click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
 @click.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk. Useful for cable tracking')
 @click.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
@@ -244,12 +287,14 @@ def infer(model_dir, input_file, frame_trim, chunk_size, chunk_overlap, bg_roi_d
 @click.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
 @click.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
 @click.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
-@click.option('--frame-dtype', default='uint8', type=click.Choice(['uint8', 'uint16']), help='Data type for processed frames')
 @click.option('--output-dir', type=click.Path(), help='Output directory to save the results')
 @click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
-def generate_dataset(input_file, num_samples, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
-            bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir, min_height, max_height):
+@click.option('--stream', default=['depth'], multiple=True, type=click.Choice(['depth', 'rgb']), help='Data type for processed frames')
+@click.option('--output-label-studio', is_flag=True, help='Output label-studio files')
+def generate_dataset(input_file, num_samples, sample_method, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
+            bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, output_dir, min_height, max_height, 
+            stream, output_label_studio):
 
     num_samples_per_file = int(np.ceil(num_samples / len(input_file)))
     parameters = deepcopy(locals())
@@ -257,13 +302,17 @@ def generate_dataset(input_file, num_samples, chunk_size, chunk_overlap, bg_roi_
 
     output_dir = ensure_dir(output_dir)
     images_dir = ensure_dir(os.path.join(output_dir, 'images'))
-    info_dir = ensure_dir(os.path.join(images_dir, '.info'))
+    info_dir = ensure_dir(os.path.join(output_dir, '.info'))
+
+    if len(stream) == 0:
+        stream = ['depth']
+    stream = list(set(stream))
 
 
-
+    output_info = []
     for in_file in tqdm.tqdm(input_file, desc='Datasets'):
         #load session
-        print('Processing: {}'.format(in_file))
+        #print('Processing: {}'.format(in_file))
         session = Session(in_file)
 
         session_info_dir = ensure_dir(os.path.join(info_dir, session.session_id))
@@ -282,16 +331,74 @@ def generate_dataset(input_file, num_samples, chunk_size, chunk_overlap, bg_roi_
                 'true_depth': true_depth,
             }, sf, indent='\t')
 
+        if sample_method == 'random':
+            iterator = session.sample(num_samples_per_file, chunk_size=chunk_size, streams=stream)
+        
+        elif sample_method == 'uniform':
+            step = session.nframes // num_samples_per_file
+            iterator = session.index(np.arange(step, session.nframes, step), chunk_size=chunk_size, streams=stream)
 
+        elif sample_method == 'kmeans':
+            kmeans_selected_frames = select_frames_kmeans(session, num_samples_per_file, chunk_size=chunk_size, min_height=min_height, max_height=max_height)
+            iterator = session.index(kmeans_selected_frames, chunk_size=chunk_size, streams=stream)
+        
+        else:
+            raise Error('unknown sample_method "{}"'.format(sample_method))
+
+        session_data = {}
         # Iterate Frames and write images
-        for frame_idxs, raw_frames in tqdm.tqdm(session.sample(num_samples_per_file, chunk_size), desc='Processing batches', leave=False):
-            raw_frames = bground_im - raw_frames
-            raw_frames[raw_frames < min_height] = 0
-            raw_frames[raw_frames > max_height] = max_height
-            raw_frames = apply_roi(raw_frames, roi)
+        for data in tqdm.tqdm(iterator, desc='Processing batches', leave=False):
+            frame_idxs = data[0]
+            
+            for fidx in frame_idxs:
+                session_data[fidx] = {
+                    'data': {
+                        'images': []
+                    },
+                    'meta_info': {
+                        'frame_idx': int(fidx),
+                        'session_id': session.session_id,
+                        'true_depth': true_depth,
+                        **session.load_metadata()
+                    }
+                }
 
-            for idx, rf in zip(frame_idxs, raw_frames):
-                write_image(os.path.join(images_dir, '{}_{}.png'.format(session.session_id, idx)), rf, scale=True, scale_factor=(0, max_height))
+            if 'depth' in stream:
+                raw_frames = data[stream.index('depth')+1]
+                raw_frames = bground_im - raw_frames
+                raw_frames[raw_frames < min_height] = 0
+                raw_frames[raw_frames > max_height] = max_height
+                raw_frames = apply_roi(raw_frames, roi)
+
+                for idx, rf in zip(frame_idxs, raw_frames):
+                    dest = os.path.join(images_dir, '{}_{}_{}.png'.format(session.session_id, 'depth', idx))
+                    write_image(dest, rf, scale=True, scale_factor=(0, max_height))
+                    session_data[idx]['data']['depth_image'] = dest
+                    session_data[idx]['data']['images'].append(dest)
+
+            if 'rgb' in stream:
+                rgb_frames = data[stream.index('rgb')+1]
+                rgb_frames = apply_roi(rgb_frames, roi)
+
+                for idx, rf in zip(frame_idxs, rgb_frames):
+                    dest = os.path.join(images_dir, '{}_{}_{}.png'.format(session.session_id, 'rgb', idx))
+                    write_image(dest, rf, scale=False, dtype='uint8')
+                    session_data[idx]['data']['rgb_image'] = dest
+                    session_data[idx]['data']['images'].append(dest)
+
+        
+        output_info.extend(list(session_data.values()))
+
+    print('Wrote dataset to "{}" '.format(output_dir))
+
+    if output_label_studio:
+        ls_task_dest = os.path.join(output_dir, 'tasks.json')
+        with open(ls_task_dest, 'w') as f:
+            json.dump(output_info, f, indent='\t')
+        print('Wrote label-studio tasks to "{}" '.format(ls_task_dest))
+
+
+
 # end generate_dataset()
 
 if __name__ == '__main__':

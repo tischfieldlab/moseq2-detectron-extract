@@ -1,0 +1,16 @@
+<View style="display: flex;">
+	<!-- <Header value="Select label and start to click on image"/> -->
+	<View style="flex: 90%">
+		<Image name="image" value="$image" width="750px" maxWidth="1000px" zoom="true" zoomControl="true" brightnessControl="true" contrastControl="true" />
+	</View>
+	<View style="flex: 10%; margin-left: 1em">
+		<PolygonLabels name="label" toName="image" strokeWidth="3" pointSize="small" opacity="0.9">
+			<Label value="Mouse" background="red"/>
+		</PolygonLabels>
+	</View>
+	
+	
+	<!--<Polygon name="Mouse" toName="image"
+			fillColor="red" opacity="0.6"
+			strokeColor="red" strokeWidth="1" pointSize="small" pointStyle="circle" />-->
+</View>

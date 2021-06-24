@@ -1,12 +1,13 @@
 import os
 import tarfile
-from moseq2_unet_extract.io.image import read_image, write_image
-from moseq2_unet_extract.io.util import (gen_batch_sequence, load_metadata,
+from moseq2_detectron_extract.io.image import read_image, write_image
+from moseq2_detectron_extract.io.util import (gen_batch_sequence, load_metadata,
                                          load_timestamps)
-from moseq2_unet_extract.io.video import get_movie_info, load_movie_data
-from moseq2_unet_extract.proc.util import (apply_roi, get_bground_im_file,
+from moseq2_detectron_extract.io.video import get_movie_info, load_movie_data
+from moseq2_detectron_extract.io.proc import (apply_roi, get_bground_im_file,
                                            get_roi, select_strel)
 import numpy as np
+import tqdm
 
 class Session(object):
 
@@ -19,32 +20,35 @@ class Session(object):
         self.dirname = os.path.dirname(input_file)
 
         if input_file.endswith('.tar.gz') or input_file.endswith('.tgz'):
-            print('Scanning tarball {} (this will take a minute)'.format(input_file))
-            #compute NEW psuedo-dirname now, `input_file` gets overwritten below with depth.dat tarinfo...
-            self.dirname = os.path.join(self.dirname, os.path.basename(input_file).replace('.tar.gz', '').replace('.tgz', ''))
+            with tqdm.tqdm(total=1, leave=False, desc='Scanning tarball {} (this will take a minute)'.format(input_file)) as pbar:
+                #compute NEW psuedo-dirname now, `input_file` gets overwritten below with depth.dat tarinfo...
+                self.dirname = os.path.join(self.dirname, os.path.basename(input_file).replace('.tar.gz', '').replace('.tgz', ''))
 
-            self.tar = tarfile.open(input_file, 'r:gz')
-            self.tar_members = self.tar.getmembers()
-            self.tar_names = [_.name for _ in self.tar_members]
-            self.input_file = self.tar_members[self.tar_names.index('depth.dat')]
-            self.rgb_file = self.tar_members[self.tar_names.index('rgb.mp4')]
-            self.session_id = os.path.basename(input_file).split('.')[0]
+                self.tar = tarfile.open(input_file, 'r:gz')
+                self.tar_members = self.tar.getmembers()
+                self.tar_names = [_.name for _ in self.tar_members]
+                self.depth_file = self.tar_members[self.tar_names.index('depth.dat')]
+                self.rgb_file = self.tar_members[self.tar_names.index('rgb.mp4')]
+                self.session_id = os.path.basename(input_file).split('.')[0]
+                pbar.update(1)
         else:
             self.tar = None
             self.tar_members = None
-            self.input_file = input_file
+            self.depth_file = input_file
             self.rgb_file = os.path.join(self.dirname, 'rgb.mp4')
-            self.session_id = os.path.basename(os.path.dirname(input_file))
+            self.session_id = os.path.basename(self.dirname)
 
-        self.video_metadata = get_movie_info(self.input_file)
+        self.depth_metadata = get_movie_info(self.depth_file, tar_object=self.tar)
+        self.rgb_metadata = get_movie_info(self.rgb_file, tar_object=self.tar)
     #end init_session()
 
-    # def prep_directory_structure(self):
-    #     pass
-    # #end prep_directory_structure()
+    @property
+    def is_compressed(self):
+        return self.tar is not None
 
     def trim_frames(self, frame_trim):
-        self.nframes = self.video_metadata['nframes']
+        self.frame_trim = frame_trim
+        self.nframes = self.depth_metadata['nframes']
 
         if frame_trim[0] > 0 and frame_trim[0] < self.nframes:
             self.first_frame_idx = frame_trim[0]
@@ -96,20 +100,22 @@ class Session(object):
 
     def find_roi(self, bg_roi_dilate=(10,10), bg_roi_shape='ellipse', bg_roi_index=0, bg_roi_weights=(1, .1, 1),
                  bg_roi_depth_range=(650, 750), bg_roi_gradient_filter=False, bg_roi_gradient_threshold=3000,
-                 bg_roi_gradient_kernel=7, bg_roi_fill_holes=True, use_plane_bground=False, cache_dir=None):
+                 bg_roi_gradient_kernel=7, bg_roi_fill_holes=True, use_plane_bground=False, verbose=False, cache_dir=None):
 
         if cache_dir and os.path.exists(os.path.join(cache_dir, 'bground.tiff')):
-            print('Loading background...')
+            if verbose:
+                print('Loading background...')
             bground_im = read_image(os.path.join(cache_dir, 'bground.tiff'), scale=True)
         else:
-            print('Getting background...')
-            bground_im = get_bground_im_file(self.input_file, tar_object=self.tar)
+            if verbose:
+                print('Getting background...')
+            bground_im = get_bground_im_file(self.depth_file, tar_object=self.tar)
 
             if cache_dir and not use_plane_bground:
                 write_image(os.path.join(cache_dir, 'bground.tiff'), bground_im, scale=True)
 
         if cache_dir:
-            first_frame = load_movie_data(self.input_file, 0, tar_object=self.tar)
+            first_frame = load_movie_data(self.depth_file, 0, tar_object=self.tar)
             write_image(os.path.join(cache_dir, 'first_frame.tiff'), first_frame[0], scale=True, scale_factor=bg_roi_depth_range)
 
         strel_dilate = select_strel(bg_roi_shape, bg_roi_dilate)
@@ -117,10 +123,12 @@ class Session(object):
         roi_filename = 'roi_{:02d}.tiff'.format(bg_roi_index)
 
         if cache_dir and os.path.exists(os.path.join(cache_dir, roi_filename)):
-            print('Loading ROI...')
+            if verbose:
+                print('Loading ROI...')
             roi = read_image(os.path.join(cache_dir, roi_filename), scale=True) > 0
         else:
-            print('Getting roi...')
+            if verbose:
+                print('Getting roi...')
             rois, plane, _, _, _, _ = get_roi(bground_im,
                                             strel_dilate=strel_dilate,
                                             weights=bg_roi_weights,
@@ -128,10 +136,12 @@ class Session(object):
                                             gradient_filter=bg_roi_gradient_filter,
                                             gradient_threshold=bg_roi_gradient_threshold,
                                             gradient_kernel=bg_roi_gradient_kernel,
-                                            fill_holes=bg_roi_fill_holes)
+                                            fill_holes=bg_roi_fill_holes,
+                                            progress_bar=verbose)
 
             if use_plane_bground:
-                print('Using plane fit for background...')
+                if verbose:
+                    print('Using plane fit for background...')
                 xx, yy = np.meshgrid(np.arange(bground_im.shape[1]), np.arange(bground_im.shape[0]))
                 coords = np.vstack((xx.ravel(), yy.ravel()))
                 plane_im = (np.dot(coords.T, plane[:2]) + plane[3]) / -plane[2]
@@ -145,32 +155,54 @@ class Session(object):
                 write_image(os.path.join(cache_dir, roi_filename), roi, scale=True, dtype='uint8')
 
         true_depth = np.median(bground_im[roi > 0])
-        print('Detected true depth: {}'.format(true_depth))
+        if verbose:
+            print('Detected true depth: {}'.format(true_depth))
 
         return bground_im, roi, true_depth
     #end find_roi()
 
-    def iterate(self, chunk_size=1000, chunk_overlap=0):
-        return SessionFramesIterator(self, chunk_size, chunk_overlap)
+    def iterate(self, chunk_size=1000, chunk_overlap=0, streams=('depth',)):
+        return SessionFramesIterator(self, chunk_size, chunk_overlap, streams)
 
-    def sample(self, num_samples, chunk_size=1000):
-        return SessionFramesSampler(self, num_samples, chunk_size=chunk_size, chunk_overlap=0)
+    def sample(self, num_samples, chunk_size=1000, streams=('depth',)):
+        return SessionFramesSampler(self, num_samples, chunk_size=chunk_size, chunk_overlap=0, streams=streams)
 
-    def index(self, frame_idxs, chunk_size=1000):
-        return SessionFramesIndexer(self, frame_idxs, chunk_size=chunk_size, chunk_overlap=0)
+    def index(self, frame_idxs, chunk_size=1000, streams=('depth',)):
+        return SessionFramesIndexer(self, frame_idxs, chunk_size=chunk_size, chunk_overlap=0, streams=streams)
 
+    def __str__(self) -> str:
+        return "{} ({} frames, [{}:{}])".format(self.depth_file, self.nframes, self.first_frame_idx, self.last_frame_idx)
+
+    def __repr__(self) -> str:
+        return '{}("{}", frame_trim=({}, {}))'.format(self.__class__.__name__, self.depth_file, *self.frame_trim)
 #end class Session
 
 
 class SessionFramesIterator(object):
-    def __init__(self, session, chunk_size, chunk_overlap):
+    def __init__(self, session, chunk_size, chunk_overlap, streams):
+        ''' Iterator that iterates over Session frames
+
+        Parameters:
+            session (Session): Session over which this iterator should iterate
+            chunk_size (int): each iteration should produce `chunk_size` frames
+            chunk_overlap (int): iterations should overlap but this number of frames
+
+        '''
         self.session = session
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.batches = list(self.generate_samples())
         self.current = 0
+        self.streams = list(set(streams))
 
     def generate_samples(self):
+        ''' Generate the sequence of batches of frames indicies
+
+            Default is to linear read. Override this if you want to change behaviour
+
+            Returns
+            list<(range|list<int>)>
+        '''
         return gen_batch_sequence(self.session.nframes, self.chunk_size, self.chunk_overlap, self.session.first_frame_idx)
 
     def __len__(self):
@@ -187,15 +219,22 @@ class SessionFramesIterator(object):
         self.current += 1
 
         frame_idxs = list(frame_range)
-        raw_frames = load_movie_data(self.session.input_file, frame_idxs, tar_object=self.session.tar)
 
-        return frame_idxs, raw_frames
+        out_data = [frame_idxs]
+
+        for stream in self.streams:
+            if stream == 'depth':
+                out_data.append(load_movie_data(self.session.depth_file, frame_idxs, tar_object=self.session.tar))
+            elif stream == 'rgb':
+                out_data.append(load_movie_data(self.session.rgb_file, frame_idxs, pixel_format='rgb24', tar_object=self.session.tar))
+
+        return tuple(out_data)
 
 
 class SessionFramesSampler(SessionFramesIterator):
-    def __init__(self, session, num_samples, chunk_size, chunk_overlap):
+    def __init__(self, session, num_samples, chunk_size, chunk_overlap, streams):
         self.num_samples = int(num_samples)
-        super().__init__(session, chunk_size, chunk_overlap)
+        super().__init__(session, chunk_size, chunk_overlap, streams)
 
     def generate_samples(self):
         """Generate a sequence with overlap
@@ -207,9 +246,9 @@ class SessionFramesSampler(SessionFramesIterator):
             yield seq[i:i+self.chunk_size]
 
 class SessionFramesIndexer(SessionFramesIterator):
-    def __init__(self, session, frame_idxs, chunk_size, chunk_overlap):
+    def __init__(self, session, frame_idxs, chunk_size, chunk_overlap, streams):
         self.frame_idxs = frame_idxs
-        super().__init__(session, chunk_size, chunk_overlap)
+        super().__init__(session, chunk_size, chunk_overlap, streams)
 
     def generate_samples(self):
         """Generate a sequence with overlap

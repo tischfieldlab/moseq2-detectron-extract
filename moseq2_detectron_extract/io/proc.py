@@ -1,4 +1,5 @@
-from moseq2_unet_extract.io.video import get_raw_info, get_video_info, read_frames_raw, read_frames
+import math
+from moseq2_detectron_extract.io.video import get_raw_info, get_video_info, read_frames_raw, read_frames
 import numpy as np
 import cv2
 import scipy
@@ -305,11 +306,12 @@ def apply_roi(frames, roi):
     Apply ROI to data, consider adding constraints (e.g. mod32==0)
     """
     # yeah so fancy indexing slows us down by 3-5x
-    cropped_frames = frames*roi
+    if len(frames.shape) == 3: # (N, W, H)
+        frames = frames*roi
+    
     bbox = get_bbox(roi)
-    # cropped_frames[:,roi==0]=0
-    cropped_frames = cropped_frames[:, bbox[0, 0]:bbox[1, 0], bbox[0, 1]:bbox[1, 1]]
-    return cropped_frames
+    return frames[:, bbox[0, 0]:bbox[1, 0], bbox[0, 1]:bbox[1, 1]]
+
 
 
 def get_frame_features(frames, frame_threshold=10, mask=np.array([]),
@@ -425,11 +427,11 @@ def feature_hampel_filter(features, centroid_hampel_span=None, centroid_hampel_s
             fill_idx = np.where(vals > med + centroid_hampel_sig * mad)[0]
             features['centroid'][fill_idx, i] = med[fill_idx]
 
+
+    if angle_hampel_span is not None and angle_hampel_span > 0:
         padded_orientation = np.pad(features['orientation'],
                                     (angle_hampel_span // 2, angle_hampel_span // 2),
                                     'constant', constant_values = np.nan)
-
-    if angle_hampel_span is not None and angle_hampel_span > 0:
         vws = strided_app(padded_orientation, angle_hampel_span, 1)
         med = np.nanmedian(vws, axis=1)
         mad = np.nanmedian(np.abs(vws - med[:, None]), axis=1)
@@ -438,6 +440,48 @@ def feature_hampel_filter(features, centroid_hampel_span=None, centroid_hampel_s
         features['orientation'][fill_idx] = med[fill_idx]
 
     return features
+
+def hampel_filter(data, span, sigma=3):
+    if len(data.shape) == 1:
+        padded_data = np.pad(data, (span // 2, span // 2), 'constant', constant_values=np.nan)
+        vws = broadcasting_app(padded_data, span, 1)
+        med = np.nanmedian(vws, axis=1)
+        mad = np.nanmedian(np.abs(vws - med[:, None]), axis=1)
+        vals = np.abs(data - med)
+        fill_idx = np.where(vals > med + sigma * mad)[0]
+        data[fill_idx] = med[fill_idx]
+
+    elif len(data.shape) == 2:
+        padded_data = np.pad(data, ((span // 2, span // 2), (0,)*data.shape[1]), 'constant', constant_values=np.nan)
+        for i in range(data.shape[1]):
+            vws = strided_app(padded_data[:, i], span, 1)
+            med = np.nanmedian(vws, axis=1)
+            mad = np.nanmedian(np.abs(vws - med[:, None]), axis=1)
+            vals = np.abs(data[:, i] - med)
+            fill_idx = np.where(vals > med + sigma * mad)[0]
+            data[fill_idx, i] = med[fill_idx]
+    else:
+        raise ValueError("cannot accept data with {} dimentions!".format(len(data.shape)))
+
+    return data
+
+def hampel_filter_forloop(input_series, window_size, n_sigmas=3):
+    # https://towardsdatascience.com/outlier-detection-with-hampel-filter-85ddf523c73d
+    n = len(input_series)
+    new_series = input_series.copy()
+    k = 1.4826 # scale factor for Gaussian distribution
+    
+    indices = []
+    
+    # possibly use np.nanmedian 
+    for i in range((window_size),(n - window_size)):
+        x0 = np.nanmedian(input_series[(i - window_size):(i + window_size)])
+        S0 = k * np.nanmedian(np.abs(input_series[(i - window_size):(i + window_size)] - x0))
+        if (np.abs(input_series[i] - x0) > n_sigmas * S0):
+            new_series[i] = x0
+            indices.append(i)
+    
+    return new_series, indices
 
 def clean_frames(frames, prefilter_space=(3,), prefilter_time=None,
                  strel_tail=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)),
@@ -539,3 +583,54 @@ def strided_app(a, L, S):  # Window len = L, Stride len/stepsize = S
     nrows = ((a.size-L)//S)+1
     n = a.strides[0]
     return np.lib.stride_tricks.as_strided(a, shape=(nrows, L), strides=(S*n, n))
+
+def broadcasting_app(a, L, S ):  # Window len = L, Stride len/stepsize = S
+    nrows = ((a.size-L)//S)+1
+    return a[S*np.arange(nrows)[:,None] + np.arange(L)]
+
+def weighted_centroid_points(xs, ys, ws):
+    x = np.sum(xs * ws) / np.sum(ws)
+    y = np.sum(ys * ws) / np.sum(ws)
+    return (x, y)
+
+def instances_to_features(model_outputs, raw_frames):
+    angles = []
+    centroids = []
+    for i, output in enumerate(model_outputs):
+        instances = output["instances"].to("cpu")
+        if len(instances) > 0:
+
+            # extract centroid
+            mask = instances.pred_masks[0,...].numpy() * raw_frames[i,...]
+            y_center, x_center = np.argwhere(mask > 0).sum(0)/np.count_nonzero(mask)
+            centroids.append((x_center, y_center))
+
+
+
+            try:
+                keypoints = instances.pred_keypoints[0, :7, :].numpy()
+                slope, _ = np.polyfit(keypoints[:, 0], keypoints[:, 1], 1, w=keypoints[:, 2])
+                front_keypoints = [0, 1, 2, 3]
+                rear_keypoints = [4, 5, 6]
+                front_x, front_y = weighted_centroid_points(keypoints[front_keypoints, 0], keypoints[front_keypoints, 1], keypoints[front_keypoints, 2])
+                rear_x, rear_y = weighted_centroid_points(keypoints[rear_keypoints, 0], keypoints[rear_keypoints, 1], keypoints[rear_keypoints, 2])
+                coords = np.array([[x_center, front_x, rear_x], [y_center, front_y, rear_y]])
+                coords_order = np.argsort(coords[0])
+                slope2, _ = np.polyfit(coords[0, coords_order], coords[1, coords_order], 1)
+                if front_x < rear_x:
+                    angle = np.rad2deg(math.atan(slope)) + 180
+                    angle2 = np.rad2deg(math.atan(slope2)) + 180
+                else:
+                    angle = np.rad2deg(math.atan(slope))
+                    angle2 = np.rad2deg(math.atan(slope2))
+            except:
+                angle = 0
+                angle2 = 0
+            
+            angles.append(angle2)
+
+            tqdm.tqdm.write("{}\t{}".format(angle, angle2))
+        else:
+            angles.append(0)
+            centroids.append((0,0))
+    return np.array(angles), np.array(centroids)
