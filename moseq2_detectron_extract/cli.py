@@ -21,11 +21,11 @@ from moseq2_detectron_extract.io.annot import (
     read_annotations, register_dataset_metadata, register_datasets,
     show_dataset_info)
 from moseq2_detectron_extract.io.image import write_image
-from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video,
+from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video, get_frame_features,
                                               hampel_filter,
                                               hampel_filter_forloop,
                                               instances_to_features,
-                                              overlay_video)
+                                              overlay_video, rotate_points)
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import ensure_dir, get_last_checkpoint
 from moseq2_detectron_extract.io.video import write_frames_preview
@@ -141,6 +141,7 @@ def train(annot_file, model_dir, replace_data_path, resume, auto_cd):
 def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
           bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir,
           min_height, max_height, fps, crop_size, profile):
+    print("") # Empty line to give some breething room
 
     if profile:
         enable_profiling()
@@ -211,8 +212,9 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
         for i in tqdm.tqdm(range(0, raw_frames.shape[0], batch_size), desc="Inferring", leave=False):
             outputs.extend(predictor(raw_frames[i:i+batch_size,:,:,None]))
 
-        angles, centroids = instances_to_features(outputs, raw_frames)
-        angles = hampel_filter(angles, 7, 3)
+        
+        angles, centroids, masks = instances_to_features(outputs, raw_frames)
+        #angles = hampel_filter(angles, 7, 3)
         # centroids = hampel_filter_forloop(centroids, 50, 3)[0]
 
 
@@ -251,6 +253,9 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
                     ])
                 kp_out_file.write("{}\n".format("\t".join(kp_out_data)))
 
+                
+
+
                 rot_mat = cv2.getRotationMatrix2D((crop_size[0] // 2, crop_size[1] // 2), angle, 1)
 
                 xmin = int(centroid[0] - crop_size[1] // 2) + crop_size[1]
@@ -264,7 +269,11 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
                 #plt.show()
                 use_frame = cv2.copyMakeBorder(raw_frame, *border, cv2.BORDER_CONSTANT, 0)
                 cropped = cv2.warpAffine(use_frame[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
+
+                use_mask = cv2.copyMakeBorder(masks[i], *border, cv2.BORDER_CONSTANT, 0)
+                cropped_mask = cv2.warpAffine(use_mask[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
                 #cropped = cv2.warpAffine(raw_frame[int(box[1]):int(box[3]), int(box[0]):int(box[2])], rot_mat, (crop_size[0], crop_size[1]))
+                #cropped = cropped * cropped_mask # mask the cropped image
                 cropped_frames[i, :, :, :] = colorize_video(cropped)
             else:
                 tqdm.tqdm.write("WARNING: No instances found for frame #{}".format(frame_idxs[i]))

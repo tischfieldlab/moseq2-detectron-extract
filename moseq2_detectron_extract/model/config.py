@@ -62,9 +62,9 @@ def get_base_config():
 
     cfg.SOLVER.IMS_PER_BATCH = 8
     cfg.SOLVER.BASE_LR = 0.0025  # pick a good LR
-    cfg.SOLVER.CHECKPOINT_PERIOD = 100
-    cfg.SOLVER.MAX_ITER = 15000    # 300 iterations seems good enough for this toy dataset; you will need to train longer for a practical dataset
-    cfg.SOLVER.STEPS = (3000, 9000, 12000)        # do not decay learning rate
+    cfg.SOLVER.CHECKPOINT_PERIOD = 5000
+    cfg.SOLVER.MAX_ITER = 50000    # 300 iterations seems good enough for this toy dataset; you will need to train longer for a practical dataset
+    cfg.SOLVER.STEPS = (20000, 30000, 40000)        # do not decay learning rate
     cfg.SOLVER.GAMMA = 0.05
 
 

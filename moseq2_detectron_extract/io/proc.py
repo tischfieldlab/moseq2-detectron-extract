@@ -6,6 +6,7 @@ import scipy
 import skimage
 import tqdm
 import matplotlib.pyplot as plt
+from scipy import stats
 
 
 def overlay_video(video1, video2):
@@ -375,6 +376,8 @@ def get_frame_features(frames, frame_threshold=10, mask=np.array([]),
     return features, mask
 
 
+
+
 def crop_and_rotate_frames(frames, features, crop_size=(80, 80),
                            progress_bar=True):
 
@@ -593,7 +596,52 @@ def weighted_centroid_points(xs, ys, ws):
     y = np.sum(ys * ws) / np.sum(ws)
     return (x, y)
 
+def weighted_centroid_points2(points):
+    x = np.sum(points[:, 0] * points[:, 2]) / np.sum(points[:, 2])
+    y = np.sum(points[:, 1] * points[:, 2]) / np.sum(points[:, 2])
+    return (x, y)
+
+def sort_keypoints(keypoints, axis=0):
+    ''' Sorts a keypoints array (N kyepoints x 2 [x, y, possibly score]) by x-position
+    '''
+    return keypoints[:, np.argsort(keypoints[axis])]
+
+def rotate_points(points, origin=(0, 0), degrees=0):
+    if points.shape[1] == 3:
+        weights = points[:, 2]
+        points = points[:, :2]
+    else:
+        weights = None
+    
+    angle = np.deg2rad(-degrees)
+    R = np.array([[np.cos(angle), -np.sin(angle)],
+                  [np.sin(angle),  np.cos(angle)]])
+    o = np.atleast_2d(origin)
+    p = np.atleast_2d(points)
+    rotated = np.squeeze((R @ (p.T-o.T) + o.T).T)
+
+    if weights is not None:
+        rotated = np.append(rotated, weights[..., None], 1)
+    return rotated
+
+
 def instances_to_features(model_outputs, raw_frames):
+    front_keypoints = [0, 1, 2, 3]
+    rear_keypoints = [4, 5, 6]
+    all_keypoints = sorted(list(set(front_keypoints + rear_keypoints)))
+
+    cleaned_frames = clean_frames(raw_frames, progress_bar=False, iters_tail=1)
+    features, masks = get_frame_features(cleaned_frames, progress_bar=False)
+    #plt.imshow(masks[0])
+    #plt.scatter(x=features['centroid'][0, 0], y=features['centroid'][0, 1])
+    #plt.show()
+    centroids_from_features = features['centroid']
+    angles_from_features = features['orientation']
+    incl = ~np.isnan(angles_from_features)
+    angles_from_features[incl] = np.unwrap(angles_from_features[incl] * 2) / 2
+    angles_from_features = -np.rad2deg(angles_from_features)
+
+
     angles = []
     centroids = []
     for i, output in enumerate(model_outputs):
@@ -602,35 +650,82 @@ def instances_to_features(model_outputs, raw_frames):
 
             # extract centroid
             mask = instances.pred_masks[0,...].numpy() * raw_frames[i,...]
-            y_center, x_center = np.argwhere(mask > 0).sum(0)/np.count_nonzero(mask)
-            centroids.append((x_center, y_center))
-
+            weighted_mask = mask * raw_frames[i,...]
+            y_center, x_center = np.argwhere(weighted_mask > 0).sum(0)/np.count_nonzero(mask)
+            
 
 
             try:
-                keypoints = instances.pred_keypoints[0, :7, :].numpy()
-                slope, _ = np.polyfit(keypoints[:, 0], keypoints[:, 1], 1, w=keypoints[:, 2])
-                front_keypoints = [0, 1, 2, 3]
-                rear_keypoints = [4, 5, 6]
-                front_x, front_y = weighted_centroid_points(keypoints[front_keypoints, 0], keypoints[front_keypoints, 1], keypoints[front_keypoints, 2])
-                rear_x, rear_y = weighted_centroid_points(keypoints[rear_keypoints, 0], keypoints[rear_keypoints, 1], keypoints[rear_keypoints, 2])
-                coords = np.array([[x_center, front_x, rear_x], [y_center, front_y, rear_y]])
-                coords_order = np.argsort(coords[0])
-                slope2, _ = np.polyfit(coords[0, coords_order], coords[1, coords_order], 1)
-                if front_x < rear_x:
-                    angle = np.rad2deg(math.atan(slope)) + 180
-                    angle2 = np.rad2deg(math.atan(slope2)) + 180
-                else:
-                    angle = np.rad2deg(math.atan(slope))
-                    angle2 = np.rad2deg(math.atan(slope2))
+                keypoints = instances.pred_keypoints[0, all_keypoints, :].numpy()
+
+                # Approach 1:
+                #  - Fit a score-weighted 1d poly to all keypoints
+                #  - Compute angle from slope
+                # coords = sort_keypoints(keypoints)
+                # slope, _ = np.polyfit(coords[:, 0], coords[:, 1], 1, w=coords[:, 2])
+                # angle = np.rad2deg(math.atan(slope))
+                
+                # Approach 2:
+                #  - Find score-weighted centroids of front and rear keypoints
+                #  - Fit 1d poly to front and rear centroids
+                #  - Compute angle from slope
+                # front_pos = weighted_centroid_points2(keypoints[front_keypoints])
+                # rear_pos = weighted_centroid_points2(keypoints[rear_keypoints])
+                # coords = sort_keypoints(np.array([front_pos, rear_pos]))
+                # slope, _ = np.polyfit(coords[:, 0], coords[:, 1], 1)
+                # angle = np.rad2deg(math.atan(slope))
+
+
+                # Approach 3:
+                #  - Find score-weighted centroids of front and rear keypoints
+                #  - Fit 1d poly to front, rear centroids, PLUS the whole animal centroid
+                #  - Compute angle from slope
+                # front_pos = weighted_centroid_points2(keypoints[front_keypoints])
+                # rear_pos = weighted_centroid_points2(keypoints[rear_keypoints])
+                # coords = sort_keypoints(np.array([front_pos, rear_pos, [x_center, y_center]]))
+                # slope, _ = np.polyfit(coords[:, 0], coords[:, 1], 1)
+                # angle = np.rad2deg(math.atan(slope))
+
+                # Approach 4:
+                #  - Use image coutours and moment features to determine angle and centroid
+                angle = angles_from_features[i]
+                x_center, y_center = centroids_from_features[i]
+
+
+                # Sanity check our computed angle using the rotated keypoint coordinates
+                rotated_keypoints = rotate_points(keypoints[:], origin=[x_center, y_center], degrees=angle)
+                rot_keypoint_scores = np.zeros((rotated_keypoints.shape[0],))
+                for kpi in range(rotated_keypoints.shape[0]):
+                    if rotated_keypoints[kpi, 0] < x_center:
+                        rot_keypoint_scores[kpi] = -1
+                    else:
+                        rot_keypoint_scores[kpi] = 1
+                front_votes = stats.mode(rot_keypoint_scores[front_keypoints])
+                rear_votes = stats.mode(rot_keypoint_scores[rear_keypoints])
+                #front_votes = np.median(rot_keypoint_scores[front_keypoints] * rotated_keypoints[front_keypoints, 2])
+                #rear_votes = np.median(rot_keypoint_scores[rear_keypoints] * rotated_keypoints[rear_keypoints, 2])
+                #rot_front_pos = weighted_centroid_points2(rotated_keypoints[front_keypoints])
+                #rot_rear_pos = weighted_centroid_points2(rotated_keypoints[rear_keypoints])
+
+                if front_votes < rear_votes:#rot_front_pos[0] < rot_rear_pos[0]:
+                    # We need to flip the angle
+                    angle = angle + 180
+                    #tqdm.tqdm.write("Fixed angle {} in frame {}".format(angle, i))
+                
+
+                # norm angle to be positive between 0-360
+                #angle = angle % 360
+                #if angle < 0:
+                #    angle += 360
+                
             except:
                 angle = 0
-                angle2 = 0
             
-            angles.append(angle2)
+            angles.append(angle)
+            centroids.append((x_center, y_center))
 
-            tqdm.tqdm.write("{}\t{}".format(angle, angle2))
+            # tqdm.tqdm.write("{}\t{}".format(angle, angle2))
         else:
             angles.append(0)
             centroids.append((0,0))
-    return np.array(angles), np.array(centroids)
+    return np.array(angles), np.array(centroids), masks
