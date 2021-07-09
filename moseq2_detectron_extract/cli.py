@@ -16,6 +16,7 @@ import tqdm
 from detectron2.data.catalog import MetadataCatalog
 from detectron2.data.detection_utils import convert_image_to_rgb
 from detectron2.utils.visualizer import ColorMode, Visualizer
+from detectron2.utils.env import seed_all_rng
 
 from moseq2_detectron_extract.io.annot import (
     augment_annotations_with_rotation, default_keypoint_names,
@@ -68,8 +69,8 @@ def cli():
 @cli.command(name='train', help='run training')
 @click.argument('annot_file', nargs=1, type=click.Path(exists=True))
 @click.argument('model_dir', nargs=1, type=click.Path(exists=False))
-@click.option('--config', default=None, type=click.Path(), help="Model configuration to override base configuration")
-@click.option('--replace-data-path', default=(None, None), type=(str, str), help="Replace data path")
+@click.option('--config', default=None, type=click.Path(), help="Model configuration to override base configuration, in yaml format.")
+@click.option('--replace-data-path', default=(None, None), type=(str, str), help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
 @click.option('--resume', is_flag=True, help='Resume training from a previous checkpoint')
 @click.option('--auto-cd', is_flag=True, help='treat model_dir as a base directory and create a child dir for this specific run')
 @click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
@@ -104,6 +105,7 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
         print("Model output: {}".format(cfg.OUTPUT_DIR))
 
     ensure_dir(cfg.OUTPUT_DIR)
+    seed_all_rng(None if cfg.SEED < 0 else cfg.SEED) # Seed the random number generators
 
     intensity_scale = (max_height/255)
 
