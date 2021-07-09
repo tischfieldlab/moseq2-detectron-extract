@@ -3,6 +3,7 @@ import cProfile
 import datetime
 import json
 import math
+import sys
 import os
 from copy import Error, deepcopy
 from pstats import Stats
@@ -67,16 +68,27 @@ def cli():
 @cli.command(name='train', help='run training')
 @click.argument('annot_file', nargs=1, type=click.Path(exists=True))
 @click.argument('model_dir', nargs=1, type=click.Path(exists=False))
+@click.option('--config', default=None, type=click.Path(), help="Model configuration to override base configuration")
 @click.option('--replace-data-path', default=(None, None), type=(str, str), help="Replace data path")
 @click.option('--resume', is_flag=True, help='Resume training from a previous checkpoint')
 @click.option('--auto-cd', is_flag=True, help='treat model_dir as a base directory and create a child dir for this specific run')
-def train(annot_file, model_dir, replace_data_path, resume, auto_cd):
+@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
+@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
+def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min_height, max_height):
     print()
     if resume:
         print("Resuming Model Training from: {}".format(model_dir))
         cfg = load_config(os.path.join(model_dir, "config.yaml"))
+
+        if config is not None:
+            print("WARNING: Ignoring --config because you opted to resume training from a previous checkpoint!")
     else:
         cfg = get_base_config()
+
+        if config is not None:
+            print("Attempting to load your extra --config and merge with the base configuration")
+            cfg.merge_from_file(config)
+        
         if auto_cd:
             cfg.OUTPUT_DIR = os.path.join(model_dir, datetime.datetime.now().strftime("%Y-%m-%dT%H-%M_%S"))
         else:
@@ -85,7 +97,7 @@ def train(annot_file, model_dir, replace_data_path, resume, auto_cd):
         if os.path.exists(os.path.join(cfg.OUTPUT_DIR, "config.yaml")):
             print("Hmmm... it looks like there is already a model located here.... ({})".format(cfg.OUTPUT_DIR))
             print("If you wish to resume training, please use the --resume flag")
-            print("Otherwise please change the `model_dir` argument to another location.")
+            print("Otherwise please change the `model_dir` argument to another location, or utilize the --auto-cd option")
             print("Exiting...")
             return
         
@@ -93,8 +105,10 @@ def train(annot_file, model_dir, replace_data_path, resume, auto_cd):
 
     ensure_dir(cfg.OUTPUT_DIR)
 
+    intensity_scale = (max_height/255)
 
-    annotations = read_annotations(annot_file, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, replace_path=replace_data_path)
+
+    annotations = read_annotations(annot_file, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, replace_path=replace_data_path, rescale=intensity_scale)
     annotations = augment_annotations_with_rotation(annotations)
     print('Dataset information:')
     show_dataset_info(annotations)
@@ -204,17 +218,20 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
         raw_frames = bground_im - raw_frames
         raw_frames[raw_frames < min_height] = 0
         raw_frames[raw_frames > max_height] = max_height
+        #raw_frames = (raw_frames / max_height) * 255 # rescale to use full gammitt
         raw_frames = raw_frames.astype(frame_dtype)
         raw_frames = apply_roi(raw_frames, roi)
+
+        
 
         # Do the inference
         outputs = []
         for i in tqdm.tqdm(range(0, raw_frames.shape[0], batch_size), desc="Inferring", leave=False):
-            outputs.extend(predictor(raw_frames[i:i+batch_size,:,:,None]))
+            outputs.extend(predictor((raw_frames[i:i+batch_size,:,:,None] / max_height) * 255)) # rescale to use full gammitt
 
         
         angles, centroids, masks = instances_to_features(outputs, raw_frames)
-        #angles = hampel_filter(angles, 7, 3)
+        angles = hampel_filter(angles, 7, 3)
         # centroids = hampel_filter_forloop(centroids, 50, 3)[0]
 
 

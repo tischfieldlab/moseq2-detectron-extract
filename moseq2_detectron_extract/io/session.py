@@ -1,5 +1,7 @@
+from enum import Enum
 import os
 import tarfile
+from typing import Iterable, Sequence, Tuple, Union
 from moseq2_detectron_extract.io.image import read_image, write_image
 from moseq2_detectron_extract.io.util import (gen_batch_sequence, load_metadata,
                                          load_timestamps)
@@ -9,14 +11,19 @@ from moseq2_detectron_extract.io.proc import (apply_roi, get_bground_im_file,
 import numpy as np
 import tqdm
 
+class Stream(Enum):
+    Depth = 'depth'
+    RGB = 'rgb'
+
+
 class Session(object):
 
-    def __init__(self, path, frame_trim=(0, 0)):
-        self.init_session(path)
-        self.trim_frames(frame_trim)
+    def __init__(self, path: str, frame_trim: Tuple[int, int]=(0, 0)):
+        self.__init_session(path)
+        self.__trim_frames(frame_trim)
 
 
-    def init_session(self, input_file):
+    def __init_session(self, input_file: str):
         self.dirname = os.path.dirname(input_file)
 
         if input_file.endswith('.tar.gz') or input_file.endswith('.tgz'):
@@ -42,11 +49,7 @@ class Session(object):
         self.rgb_metadata = get_movie_info(self.rgb_file, tar_object=self.tar)
     #end init_session()
 
-    @property
-    def is_compressed(self):
-        return self.tar is not None
-
-    def trim_frames(self, frame_trim):
+    def __trim_frames(self, frame_trim: Tuple[int, int]):
         self.frame_trim = frame_trim
         self.nframes = self.depth_metadata['nframes']
 
@@ -62,6 +65,10 @@ class Session(object):
 
         self.nframes = self.last_frame_idx - self.first_frame_idx
     #end trim_frames()
+
+    @property
+    def is_compressed(self):
+        return self.tar is not None
 
     def load_metadata(self):
         if self.tar is not None:
@@ -98,9 +105,9 @@ class Session(object):
     #end load_timestamps()
 
 
-    def find_roi(self, bg_roi_dilate=(10,10), bg_roi_shape='ellipse', bg_roi_index=0, bg_roi_weights=(1, .1, 1),
-                 bg_roi_depth_range=(650, 750), bg_roi_gradient_filter=False, bg_roi_gradient_threshold=3000,
-                 bg_roi_gradient_kernel=7, bg_roi_fill_holes=True, use_plane_bground=False, verbose=False, cache_dir=None):
+    def find_roi(self, bg_roi_dilate: Tuple[int, int]=(10,10), bg_roi_shape='ellipse', bg_roi_index: int=0, bg_roi_weights=(1, .1, 1),
+                 bg_roi_depth_range: Tuple[int, int]=(650, 750), bg_roi_gradient_filter: bool=False, bg_roi_gradient_threshold: int=3000,
+                 bg_roi_gradient_kernel: int=7, bg_roi_fill_holes: bool=True, use_plane_bground: bool=False, verbose: bool=False, cache_dir: Union[None, str]=None):
 
         if cache_dir and os.path.exists(os.path.join(cache_dir, 'bground.tiff')):
             if verbose:
@@ -161,13 +168,34 @@ class Session(object):
         return bground_im, roi, true_depth
     #end find_roi()
 
-    def iterate(self, chunk_size=1000, chunk_overlap=0, streams=('depth',)):
+    def iterate(self, chunk_size: int=1000, chunk_overlap: int=0, streams: Iterable[Stream]=(Stream.Depth,)):
+        ''' Iterate over all frames, returning `chunck_size` frames on each iteration with `chunk_overlap` overlap
+
+            Parameters:
+                chunk_size (int): Number of frames to return on each iteration
+                chunk_overlap (int): Number of frames each iteration should overlap with the previous iteration
+                streams (Iterable[Stream]): Streams from which to return data
+        '''
         return SessionFramesIterator(self, chunk_size, chunk_overlap, streams)
 
-    def sample(self, num_samples, chunk_size=1000, streams=('depth',)):
+    def sample(self, num_samples: int, chunk_size: int=1000, streams: Iterable[Stream]=(Stream.Depth,)):
+        ''' Randomally sample `num_samples` frames, returning `chunck_size` frames on each iteration.
+
+            Parameters:
+                num_samples (int): Total number of frames to sample
+                chunk_size (int): Number of frames to return on each iteration
+                streams (Iterable[Stream]): Streams from which to return data
+        '''
         return SessionFramesSampler(self, num_samples, chunk_size=chunk_size, chunk_overlap=0, streams=streams)
 
-    def index(self, frame_idxs, chunk_size=1000, streams=('depth',)):
+    def index(self, frame_idxs: Sequence[int], chunk_size: int=1000, streams: Iterable[Stream]=(Stream.Depth,)):
+        ''' Fetch specific frames, given by `frame_idxs`, returning `chunck_size` frames on each iteration.
+
+            Parameters:
+                frame_idxs (Sequence[int]): Frame indicies that should be fetched
+                chunk_size (int): Number of frames to return on each iteration
+                streams (Iterable[Stream]): Streams from which to return data
+        '''
         return SessionFramesIndexer(self, frame_idxs, chunk_size=chunk_size, chunk_overlap=0, streams=streams)
 
     def __str__(self) -> str:
@@ -179,7 +207,7 @@ class Session(object):
 
 
 class SessionFramesIterator(object):
-    def __init__(self, session, chunk_size, chunk_overlap, streams):
+    def __init__(self, session: Session, chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
         ''' Iterator that iterates over Session frames
 
         Parameters:
@@ -223,16 +251,16 @@ class SessionFramesIterator(object):
         out_data = [frame_idxs]
 
         for stream in self.streams:
-            if stream == 'depth':
+            if stream == Stream.Depth:
                 out_data.append(load_movie_data(self.session.depth_file, frame_idxs, tar_object=self.session.tar))
-            elif stream == 'rgb':
+            elif stream == stream.RGB:
                 out_data.append(load_movie_data(self.session.rgb_file, frame_idxs, pixel_format='rgb24', tar_object=self.session.tar))
 
         return tuple(out_data)
 
 
 class SessionFramesSampler(SessionFramesIterator):
-    def __init__(self, session, num_samples, chunk_size, chunk_overlap, streams):
+    def __init__(self, session: Session, num_samples: int, chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
         self.num_samples = int(num_samples)
         super().__init__(session, chunk_size, chunk_overlap, streams)
 
@@ -246,7 +274,7 @@ class SessionFramesSampler(SessionFramesIterator):
             yield seq[i:i+self.chunk_size]
 
 class SessionFramesIndexer(SessionFramesIterator):
-    def __init__(self, session, frame_idxs, chunk_size, chunk_overlap, streams):
+    def __init__(self, session: Session, frame_idxs: Sequence[int], chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
         self.frame_idxs = frame_idxs
         super().__init__(session, chunk_size, chunk_overlap, streams)
 

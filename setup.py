@@ -36,6 +36,13 @@ setup(
         'tabulate',
         'tqdm',
     ],
+    extras_require={
+        'dev': [
+            'pytest',
+            'pytest-pep8',
+            'pytest-cov'
+        ]
+    },
     python_requires='>=3.6',
     packages=find_packages(),
     include_package_data=True,

@@ -1,15 +1,17 @@
 import tifffile
+from typing import Union
 import numpy as np
 import json
 import os
 import ast
 from pathlib import Path
 from imageio import imwrite
+import numpy.typing
 
 
-def write_image(filename, image, scale=True,
-                scale_factor=None, dtype='uint16',
-                metadata={}, compress=0):
+def write_image(filename: str, image, scale: bool=True,
+                scale_factor: Union[float, None]=None, dtype='uint16',
+                metadata: Union[dict, None]=None, compress: int=0):
     """Save image data, possibly with scale factor for easy display
     """
     file = Path(filename)
@@ -41,7 +43,7 @@ def write_image(filename, image, scale=True,
         imwrite(file.as_posix(), image.astype(dtype))
 
 
-def read_image(filename, dtype='uint16', scale=True, scale_key='scale_factor'):
+def read_image(filename: str, dtype='uint16', scale=True, scale_key='scale_factor'):
     """Load image data, possibly with scale factor...
     """
 
