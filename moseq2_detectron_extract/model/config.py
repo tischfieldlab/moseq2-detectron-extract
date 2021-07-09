@@ -1,16 +1,15 @@
-from detectron2 import config
 from moseq2_detectron_extract.io.annot import get_dataset_statistics
 from detectron2.config import get_cfg, CfgNode
 from detectron2 import model_zoo
 from detectron2.data.catalog import DatasetCatalog, MetadataCatalog
 from detectron2.projects.point_rend import add_pointrend_config
 
-def load_config(config_file):
+def load_config(config_file: str) -> CfgNode:
     with open(config_file, 'r') as cf:
         config = CfgNode.load_cfg(cf)
     return config
 
-def get_base_config():
+def get_base_config() -> CfgNode:
     cfg = get_cfg()
 
     # USE Keypoint RCNN
@@ -77,7 +76,7 @@ def get_base_config():
     return cfg
 
 
-def add_dataset_cfg(cfg, train_dset_name="moseq_train", test_dset_name="moseq_test", recompute_pixel_stats=False):
+def add_dataset_cfg(cfg: CfgNode, train_dset_name: str="moseq_train", test_dset_name: str="moseq_test", recompute_pixel_stats: bool=False) -> CfgNode:
     cfg.DATASETS.TRAIN = (train_dset_name,)
     cfg.DATASETS.TEST = (test_dset_name,)
     

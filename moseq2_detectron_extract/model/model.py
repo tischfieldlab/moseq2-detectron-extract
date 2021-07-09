@@ -1,5 +1,7 @@
 import copy
 import os
+
+from detectron2.config.config import CfgNode
 from moseq2_detectron_extract.io.util import ensure_dir
 
 import cv2
@@ -18,7 +20,7 @@ from detectron2.modeling import build_model
 
 class MoseqDatesetMapper(DatasetMapper):
 
-    def __call__(self, dataset_dict):
+    def __call__(self, dataset_dict: dict):
         """
         Args:
             dataset_dict (dict): Metadata of one image, in Detectron2 Dataset format.
@@ -29,6 +31,8 @@ class MoseqDatesetMapper(DatasetMapper):
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
         # USER: Write your own image loading if it's not from a file
         image = cv2.imread(dataset_dict["file_name"])[:,:,0,None] # grayscale, first channel only, but keep the dimention
+        if "rescale_intensity" in dataset_dict:
+            image = (image * dataset_dict["rescale_intensity"]).astype(image.dtype)
         utils.check_image_size(dataset_dict, image)
 
         # USER: Remove if you don't do semantic/panoptic segmentation.
@@ -111,15 +115,15 @@ class Trainer(DefaultTrainer):
     """
 
     @classmethod
-    def build_train_loader(cls, cfg):
+    def build_train_loader(cls, cfg: CfgNode):
         return build_detection_train_loader(cfg, mapper=MoseqDatesetMapper(cfg, is_train=True, augmentations=[]))
 
     @classmethod
-    def build_test_loader(cls, cfg, daztaset_name):
+    def build_test_loader(cls, cfg: CfgNode, daztaset_name: str):
         return build_detection_test_loader(cfg, daztaset_name, mapper=MoseqDatesetMapper(cfg, is_train=False, augmentations=[]))
 
     @classmethod
-    def build_evaluator(cls, cfg, dataset_name, output_folder=None):
+    def build_evaluator(cls, cfg: CfgNode, dataset_name: str, output_folder: str=None):
         if output_folder is None:
             output_folder = os.path.join(cfg.OUTPUT_DIR, "coco_eval")
             ensure_dir(output_folder)
@@ -128,7 +132,7 @@ class Trainer(DefaultTrainer):
 
 
 class Predictor:
-    def __init__(self, cfg):
+    def __init__(self, cfg: CfgNode):
         self.cfg = cfg.clone()  # cfg can be modified by model
         self.model = build_model(self.cfg)
         self.model.eval()
@@ -146,7 +150,7 @@ class Predictor:
         assert self.input_format in ["L"], self.input_format
         #assert self.input_format in ["RGB", "BGR"], self.input_format
 
-    def __call__(self, original_image):
+    def __call__(self, original_image: np.ndarray):
         """
         Args:
             original_image (np.ndarray): an image of shape (H, W, C) (in BGR order).

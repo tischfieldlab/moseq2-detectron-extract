@@ -2,6 +2,8 @@ import copy
 import json
 import os
 import random
+from typing import Iterable, Sequence, Union
+from typing_extensions import TypedDict
 
 import cv2
 import numpy as np
@@ -13,7 +15,22 @@ from skimage.draw import polygon
 from detectron2.data.detection_utils import transform_instance_annotations
 
 
-def get_dataset_statistics(dset):
+class Annotation(TypedDict):
+    bbox: Sequence[float]
+    bbox_mode: BoxMode
+    category_id: int
+    segmentation: Union[Sequence[Sequence[float]], dict]
+    keypoints: Sequence[float]
+
+class DataItem(TypedDict):
+    file_name: str
+    width: int
+    height: int
+    image_id: str
+    annotations: Sequence[Annotation]
+
+
+def get_dataset_statistics(dset: Sequence[DataItem]):
     ''' Calculate mean a standard deviation of images over a dataset.
     
     online mean and stdev calculation: https://stackoverflow.com/a/15638726
@@ -38,7 +55,7 @@ def get_dataset_statistics(dset):
     
     return (_mean, _stdev)
 
-def get_dataset_im_size_range(dset):
+def get_dataset_im_size_range(dset: Sequence[DataItem]):
     ''' Calculate min/max image width and height
     
     Returns: ((min_width, max_width), (min_height, max_height))
@@ -50,7 +67,7 @@ def get_dataset_im_size_range(dset):
         (np.min(heights), np.max(heights))
     )
 
-def get_dataset_bbox_range(dset):
+def get_dataset_bbox_range(dset: Sequence[DataItem]):
     ''' Calculates bounding box min/mean/max with and height
     '''
     widths = []
@@ -73,7 +90,7 @@ default_keypoint_names = [
     'TailTip'
 ]
 
-def split_test_train(annotations, split=0.90):
+def split_test_train(annotations: Sequence[DataItem], split: float=0.90):
     random.shuffle(annotations)
     split_idx = int(len(annotations) * split)
 
@@ -85,16 +102,16 @@ def split_test_train(annotations, split=0.90):
 
     return (train_annotations, test_annotations)
 
-def register_datasets(annotations, keypoint_names):
+def register_datasets(annotations: Sequence[DataItem], keypoint_names):
     split_annot = split_test_train(annotations)
     for i, d in enumerate(['train', 'test']):
         DatasetCatalog.register("moseq_{}".format(d), split_annot[i])
         register_dataset_metadata("moseq_{}".format(d), keypoint_names)
 
-def register_dataset_metadata(name, keypoint_names):
+def register_dataset_metadata(name: str, keypoint_names: Iterable[str]):
     MetadataCatalog.get(name).thing_classes = ["mouse"]
     MetadataCatalog.get(name).thing_colors = [(0, 0, 255)]
-    MetadataCatalog.get(name).keypoint_names = keypoint_names
+    MetadataCatalog.get(name).keypoint_names = list(keypoint_names)
     MetadataCatalog.get(name).keypoint_flip_map = [] #[('Left Ear', 'Right Ear'), ('Left Hip', 'Right Hip')]
     MetadataCatalog.get(name).keypoint_connection_rules = [
         ('Nose', 'Left Ear', (166, 206, 227)),
@@ -110,13 +127,15 @@ def register_dataset_metadata(name, keypoint_names):
 
 
 def poly_to_mask(poly, out_shape):
+    ''' Convert a polygon mask into a bitmap mask
+    '''
     mask = np.zeros((*out_shape, 1), dtype=np.uint8)
     rr,cc = polygon(poly[:,0], poly[:,1], out_shape)
     mask[cc, rr, 0] = 1
     return mask
 
 
-def augment_annotations_with_rotation(annotations, angles=None):
+def augment_annotations_with_rotation(annotations: Sequence[DataItem], angles: Iterable[int]=None) -> Sequence[DataItem]:
     if angles is None:
         angles = [0, 90, 180, 270]
 
@@ -128,14 +147,18 @@ def augment_annotations_with_rotation(annotations, angles=None):
     return out_annotations
 
 
-def read_annotations(annot_file, keypoint_names, mask_format='polygon', replace_path=None):
+def read_annotations(annot_file, keypoint_names=None, mask_format='polygon', replace_path=None, rescale=1.0) -> Sequence[DataItem]:
     ''' Read annotations from json file output by labelstudio (coco-ish) format
 
         Parameters:
             annot_file (string): path to the annotation json file
-            keypoint_names (list<string>): list of the keypoint names, in the order desired
+            keypoint_names (list<string>): list of the keypoint names, in the order desired. If None, ignore keypoints
             mask_format (string): 'polygon'|'bitmask'
     '''
+    if keypoint_names is None:
+        print("WARNING: Ignoring any keypoint information because `keypoint_names` is None.")
+
+    
     with open(annot_file, 'r') as fp:
         data = json.load(fp)
 
@@ -191,15 +214,16 @@ def read_annotations(annot_file, keypoint_names, mask_format='polygon', replace_
                         print(rslt['value'])
                         raise
             
-            annot_keypoints = []
-            for kp in keypoint_names:
-                if kp in kpts:
-                    k = kpts[kp]
-                    annot_keypoints.extend([k['x'], k['y'], k['v']])
-                else:
-                    #print('missing keypoint {} in {}'.format(kp, entry['id']))
-                    annot_keypoints.extend([0, 0, 0])
-            annot['keypoints'] = annot_keypoints
+            if keypoint_names is not None:
+                annot_keypoints = []
+                for kp in keypoint_names:
+                    if kp in kpts:
+                        k = kpts[kp]
+                        annot_keypoints.extend([k['x'], k['y'], k['v']])
+                    else:
+                        #print('missing keypoint {} in {}'.format(kp, entry['id']))
+                        annot_keypoints.extend([0, 0, 0])
+                annot['keypoints'] = annot_keypoints
             
             tsk_path = ''
             if 'task_path' in entry:
@@ -224,19 +248,30 @@ def read_annotations(annot_file, keypoint_names, mask_format='polygon', replace_
                 'width': rslt['original_width'],
                 'height': rslt['original_height'],
                 'image_id': entry['id'],
-                'annotations': [annot]
+                'annotations': [annot],
+                'rescale_intensity': rescale
             })
         
         return completions
 
-def replace_data_path_in_annotations(annotations, search, replace):
+def replace_data_path_in_annotations(annotations: Sequence[DataItem], search: str, replace: str):
+    '''
+    
+    '''
     for annot in annotations:
         annotations['file_name'].replace(search, replace)
     return annotations
 
 
-def show_dataset_info(annotations):
+def show_dataset_info(annotations: Sequence[DataItem]):
+    ''' Print some basic information about a list of annotations
+        Includes the number of items, the size range of images, and the size range of bboxes
+    '''
     print("Num Items: ", len(annotations))
     print("Image size range: ", get_dataset_im_size_range(annotations))
     #print(get_dataset_statistics(annotations))
     print(get_dataset_bbox_range(annotations))
+
+
+
+
