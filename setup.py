@@ -31,6 +31,7 @@ setup(
         'scipy',
         'scikit-learn',
         'scikit-image',
+        'tifffile',
         'imageio',
         'tabulate',
         'tqdm',
