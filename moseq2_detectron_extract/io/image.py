@@ -1,4 +1,4 @@
-from skimage.external import tifffile
+import tifffile
 import numpy as np
 import json
 import os

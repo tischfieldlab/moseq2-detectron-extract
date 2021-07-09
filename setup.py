@@ -30,7 +30,7 @@ setup(
         'ruamel.yaml',
         'scipy',
         'scikit-learn',
-        'scikit-image==0.16.1',
+        'scikit-image',
         'imageio',
         'tabulate',
         'tqdm',
