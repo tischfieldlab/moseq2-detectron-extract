@@ -1,5 +1,5 @@
+import tifffile
 from typing import Union
-from skimage.external import tifffile
 import numpy as np
 import json
 import os
