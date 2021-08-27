@@ -18,7 +18,7 @@ from detectron2.evaluation import COCOEvaluator
 from detectron2.modeling import build_model
 
 
-class MoseqDatesetMapper(DatasetMapper):
+class MoseqDatasetMapper(DatasetMapper):
 
     def __call__(self, dataset_dict: dict):
         """
@@ -116,11 +116,11 @@ class Trainer(DefaultTrainer):
 
     @classmethod
     def build_train_loader(cls, cfg: CfgNode):
-        return build_detection_train_loader(cfg, mapper=MoseqDatesetMapper(cfg, is_train=True, augmentations=[]))
+        return build_detection_train_loader(cfg, mapper=MoseqDatasetMapper(cfg, is_train=True, augmentations=[]))
 
     @classmethod
     def build_test_loader(cls, cfg: CfgNode, daztaset_name: str):
-        return build_detection_test_loader(cfg, daztaset_name, mapper=MoseqDatesetMapper(cfg, is_train=False, augmentations=[]))
+        return build_detection_test_loader(cfg, daztaset_name, mapper=MoseqDatasetMapper(cfg, is_train=False, augmentations=[]))
 
     @classmethod
     def build_evaluator(cls, cfg: CfgNode, dataset_name: str, output_folder: str=None):
