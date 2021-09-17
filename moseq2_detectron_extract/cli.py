@@ -20,8 +20,8 @@ from detectron2.utils.env import seed_all_rng
 
 from moseq2_detectron_extract.io.annot import (
     augment_annotations_with_rotation, default_keypoint_names,
-    read_annotations, register_dataset_metadata, register_datasets,
-    show_dataset_info)
+    read_annotations, register_dataset_metadata, register_datasets, replace_data_path_in_annotations,
+    show_dataset_info, validate_annotations)
 from moseq2_detectron_extract.io.image import write_image
 from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video, get_frame_features,
                                               hampel_filter,
@@ -70,7 +70,7 @@ def cli():
 @click.argument('annot_file', nargs=1, type=click.Path(exists=True))
 @click.argument('model_dir', nargs=1, type=click.Path(exists=False))
 @click.option('--config', default=None, type=click.Path(), help="Model configuration to override base configuration, in yaml format.")
-@click.option('--replace-data-path', default=(None, None), type=(str, str), help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
+@click.option('--replace-data-path', multiple=True, default=[], type=(str, str), help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
 @click.option('--resume', is_flag=True, help='Resume training from a previous checkpoint')
 @click.option('--auto-cd', is_flag=True, help='treat model_dir as a base directory and create a child dir for this specific run')
 @click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
@@ -111,6 +111,9 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
 
 
     annotations = read_annotations(annot_file, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, replace_path=replace_data_path, rescale=intensity_scale)
+    for search, replace in replace_data_path:
+        replace_data_path_in_annotations(annotations, search, replace)
+    validate_annotations(annotations)
     annotations = augment_annotations_with_rotation(annotations)
     print('Dataset information:')
     show_dataset_info(annotations)

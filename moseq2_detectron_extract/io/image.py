@@ -1,12 +1,11 @@
-import tifffile
-from typing import Union
-import numpy as np
-import json
-import os
 import ast
+import json
 from pathlib import Path
+from typing import Union
+
+import numpy as np
+import tifffile
 from imageio import imwrite
-import numpy.typing
 
 
 def write_image(filename: str, image, scale: bool=True,

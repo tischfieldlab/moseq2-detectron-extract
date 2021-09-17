@@ -2,8 +2,7 @@ import copy
 import json
 import os
 import random
-from typing import Iterable, Sequence, Union
-from typing_extensions import TypedDict
+from typing import Iterable, List, MutableSequence, Optional, Sequence, Union
 
 import cv2
 import numpy as np
@@ -11,8 +10,7 @@ import pycocotools
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
 from skimage.draw import polygon
-
-from detectron2.data.detection_utils import transform_instance_annotations
+from typing_extensions import Literal, TypedDict
 
 
 class Annotation(TypedDict):
@@ -22,12 +20,15 @@ class Annotation(TypedDict):
     segmentation: Union[Sequence[Sequence[float]], dict]
     keypoints: Sequence[float]
 
-class DataItem(TypedDict):
+class DataItemBase(TypedDict):
     file_name: str
     width: int
     height: int
     image_id: str
     annotations: Sequence[Annotation]
+
+class DataItem(DataItemBase, total=False):
+    rotate: int
 
 
 def get_dataset_statistics(dset: Sequence[DataItem]):
@@ -90,7 +91,7 @@ default_keypoint_names = [
     'TailTip'
 ]
 
-def split_test_train(annotations: Sequence[DataItem], split: float=0.90):
+def split_test_train(annotations: MutableSequence[DataItem], split: float=0.90):
     random.shuffle(annotations)
     split_idx = int(len(annotations) * split)
 
@@ -102,7 +103,7 @@ def split_test_train(annotations: Sequence[DataItem], split: float=0.90):
 
     return (train_annotations, test_annotations)
 
-def register_datasets(annotations: Sequence[DataItem], keypoint_names):
+def register_datasets(annotations: MutableSequence[DataItem], keypoint_names):
     split_annot = split_test_train(annotations)
     for i, d in enumerate(['train', 'test']):
         DatasetCatalog.register("moseq_{}".format(d), split_annot[i])
@@ -146,8 +147,9 @@ def augment_annotations_with_rotation(annotations: Sequence[DataItem], angles: I
             out_annotations.append(annot)
     return out_annotations
 
+MaskFormat = Literal['polygon', 'bitmask']
 
-def read_annotations(annot_file, keypoint_names=None, mask_format='polygon', replace_path=None, rescale=1.0) -> Sequence[DataItem]:
+def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_format: MaskFormat='polygon', replace_path=None, rescale=1.0) -> Sequence[DataItem]:
     ''' Read annotations from json file output by labelstudio (coco-ish) format
 
         Parameters:
@@ -158,108 +160,126 @@ def read_annotations(annot_file, keypoint_names=None, mask_format='polygon', rep
     if keypoint_names is None:
         print("WARNING: Ignoring any keypoint information because `keypoint_names` is None.")
 
-    
+
     with open(annot_file, 'r') as fp:
         data = json.load(fp)
 
         completions = []
         for entry in data:
-            annot = {}
-            kpts = {}
-            
-            polyfound = False
-            
-            for rslt in entry['completions'][0]['result']:
-                
-                if rslt['type'] == 'polygonlabels':
-                    poly = np.array(rslt['value']['points'])
-                    poly[:,1] = (poly[:,1] * rslt['original_width']) / 100
-                    poly[:,0] = (poly[:,0] * rslt['original_height']) / 100
-                    
-                    
-                    annot['bbox'] = [
-                        np.min(poly[:,0]),
-                        np.min(poly[:,1]),
-                        np.max(poly[:,0]),
-                        np.max(poly[:,1]),
-                    ]
-                    annot['bbox_mode'] = BoxMode.XYXY_ABS
-                    annot['category_id'] = 0
-                    
-                    if mask_format == 'polygon':
-                        seg = np.empty((poly.size,), dtype=poly.dtype)
-                        seg[0::2] = poly[:,0]
-                        seg[1::2] = poly[:,1]
-                        annot['segmentation'] = [list(seg)]
-                    
-                    elif mask_format == 'bitmask':
-                        mask = poly_to_mask(poly, (rslt['original_height'], rslt['original_width']))
-                        annot['segmentation'] = pycocotools.mask.encode(np.asfortranarray(mask))[0]
-                    
-                    else:
-                        raise RuntimeError("Got unsupported mask_format '{}'".format(mask_format))
-                    polyfound = True
-                    
-                elif rslt['type'] == 'keypointlabels':
-                    if 'points' in rslt['value']:
-                        #print('Skipping unexpected points in keypoint', rslt)
-                        continue
-                    try:
-                        kpts[rslt['value']['keypointlabels'][0]] = {
-                            'x': (rslt['value']['x'] * rslt['original_width']) / 100,
-                            'y': (rslt['value']['y'] * rslt['original_height']) / 100,
-                            'v': 2
-                        }
-                    except:
-                        print(rslt['value'])
-                        raise
-            
-            if keypoint_names is not None:
-                annot_keypoints = []
-                for kp in keypoint_names:
-                    if kp in kpts:
-                        k = kpts[kp]
-                        annot_keypoints.extend([k['x'], k['y'], k['v']])
-                    else:
-                        #print('missing keypoint {} in {}'.format(kp, entry['id']))
-                        annot_keypoints.extend([0, 0, 0])
-                annot['keypoints'] = annot_keypoints
-            
-            tsk_path = ''
-            if 'task_path' in entry:
-                tsk_path = entry['task_path']
-            else:
-                tsk_path = entry['data']['image']
-                #o = parse.urlparse(entry['data']['image'])
-                #q = parse.parse_qs(o.query)
-                #tsk_path = os.path.join(q['d'][0], os.path.basename(o.path))
+            entry_data = get_annotation_from_entry(entry, mask_format=mask_format, keypoint_names=keypoint_names)
+            entry_data['rescale_intensity'] = rescale
+            completions.append(entry_data)
 
-            if replace_path is not None and replace_path[0] is not None and replace_path[1] is not None:
-                tsk_path = tsk_path.replace(replace_path[0], replace_path[1])
-            
-            if not os.path.isfile(tsk_path):
-                raise FileNotFoundError(tsk_path)
-                
-            if not polyfound:
-                print('poly not found!')
-                
-            completions.append({
-                'file_name': tsk_path,
-                'width': rslt['original_width'],
-                'height': rslt['original_height'],
-                'image_id': entry['id'],
-                'annotations': [annot],
-                'rescale_intensity': rescale
-            })
-        
         return completions
+
+
+
+def get_polygon_data(entry: dict, mask_format: MaskFormat) -> dict:
+    poly = np.array(entry['value']['points'])
+    poly[:,1] = (poly[:,1] * entry['original_width']) / 100
+    poly[:,0] = (poly[:,0] * entry['original_height']) / 100
+
+    if mask_format == 'polygon':
+        seg = np.empty((poly.size,), dtype=poly.dtype)
+        seg[0::2] = poly[:,0]
+        seg[1::2] = poly[:,1]
+        segmentation = [list(seg)]
+
+    elif mask_format == 'bitmask':
+        mask = poly_to_mask(poly, (entry['original_height'], entry['original_width']))
+        segmentation = pycocotools.mask.encode(np.asfortranarray(mask))[0]
+
+    else:
+        raise RuntimeError("Got unsupported mask_format '{}'".format(mask_format))
+
+    return {
+        'category_id': 0,
+        'bbox_mode': BoxMode.XYXY_ABS,
+        'segmentation': segmentation,
+        'bbox': [
+            np.min(poly[:,0]),
+            np.min(poly[:,1]),
+            np.max(poly[:,0]),
+            np.max(poly[:,1]),
+        ],
+    }
+
+
+def get_keypoint_data(entry: dict) -> dict:
+    return {
+        entry['value']['keypointlabels'][0]: {
+            'x': (entry['value']['x'] * entry['original_width']) / 100,
+            'y': (entry['value']['y'] * entry['original_height']) / 100,
+            'v': 2
+        }
+    }
+
+
+def sort_keypoints(keypoint_order: List[str], keypoints: dict):
+    annot_keypoints = []
+    for kp in keypoint_order:
+        if kp in keypoints:
+            k = keypoints[kp]
+            annot_keypoints.extend([k['x'], k['y'], k['v']])
+        else:
+            #print('missing keypoint {} in {}'.format(kp, entry['id']))
+            annot_keypoints.extend([0, 0, 0])
+    return annot_keypoints
+
+
+def get_image_path(entry: dict) -> str:
+    if 'task_path' in entry:
+        return entry['task_path']
+    elif 'data' in entry and 'image' in entry['data']:
+        return entry['data']['image']
+    elif 'data' in entry and 'depth_image' in entry['data']:
+        return entry['data']['depth_image']
+
+
+def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: MaskFormat='polygon', keypoint_names: Optional[List[str]]=None) -> dict:
+    annot = {}
+    kpts = {}
+    #polyfound = False
+
+    for rslt in entry[key][0]['result']:
+
+        if rslt['type'] == 'polygonlabels':
+            annot.update(get_polygon_data(rslt, mask_format=mask_format))
+            #polyfound = True
+
+        elif rslt['type'] == 'keypointlabels':
+            if 'points' in rslt['value']:
+                #print('Skipping unexpected points in keypoint', rslt)
+                continue
+            try:
+                kpts.update(get_keypoint_data(rslt))
+            except:
+                print(rslt['value'])
+                raise
+
+    if keypoint_names is not None:
+        annot['keypoints'] = sort_keypoints(keypoint_names, kpts)
+
+
+    #if not polyfound:
+    #    print('poly not found!')
+
+
+    return {
+        'file_name': get_image_path(entry),
+        'width': rslt['original_width'],
+        'height': rslt['original_height'],
+        'image_id': entry['id'],
+        'annotations': [annot],
+    }
+
 
 def replace_data_path_in_annotations(annotations: Sequence[DataItem], search: str, replace: str):
     '''
     
     '''
     for annot in annotations:
-        annotations['file_name'].replace(search, replace)
+        annot['file_name'] = annot['file_name'].replace(search, replace)
     return annotations
 
 
@@ -273,5 +293,8 @@ def show_dataset_info(annotations: Sequence[DataItem]):
     print(get_dataset_bbox_range(annotations))
 
 
-
+def validate_annotations(annotations: Sequence[DataItem]):
+    for annot in annotations:
+        if not os.path.isfile(annot['file_name']):
+            raise FileNotFoundError(annot['file_name'])
 
