@@ -103,11 +103,15 @@ def split_test_train(annotations: MutableSequence[DataItem], split: float=0.90):
 
     return (train_annotations, test_annotations)
 
-def register_datasets(annotations: MutableSequence[DataItem], keypoint_names):
-    split_annot = split_test_train(annotations)
-    for i, d in enumerate(['train', 'test']):
-        DatasetCatalog.register("moseq_{}".format(d), split_annot[i])
-        register_dataset_metadata("moseq_{}".format(d), keypoint_names)
+def register_datasets(annotations: MutableSequence[DataItem], keypoint_names, split: bool=True):
+    if split:
+        split_annot = split_test_train(annotations)
+        for i, d in enumerate(['train', 'test']):
+            DatasetCatalog.register("moseq_{}".format(d), split_annot[i])
+            register_dataset_metadata("moseq_{}".format(d), keypoint_names)
+    else:
+        DatasetCatalog.register("moseq_train", annotations)
+        register_dataset_metadata("moseq_train", keypoint_names)
 
 def register_dataset_metadata(name: str, keypoint_names: Iterable[str]):
     MetadataCatalog.get(name).thing_classes = ["mouse"]
@@ -149,7 +153,7 @@ def augment_annotations_with_rotation(annotations: Sequence[DataItem], angles: I
 
 MaskFormat = Literal['polygon', 'bitmask']
 
-def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_format: MaskFormat='polygon', replace_path=None, rescale=1.0) -> Sequence[DataItem]:
+def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_format: MaskFormat='polygon', rescale=1.0) -> Sequence[DataItem]:
     ''' Read annotations from json file output by labelstudio (coco-ish) format
 
         Parameters:
@@ -166,7 +170,14 @@ def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_forma
 
         completions = []
         for entry in data:
-            entry_data = get_annotation_from_entry(entry, mask_format=mask_format, keypoint_names=keypoint_names)
+            if 'annotations' in entry:
+                key = 'annotations'
+            elif 'completions' in entry:
+                key = 'completions'
+            else:
+                raise ValueError('Cannot find annotation data for entry!')
+
+            entry_data = get_annotation_from_entry(entry, key=key, mask_format=mask_format, keypoint_names=keypoint_names)
             entry_data['rescale_intensity'] = rescale
             completions.append(entry_data)
 
@@ -239,13 +250,11 @@ def get_image_path(entry: dict) -> str:
 def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: MaskFormat='polygon', keypoint_names: Optional[List[str]]=None) -> dict:
     annot = {}
     kpts = {}
-    #polyfound = False
 
     for rslt in entry[key][0]['result']:
 
         if rslt['type'] == 'polygonlabels':
             annot.update(get_polygon_data(rslt, mask_format=mask_format))
-            #polyfound = True
 
         elif rslt['type'] == 'keypointlabels':
             if 'points' in rslt['value']:
@@ -259,11 +268,6 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
 
     if keypoint_names is not None:
         annot['keypoints'] = sort_keypoints(keypoint_names, kpts)
-
-
-    #if not polyfound:
-    #    print('poly not found!')
-
 
     return {
         'file_name': get_image_path(entry),
