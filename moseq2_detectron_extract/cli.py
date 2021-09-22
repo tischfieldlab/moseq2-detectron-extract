@@ -33,7 +33,7 @@ from moseq2_detectron_extract.io.util import ensure_dir, get_last_checkpoint
 from moseq2_detectron_extract.io.video import write_frames_preview
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config, load_config)
-from moseq2_detectron_extract.model.model import Predictor, Trainer
+from moseq2_detectron_extract.model.model import Evaluator, Predictor, Trainer
 from moseq2_detectron_extract.model.util import select_frames_kmeans
 
 orig_init = click.core.Option.__init__
@@ -67,7 +67,7 @@ def cli():
 
 
 @cli.command(name='train', help='run training')
-@click.argument('annot_file', nargs=1, type=click.Path(exists=True))
+@click.argument('annot_file', nargs=-1, type=click.Path(exists=True))
 @click.argument('model_dir', nargs=1, type=click.Path(exists=False))
 @click.option('--config', default=None, type=click.Path(), help="Model configuration to override base configuration, in yaml format.")
 @click.option('--replace-data-path', multiple=True, default=[], type=(str, str), help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
@@ -109,8 +109,11 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
 
     intensity_scale = (max_height/255)
 
+    annotations = []
+    for anot_f in annot_file:
+        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, rescale=intensity_scale)
+        annotations.extend(annot)
 
-    annotations = read_annotations(annot_file, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, replace_path=replace_data_path, rescale=intensity_scale)
     for search, replace in replace_data_path:
         replace_data_path_in_annotations(annotations, search, replace)
     validate_annotations(annotations)
@@ -130,6 +133,50 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=resume)
     trainer.train()
+
+
+
+@cli.command(name='evaluate', help='run evaluation of a model on a test dataset')
+@click.argument('model_dir', nargs=1, type=click.Path(exists=True))
+@click.argument('annot_file', nargs=-1, type=click.Path(exists=True))
+@click.option('--replace-data-path', multiple=True, default=[], type=(str, str), help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
+@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
+@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
+@click.option("--profile", is_flag=True)
+def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, profile):
+    print("") # Empty line to give some breething room
+
+    if profile:
+        enable_profiling()
+
+    print('Loading model configuration....')
+    register_dataset_metadata("moseq_train", default_keypoint_names)
+    cfg = get_base_config()
+    with open(os.path.join(model_dir, 'config.yaml'), 'r') as cfg_file:
+        cfg = cfg.load_cfg(cfg_file)
+    cfg.MODEL.WEIGHTS = get_last_checkpoint(model_dir)
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
+    cfg.TEST.DETECTIONS_PER_IMAGE = 1
+
+
+    print('Loading annotations....')
+    intensity_scale = (max_height/255)
+    annotations = []
+    for anot_f in annot_file:
+        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, rescale=intensity_scale)
+        annotations.extend(annot)
+
+    for search, replace in replace_data_path:
+        replace_data_path_in_annotations(annotations, search, replace)
+    validate_annotations(annotations)
+    annotations = augment_annotations_with_rotation(annotations)
+    print('Dataset information:')
+    show_dataset_info(annotations)
+    register_datasets(annotations, default_keypoint_names, split=False)
+
+    evaluator = Evaluator(cfg)
+    evaluator()
+
 
 
 
