@@ -22,23 +22,6 @@ def get_base_config() -> CfgNode:
 
     cfg.MODEL.MASK_ON = True
 
-    # pointrend config
-    # add_pointrend_config(cfg)
-    # cfg.MODEL.POINT_HEAD.NUM_CLASSES = 1
-    # cfg.MODEL.ROI_BOX_HEAD.TRAIN_ON_PRED_BOXES = True
-    # cfg.MODEL.ROI_MASK_HEAD.POOLER_TYPE = ""  # No RoI pooling, let the head process image features directly
-    # cfg.MODEL.ROI_MASK_HEAD.NAME = "PointRendMaskHead"
-    # cfg.MODEL.ROI_MASK_HEAD.FC_DIM = 1024
-    # cfg.MODEL.ROI_MASK_HEAD.NUM_FC = 2
-    # cfg.MODEL.ROI_MASK_HEAD.OUTPUT_SIDE_RESOLUTION = 7
-    # cfg.MODEL.ROI_MASK_HEAD.IN_FEATURES = ["p2"]  # for the coarse mask head
-    # cfg.MODEL.ROI_MASK_HEAD.POINT_HEAD_ON = True
-    # cfg.MODEL.POINT_HEAD.FC_DIM = 256
-    # cfg.MODEL.POINT_HEAD.NUM_FC = 3
-    # cfg.MODEL.POINT_HEAD.IN_FEATURES = ["p2"]
-    # cfg.INPUT.MASK_FORMAT = "bitmask" # PointRend for instance segmentation does not work with "polygon" mask_format.
-    # end pointrend config
-
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
     
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
