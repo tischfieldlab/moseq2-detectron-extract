@@ -67,7 +67,7 @@ def cli():
 
 
 @cli.command(name='train', help='run training')
-@click.argument('annot_file', nargs=-1, type=click.Path(exists=True))
+@click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
 @click.argument('model_dir', nargs=1, type=click.Path(exists=False))
 @click.option('--config', default=None, type=click.Path(), help="Model configuration to override base configuration, in yaml format.")
 @click.option('--replace-data-path', multiple=True, default=[], type=(str, str), help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
@@ -138,7 +138,7 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
 
 @cli.command(name='evaluate', help='run evaluation of a model on a test dataset')
 @click.argument('model_dir', nargs=1, type=click.Path(exists=True))
-@click.argument('annot_file', nargs=-1, type=click.Path(exists=True))
+@click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
 @click.option('--replace-data-path', multiple=True, default=[], type=(str, str), help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
 @click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
