@@ -2,6 +2,7 @@ import copy
 import os
 
 from detectron2.config.config import CfgNode
+from detectron2.evaluation.evaluator import DatasetEvaluators, inference_on_dataset
 from moseq2_detectron_extract.io.util import ensure_dir
 
 import cv2
@@ -18,7 +19,7 @@ from detectron2.evaluation import COCOEvaluator
 from detectron2.modeling import build_model
 
 
-class MoseqDatesetMapper(DatasetMapper):
+class MoseqDatasetMapper(DatasetMapper):
 
     def __call__(self, dataset_dict: dict):
         """
@@ -116,19 +117,44 @@ class Trainer(DefaultTrainer):
 
     @classmethod
     def build_train_loader(cls, cfg: CfgNode):
-        return build_detection_train_loader(cfg, mapper=MoseqDatesetMapper(cfg, is_train=True, augmentations=[]))
+        return build_detection_train_loader(cfg, mapper=MoseqDatasetMapper(cfg, is_train=True, augmentations=[]))
 
     @classmethod
-    def build_test_loader(cls, cfg: CfgNode, daztaset_name: str):
-        return build_detection_test_loader(cfg, daztaset_name, mapper=MoseqDatesetMapper(cfg, is_train=False, augmentations=[]))
+    def build_test_loader(cls, cfg: CfgNode, dataset_name: str):
+        return build_detection_test_loader(cfg, dataset_name, mapper=MoseqDatasetMapper(cfg, is_train=False, augmentations=[]))
 
     @classmethod
     def build_evaluator(cls, cfg: CfgNode, dataset_name: str, output_folder: str=None):
         if output_folder is None:
             output_folder = os.path.join(cfg.OUTPUT_DIR, "coco_eval")
             ensure_dir(output_folder)
-        
+
         return COCOEvaluator(dataset_name, ("bbox", "segm", "keypoints"), False, output_dir=output_folder, kpt_oks_sigmas=cfg.TEST.KEYPOINT_OKS_SIGMAS)
+
+
+class Evaluator:
+    def __init__(self, cfg: CfgNode) -> None:
+        self.cfg = cfg.clone()  # cfg can be modified by model
+        self.model = build_model(self.cfg)
+        self.model.eval()
+        if len(self.cfg.DATASETS.TEST):
+            self.metadata = MetadataCatalog.get(self.cfg.DATASETS.TEST[0])
+
+        checkpointer = DetectionCheckpointer(self.model)
+        checkpointer.load(self.cfg.MODEL.WEIGHTS)
+
+        self.aug = T.ResizeShortestEdge(
+            [cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST
+        )
+
+        self.input_format = cfg.INPUT.FORMAT
+        assert self.input_format in ["L"], self.input_format
+
+    def __call__(self, output_dir: str=None):
+        data_loader = Trainer.build_test_loader(self.config, self.cfg.DATASETS.TEST)
+        evaluator = DatasetEvaluators([Trainer.build_evaluator(self.config, self.cfg.DATASETS.TEST, output_folder=output_dir)])
+        eval_results = inference_on_dataset(self.model, data_loader, evaluator)
+        return eval_results
 
 
 class Predictor:

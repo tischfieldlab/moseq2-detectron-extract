@@ -1,12 +1,11 @@
-import tifffile
-from typing import Union
-import numpy as np
-import json
-import os
 import ast
+import json
 from pathlib import Path
+from typing import Union
+
+import numpy as np
+import tifffile
 from imageio import imwrite
-import numpy.typing
 
 
 def write_image(filename: str, image, scale: bool=True,
@@ -49,12 +48,14 @@ def read_image(filename: str, dtype='uint16', scale=True, scale_key='scale_facto
 
     with tifffile.TiffFile(filename) as tif:
         tmp = tif
-
-    image = tmp.asarray()
+        image = tmp.asarray()
 
     if scale:
-        image_desc = json.loads(
-            tmp.pages[0].tags['image_description'].as_str()[2:-1])
+        if 'ImageDescription' in tmp.pages[0].tags:
+            image_desc_tag = tmp.pages[0].tags['ImageDescription'].value
+        elif 'image_description' in tmp.pages[0].tags:
+            image_desc_tag = tmp.pages[0].tags['image_description'].as_str()[2:-1]
+        image_desc = json.loads(image_desc_tag)
 
         try:
             scale_factor = int(image_desc[scale_key])

@@ -63,8 +63,9 @@ def get_base_config() -> CfgNode:
     cfg.SOLVER.BASE_LR = 0.0025  # pick a good LR
     cfg.SOLVER.CHECKPOINT_PERIOD = 5000
     cfg.SOLVER.MAX_ITER = 50000    # 300 iterations seems good enough for this toy dataset; you will need to train longer for a practical dataset
-    cfg.SOLVER.STEPS = (20000, 30000, 40000)        # do not decay learning rate
+    cfg.SOLVER.STEPS = (30000, 40000, 45000)        # do not decay learning rate
     cfg.SOLVER.GAMMA = 0.05
+    cfg.SOLVER.AMP.ENABLED = True
 
 
     cfg.OUTPUT_DIR = './models/output_4'
@@ -72,6 +73,8 @@ def get_base_config() -> CfgNode:
     #cfg.MODEL.WEIGHTS = None
 
     cfg.TEST.DETECTIONS_PER_IMAGE = 1
+    cfg.TEST.EVAL_PERIOD = 1000
+    cfg.TEST.AUG.FLIP = False
 
     return cfg
 

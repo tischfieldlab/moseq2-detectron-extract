@@ -1,7 +1,7 @@
 <View style="display: flex;">
 	<!-- <Header value="Select label and start to click on image"/> -->
 	<View style="flex: 90%">
-		<Image name="image" value="$image" width="750px" maxWidth="1000px" zoom="true" zoomControl="true" brightnessControl="true" contrastControl="true" />
+		<Image name="image" value="$images" width="750px" maxWidth="1000px" zoom="true" zoomControl="true" brightnessControl="true" contrastControl="true" />
 	</View>
 	<View style="flex: 10%; margin-left: 1em">
 		<Header value="Segment" />
