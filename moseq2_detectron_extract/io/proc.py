@@ -664,7 +664,8 @@ def instances_to_features(model_outputs, raw_frames):
                 # coords = sort_keypoints(keypoints)
                 # slope, _ = np.polyfit(coords[:, 0], coords[:, 1], 1, w=coords[:, 2])
                 # angle = np.rad2deg(math.atan(slope))
-                
+
+
                 # Approach 2:
                 #  - Find score-weighted centroids of front and rear keypoints
                 #  - Fit 1d poly to front and rear centroids
@@ -686,6 +687,7 @@ def instances_to_features(model_outputs, raw_frames):
                 # slope, _ = np.polyfit(coords[:, 0], coords[:, 1], 1)
                 # angle = np.rad2deg(math.atan(slope))
 
+
                 # Approach 4:
                 #  - Use image coutours and moment features to determine angle and centroid
                 angle = angles_from_features[i]
@@ -700,8 +702,10 @@ def instances_to_features(model_outputs, raw_frames):
                         rot_keypoint_scores[kpi] = -1
                     else:
                         rot_keypoint_scores[kpi] = 1
-                front_votes = stats.mode(rot_keypoint_scores[front_keypoints])
-                rear_votes = stats.mode(rot_keypoint_scores[rear_keypoints])
+                front_votes = rot_keypoint_scores[front_keypoints][np.argmax(rotated_keypoints[front_keypoints, 2])]
+                rear_votes = rot_keypoint_scores[rear_keypoints][np.argmax(rotated_keypoints[rear_keypoints, 2])]
+                #front_votes = stats.mode(rot_keypoint_scores[front_keypoints])
+                #rear_votes = stats.mode(rot_keypoint_scores[rear_keypoints])
                 #front_votes = np.median(rot_keypoint_scores[front_keypoints] * rotated_keypoints[front_keypoints, 2])
                 #rear_votes = np.median(rot_keypoint_scores[rear_keypoints] * rotated_keypoints[rear_keypoints, 2])
                 #rot_front_pos = weighted_centroid_points2(rotated_keypoints[front_keypoints])
