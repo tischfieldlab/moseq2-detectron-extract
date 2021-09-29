@@ -2,37 +2,36 @@ import atexit
 import cProfile
 import datetime
 import json
-import math
-import sys
 import os
 from copy import Error, deepcopy
 from pstats import Stats
 
 import click
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import tqdm
 from detectron2.data.catalog import MetadataCatalog
 from detectron2.data.detection_utils import convert_image_to_rgb
-from detectron2.utils.visualizer import ColorMode, Visualizer
 from detectron2.utils.env import seed_all_rng
+from detectron2.utils.visualizer import ColorMode, Visualizer
 
 from moseq2_detectron_extract.io.annot import (
     augment_annotations_with_rotation, default_keypoint_names,
-    read_annotations, register_dataset_metadata, register_datasets, replace_data_path_in_annotations,
-    show_dataset_info, validate_annotations)
+    get_dataset_statistics2, read_annotations, register_dataset_metadata,
+    register_datasets, replace_data_path_in_annotations, show_dataset_info,
+    validate_annotations)
 from moseq2_detectron_extract.io.image import write_image
-from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video, get_frame_features,
+from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video,
                                               hampel_filter,
-                                              hampel_filter_forloop,
                                               instances_to_features,
-                                              overlay_video, rotate_points)
+                                              overlay_video)
 from moseq2_detectron_extract.io.session import Session
-from moseq2_detectron_extract.io.util import ensure_dir, get_last_checkpoint
+from moseq2_detectron_extract.io.util import (Tee, ensure_dir,
+                                              get_last_checkpoint)
 from moseq2_detectron_extract.io.video import write_frames_preview
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
-                                                   get_base_config, load_config)
+                                                   get_base_config,
+                                                   load_config)
 from moseq2_detectron_extract.model.model import Evaluator, Predictor, Trainer
 from moseq2_detectron_extract.model.util import select_frames_kmeans
 
@@ -89,7 +88,7 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
         if config is not None:
             print("Attempting to load your extra --config and merge with the base configuration")
             cfg.merge_from_file(config)
-        
+
         if auto_cd:
             cfg.OUTPUT_DIR = os.path.join(model_dir, datetime.datetime.now().strftime("%Y-%m-%dT%H-%M_%S"))
         else:
@@ -101,10 +100,13 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
             print("Otherwise please change the `model_dir` argument to another location, or utilize the --auto-cd option")
             print("Exiting...")
             return
-        
+
         print("Model output: {}".format(cfg.OUTPUT_DIR))
 
     ensure_dir(cfg.OUTPUT_DIR)
+    tee = Tee(os.path.join(cfg.OUTPUT_DIR, 'train.log'), mode='a')
+    tee.attach()
+
     seed_all_rng(None if cfg.SEED < 0 else cfg.SEED) # Seed the random number generators
 
     intensity_scale = (max_height/255)
@@ -498,9 +500,38 @@ def generate_dataset(input_file, num_samples, sample_method, chunk_size, chunk_o
             json.dump(output_info, f, indent='\t')
         print('Wrote label-studio tasks to "{}" '.format(ls_task_dest))
 
-
-
 # end generate_dataset()
+
+
+@cli.command(name='dataset-info', help='interogate the dataset for information')
+@click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
+@click.option('--replace-data-path', multiple=True, default=[], type=(str, str), help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
+@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
+@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
+def dataset_info(annot_file, replace_data_path, min_height, max_height):
+
+    print('Loading annotations....')
+    intensity_scale = (max_height/255)
+    annotations = []
+    for anot_f in annot_file:
+        annot = read_annotations(anot_f, default_keypoint_names, mask_format='polygon', rescale=intensity_scale)
+        annotations.extend(annot)
+
+    for search, replace in replace_data_path:
+        replace_data_path_in_annotations(annotations, search, replace)
+    validate_annotations(annotations)
+
+    print('Dataset information:')
+    show_dataset_info(annotations)
+
+    print("Pixel Intensity Statistics:")
+    im_stats = get_dataset_statistics2(annotations)
+    for ch, ch_stats in enumerate(im_stats):
+        print(f" -> Ch{ch}: mean {ch_stats[0]:.2f} ± {ch_stats[1]:.2f} stdev")
+
+
+
+
 
 if __name__ == '__main__':
     cli()

@@ -3,6 +3,7 @@ import json
 import os
 import random
 from typing import Iterable, List, MutableSequence, Optional, Sequence, Union
+from click.types import Path
 
 import cv2
 import numpy as np
@@ -11,6 +12,7 @@ from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
 from skimage.draw import polygon
 from typing_extensions import Literal, TypedDict
+from tqdm import tqdm
 
 
 class Annotation(TypedDict):
@@ -25,6 +27,7 @@ class DataItemBase(TypedDict):
     width: int
     height: int
     image_id: str
+    rescale_intensity: float
     annotations: Sequence[Annotation]
 
 class DataItem(DataItemBase, total=False):
@@ -36,25 +39,51 @@ def get_dataset_statistics(dset: Sequence[DataItem]):
     
     online mean and stdev calculation: https://stackoverflow.com/a/15638726
     '''
-    # online mean and stdev calculation
-    # https://stackoverflow.com/a/15638726
-    
+
     _count = 0
     _mean = 0
     _m2 = 0
-    
-    for d in dset:
+
+    for d in tqdm(dset, desc='Computing Pixel Statistics', leave=False):
         im = cv2.imread(d["file_name"])[:, :, 0]
+        if "rescale_intensity" in d:
+            im = (im * d["rescale_intensity"]).astype(im.dtype)
         for x in im.ravel():
             _count += 1
             delta = x - _mean
             _mean += delta / _count
             _m2 += delta * (x - _mean)
-    
+
     _variance = _m2 / (_count - 1)
     _stdev = np.sqrt(_variance)
+
+    return [(_mean, _stdev)]
+
+
+def get_dataset_statistics2(dset: Sequence[DataItem]):
+    ''' Calculate mean a standard deviation of images over a dataset.
     
-    return (_mean, _stdev)
+    online mean and stdev calculation: https://stackoverflow.com/a/15638726
+    '''
+    nchannels = 1
+    _count = 0
+    _mean = np.zeros((nchannels,), dtype=float)
+    _stdev = np.zeros((nchannels,), dtype=float)
+
+    for d in tqdm(dset, desc='Computing Pixel Statistics', leave=False):
+        im = cv2.imread(d["file_name"])[:, :, 0]
+        if "rescale_intensity" in d:
+            im = (im * d["rescale_intensity"]).astype(im.dtype)
+
+        _count += 1
+        for c in range(nchannels):
+            _mean[c] += im.mean()
+            _stdev[c] += im.std()
+
+    _mean = _mean / _count
+    _stdev = _stdev / _count
+
+    return [(_mean[ch], _stdev[ch]) for ch in range(nchannels)]
 
 def get_dataset_im_size_range(dset: Sequence[DataItem]):
     ''' Calculate min/max image width and height
@@ -68,6 +97,28 @@ def get_dataset_im_size_range(dset: Sequence[DataItem]):
         (np.min(heights), np.max(heights))
     )
 
+def get_dataset_bbox_aspect_ratios(dset: Sequence[DataItem]):
+    aspect_ratios = []
+    for d in dset:
+        box = d['annotations'][0]['bbox']
+        ax1 = box[2] - box[0]
+        ax2 = box[3] - box[1]
+        if ax1 < ax2:
+            aspect_ratios.append(ax2 / ax1)
+        else:
+            aspect_ratios.append(ax1 / ax2)
+
+    aspect_ratios = np.array(aspect_ratios)
+
+    return {
+        'min': np.min(aspect_ratios),
+        'max': np.max(aspect_ratios),
+        'mean': np.mean(aspect_ratios),
+        'median': np.median(aspect_ratios),
+        'stdev': np.std(aspect_ratios)
+    }
+
+
 def get_dataset_bbox_range(dset: Sequence[DataItem]):
     ''' Calculates bounding box min/mean/max with and height
     '''
@@ -77,8 +128,25 @@ def get_dataset_bbox_range(dset: Sequence[DataItem]):
         box = d['annotations'][0]['bbox']
         widths.append(box[2] - box[0])
         heights.append(box[3] - box[1])
-    print("Width: {:.2f}/{:.2f}/{:.2f}".format(np.min(widths), np.mean(widths), np.max(widths)))
-    print("Height: {:.2f}/{:.2f}/{:.2f}".format(np.min(heights), np.mean(heights), np.max(heights)))
+    #print("Width: {:.2f}/{:.2f}/{:.2f}".format(np.min(widths), np.mean(widths), np.max(widths)))
+    #print("Height: {:.2f}/{:.2f}/{:.2f}".format(np.min(heights), np.mean(heights), np.max(heights)))
+
+    return {
+        'width': {
+            'min': np.min(widths),
+            'max': np.max(widths),
+            'mean': np.mean(widths),
+            'median': np.median(widths),
+            'stdev': np.std(widths)
+        },
+        'height': {
+            'min': np.min(heights),
+            'max': np.max(heights),
+            'mean': np.mean(heights),
+            'median': np.median(heights),
+            'stdev': np.std(heights)
+        }
+    }
 
 default_keypoint_names = [
     'Nose',
@@ -291,10 +359,22 @@ def show_dataset_info(annotations: Sequence[DataItem]):
     ''' Print some basic information about a list of annotations
         Includes the number of items, the size range of images, and the size range of bboxes
     '''
-    print("Num Items: ", len(annotations))
-    print("Image size range: ", get_dataset_im_size_range(annotations))
+    print("Number of Items: ", len(annotations))
+
+    print("Image size range:")
+    im_sizes = get_dataset_im_size_range(annotations)
+    print(f" -> Width: {im_sizes[0][0]} - {im_sizes[0][1]} px")
+    print(f" -> Height: {im_sizes[1][0]} - {im_sizes[1][1]} px")
+
+    print("Instance Bounding Box Sizes:")
+    bbox_sizes = get_dataset_bbox_range(annotations)
+    bbox_ratios = get_dataset_bbox_aspect_ratios(annotations)
+    print(f" -> Width: {bbox_sizes['width']['min']:.2f} - {bbox_sizes['width']['max']:.2f}; mean {bbox_sizes['width']['mean']:.2f} ± {bbox_sizes['width']['stdev']:.2f} stdev")
+    print(f" -> Height: {bbox_sizes['height']['min']:.2f} - {bbox_sizes['height']['max']:.2f}; mean {bbox_sizes['height']['mean']:.2f} ± {bbox_sizes['height']['stdev']:.2f} stdev")
+    print(f" -> Ratio: {bbox_ratios['min']:.2f} - {bbox_ratios['max']:.2f}; mean {bbox_ratios['mean']:.2f} ± {bbox_ratios['stdev']:.2f} stdev")
+
     #print(get_dataset_statistics(annotations))
-    print(get_dataset_bbox_range(annotations))
+    #print(get_dataset_bbox_range(annotations))
 
 
 def validate_annotations(annotations: Sequence[DataItem]):

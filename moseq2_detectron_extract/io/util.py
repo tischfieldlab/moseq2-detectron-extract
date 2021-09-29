@@ -1,4 +1,5 @@
 import os
+import sys
 from typing import Union
 import numpy as np
 import json
@@ -87,3 +88,46 @@ def ensure_dir(path: str) -> str:
                 raise
     return path
 #end ensure_dir()
+
+
+class Tee(object):
+    ''' Pipes stdout/stderr to a file and stdout/stderr
+    '''
+    def __init__(self, name, mode='w'):
+        self.name = name
+        self.mode = mode
+        self.file = None
+        self.stdout = None
+        self.stderr = None
+
+    def attach(self):
+        ''' Attach onto stderr/stdout
+        '''
+        self.file = open(self.name, self.mode, encoding='utf-8')
+
+        self.stdout = sys.stdout
+        sys.stdout = self
+
+        self.stderr = sys.stderr
+        sys.stderr = self
+
+    def detach(self):
+        ''' Detach from stderr/stdout
+        '''
+        sys.stdout = self.stdout
+        sys.stderr = self.stderr
+        self.file.close()
+
+    def __del__(self):
+        self.detach()
+
+    def write(self, data):
+        ''' Write data
+        '''
+        self.file.write(data)
+        self.stdout.write(data)
+
+    def flush(self):
+        ''' Flush output
+        '''
+        self.file.flush()
