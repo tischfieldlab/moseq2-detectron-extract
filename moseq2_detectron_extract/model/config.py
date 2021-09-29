@@ -32,7 +32,7 @@ def get_base_config() -> CfgNode:
     cfg.MODEL.RPN.POST_NMS_TOPK_TRAIN = 1500
 
 
-    cfg.DATALOADER.NUM_WORKERS = 2
+    cfg.DATALOADER.NUM_WORKERS = 4
 
     cfg.INPUT.FORMAT = "L"
     cfg.INPUT.MIN_SIZE_TRAIN = (240,)
@@ -53,11 +53,20 @@ def get_base_config() -> CfgNode:
 
     cfg.OUTPUT_DIR = './models/output_4'
     cfg.VIS_PERIOD = 100
+    cfg.CUDNN_BENCHMARK = True
     #cfg.MODEL.WEIGHTS = None
 
     cfg.TEST.DETECTIONS_PER_IMAGE = 1
     cfg.TEST.EVAL_PERIOD = 1000
     cfg.TEST.AUG.FLIP = False
+
+
+    # emperically tuned parameters
+    cfg.MODEL.BACKBONE.FREEZE_AT = 0
+    cfg.MODEL.FPN.NORM = 'GN'
+    cfg.MODEL.FPN.FUSE_TYPE = 'avg'
+    cfg.MODEL.ROI_KEYPOINT_HEAD.POOLER_RESOLUTION = 7
+    cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION = 0.5
 
     return cfg
 
