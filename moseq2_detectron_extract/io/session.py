@@ -11,7 +11,7 @@ from moseq2_detectron_extract.io.proc import (apply_roi, get_bground_im_file,
 import numpy as np
 import tqdm
 
-class Stream(Enum):
+class Stream(str, Enum):
     Depth = 'depth'
     RGB = 'rgb'
 
@@ -78,21 +78,33 @@ class Session(object):
         return load_metadata(metadata_path)
     #end load_metadata()
 
-    def load_timestamps(self):
+    def load_timestamps(self, stream: Stream):
+        timestamp_path = None
         correction_factor = 1.0
+        ts_search = []
+
+        if stream == Stream.Depth:
+            ts_search.append(('depth_ts.txt', 1.0))
+            ts_search.append(('timestamps.csv', 1000.0))
+        elif stream == Stream.RGB:
+            ts_search.append(('rgb_ts.txt', 1.0))
+        else:
+            raise ValueError(f"unknown stream {stream}")
 
         if self.tar is not None:
-            if "depth_ts.txt" in self.tar_names:
-                timestamp_path = self.tar.extractfile(self.tar_members[self.tar_names.index('depth_ts.txt')])
-            elif "timestamps.csv" in self.tar_names:
-                timestamp_path = self.tar.extractfile(self.tar_members[self.tar_names.index('timestamps.csv')])
-                correction_factor = 1000.0
+            for name, corr_factor in ts_search:
+                if name in self.tar_names:
+                    timestamp_path = self.tar.extractfile(self.tar_members[self.tar_names.index(name)])
+                    correction_factor = corr_factor
+                    break
+
         else:
-            timestamp_path = os.path.join(self.dirname, 'depth_ts.txt')
-            alternate_timestamp_path = os.path.join(self.dirname, 'timestamps.csv')
-            if not os.path.exists(timestamp_path) and os.path.exists(alternate_timestamp_path):
-                timestamp_path = alternate_timestamp_path
-                correction_factor = 1000.0
+            for name, corr_factor in ts_search:
+                ts_path = os.path.join(self.dirname, name)
+                if os.path.exists(ts_path):
+                    timestamp_path = ts_path
+                    correction_factor = corr_factor
+                    break
 
         timestamps = load_timestamps(timestamp_path, col=0)
 
@@ -103,7 +115,6 @@ class Session(object):
 
         return timestamps
     #end load_timestamps()
-
 
     def find_roi(self, bg_roi_dilate: Tuple[int, int]=(10,10), bg_roi_shape='ellipse', bg_roi_index: int=0, bg_roi_weights=(1, .1, 1),
                  bg_roi_depth_range: Tuple[int, int]=(650, 750), bg_roi_gradient_filter: bool=False, bg_roi_gradient_threshold: int=3000,
@@ -222,6 +233,9 @@ class SessionFramesIterator(object):
         self.batches = list(self.generate_samples())
         self.current = 0
         self.streams = list(set(streams))
+        self.ts_map = TimestampMapper()
+        for stream in streams:
+            self.ts_map.add_timestamps(stream, session.load_timestamps(stream))
 
     def generate_samples(self):
         ''' Generate the sequence of batches of frames indicies
@@ -253,8 +267,9 @@ class SessionFramesIterator(object):
         for stream in self.streams:
             if stream == Stream.Depth:
                 out_data.append(load_movie_data(self.session.depth_file, frame_idxs, tar_object=self.session.tar))
-            elif stream == stream.RGB:
-                out_data.append(load_movie_data(self.session.rgb_file, frame_idxs, pixel_format='rgb24', tar_object=self.session.tar))
+            elif stream == Stream.RGB:
+                rgb_idxs = self.ts_map.map_index(Stream.Depth, Stream.RGB, frame_idxs)
+                out_data.append(load_movie_data(self.session.rgb_file, rgb_idxs, pixel_format='rgb24', tar_object=self.session.tar))
 
         return tuple(out_data)
 
@@ -273,6 +288,7 @@ class SessionFramesSampler(SessionFramesIterator):
         for i in range(offset, len(seq)-self.chunk_overlap, self.chunk_size-self.chunk_overlap):
             yield seq[i:i+self.chunk_size]
 
+
 class SessionFramesIndexer(SessionFramesIterator):
     def __init__(self, session: Session, frame_idxs: Sequence[int], chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
         self.frame_idxs = frame_idxs
@@ -284,3 +300,36 @@ class SessionFramesIndexer(SessionFramesIterator):
         offset = self.session.first_frame_idx
         for i in range(offset, len(self.frame_idxs)-self.chunk_overlap, self.chunk_size-self.chunk_overlap):
             yield self.frame_idxs[i:i+self.chunk_size]
+
+
+
+class TimestampMapper():
+    def __init__(self) -> None:
+        self.timestamp_map = {}
+
+    def add_timestamps(self, name: str, timestamps: np.array):
+        self.timestamp_map[name] = np.asarray(timestamps)
+
+    def map_index(self, query: str, reference: str, index: Union[int, Sequence[int]]):
+        if isinstance(index, int):
+            index = [index]
+        
+        out = []
+        for idx in index:
+            reference_time = self.timestamp_map[reference][idx]
+            out.append(self.nearest(self.timestamp_map[query], reference_time))
+        return out
+
+    def map_time(self, query: str, reference: str, index: Union[int, Sequence[int]]):
+        if isinstance(index, int):
+            index = [index]
+
+        out = []
+        for idx in index:
+            reference_time = self.timestamp_map[reference][idx]
+            query_idx = self.nearest(self.timestamp_map[query], reference_time)
+            out.append(self.timestamp_map[query][query_idx])
+        return out
+
+    def nearest(data, value):
+        return np.abs(data - value).argmin()
