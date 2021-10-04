@@ -18,6 +18,8 @@ from detectron2.engine.defaults import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
 from detectron2.modeling import build_model
 
+from moseq2_detectron_extract.model.hooks import LossEvalHook
+
 
 class MoseqDatasetMapper(DatasetMapper):
 
@@ -129,7 +131,20 @@ class Trainer(DefaultTrainer):
             output_folder = os.path.join(cfg.OUTPUT_DIR, "coco_eval")
             ensure_dir(output_folder)
 
-        return COCOEvaluator(dataset_name, ("bbox", "segm", "keypoints"), False, output_dir=output_folder, kpt_oks_sigmas=cfg.TEST.KEYPOINT_OKS_SIGMAS)
+        return COCOEvaluator(dataset_name, ("bbox", "segm", "keypoints"), True, output_dir=output_folder, kpt_oks_sigmas=cfg.TEST.KEYPOINT_OKS_SIGMAS)
+
+    def build_hooks(self):
+        hooks = super().build_hooks()
+        hooks.insert(-1,LossEvalHook(
+            self.cfg.TEST.EVAL_PERIOD,
+            self.model,
+            build_detection_test_loader(
+                self.cfg,
+                self.cfg.DATASETS.TEST[0],
+                DatasetMapper(self.cfg, True)
+            )
+        ))
+        return hooks
 
 
 class Evaluator:
