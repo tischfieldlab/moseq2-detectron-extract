@@ -35,6 +35,7 @@ setup(
         'imageio',
         'tabulate',
         'tqdm',
+        'albumentations',
     ],
     extras_require={
         'dev': [
