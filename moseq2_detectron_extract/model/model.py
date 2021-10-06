@@ -1,7 +1,12 @@
 import copy
+from albumentations.augmentations.geometric.rotate import RandomRotate90
+
+from albumentations.augmentations.transforms import GaussNoise
+from moseq2_detectron_extract.model.augmentations import Albumentations
 import os
 
 from detectron2.config.config import CfgNode
+from detectron2.data.transforms.augmentation_impl import RandomBrightness, RandomContrast, RandomRotation
 from detectron2.evaluation.evaluator import DatasetEvaluators, inference_on_dataset
 from moseq2_detectron_extract.io.util import ensure_dir
 
@@ -119,7 +124,13 @@ class Trainer(DefaultTrainer):
 
     @classmethod
     def build_train_loader(cls, cfg: CfgNode):
-        return build_detection_train_loader(cfg, mapper=MoseqDatasetMapper(cfg, is_train=True, augmentations=[]))
+        augs = [
+            RandomRotation([0, 360], expand=True, sample_style='range'),
+            RandomBrightness(0.8, 1.2),
+            RandomContrast(0.8, 1.2),
+            Albumentations(GaussNoise())
+        ]
+        return build_detection_train_loader(cfg, mapper=MoseqDatasetMapper(cfg, is_train=True, augmentations=augs))
 
     @classmethod
     def build_test_loader(cls, cfg: CfgNode, dataset_name: str):
