@@ -1,9 +1,11 @@
+import random
+
+import cv2
+import matplotlib.pyplot as plt
 from detectron2.data.catalog import MetadataCatalog
 from detectron2.data.detection_utils import convert_image_to_rgb
-import matplotlib.pyplot as plt
-import random
-from detectron2.utils.visualizer import Visualizer, ColorMode
-import cv2
+from detectron2.utils.visualizer import ColorMode, Visualizer
+
 
 def visualize_annotations(annotations, metadata, num=5):
     fig, axs = plt.subplots(1, num, figsize=(20*num,20))
