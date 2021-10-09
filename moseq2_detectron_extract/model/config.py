@@ -45,8 +45,10 @@ def get_base_config() -> CfgNode:
     cfg.SOLVER.IMS_PER_BATCH = 8
     cfg.SOLVER.BASE_LR = 0.0025  # pick a good LR
     cfg.SOLVER.CHECKPOINT_PERIOD = 5000
-    cfg.SOLVER.MAX_ITER = 50000    # 300 iterations seems good enough for this toy dataset; you will need to train longer for a practical dataset
-    cfg.SOLVER.STEPS = (30000, 40000, 45000)        # do not decay learning rate
+    #cfg.SOLVER.MAX_ITER = 100000#50000    # 300 iterations seems good enough for this toy dataset; you will need to train longer for a practical dataset
+    #cfg.SOLVER.STEPS = (75000, 85000, 45000)        # do not decay learning rate
+    cfg.SOLVER.MAX_ITER = 100000
+    cfg.SOLVER.STEPS = (70000, 80000, 90000)
     cfg.SOLVER.GAMMA = 0.05
     cfg.SOLVER.AMP.ENABLED = True
 
@@ -71,7 +73,7 @@ def get_base_config() -> CfgNode:
     return cfg
 
 
-def add_dataset_cfg(cfg: CfgNode, train_dset_name: str="moseq_train", test_dset_name: str="moseq_test", recompute_pixel_stats: bool=False) -> CfgNode:
+def add_dataset_cfg(cfg: CfgNode, train_dset_name: str="moseq_train", test_dset_name: str="moseq_test", recompute_pixel_stats: bool=True) -> CfgNode:
     cfg.DATASETS.TRAIN = (train_dset_name,)
     cfg.DATASETS.TEST = (test_dset_name,)
     
@@ -90,8 +92,8 @@ def add_dataset_cfg(cfg: CfgNode, train_dset_name: str="moseq_train", test_dset_
 
     if recompute_pixel_stats:
         px_mean, px_stdev = get_dataset_statistics(DatasetCatalog.get(train_dset_name))
-        cfg.MODEL.PIXEL_MEAN = [float(px_mean)]
-        cfg.MODEL.PIXEL_STD = [float(px_stdev)]
+        cfg.MODEL.PIXEL_MEAN = [float(pm) for pm in px_mean]
+        cfg.MODEL.PIXEL_STD = [float(ps) for ps in px_stdev]
     else:
         # use premeasured
         cfg.MODEL.PIXEL_MEAN = [1.8554014629469981]
