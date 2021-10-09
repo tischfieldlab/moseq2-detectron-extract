@@ -42,7 +42,7 @@ def draw_instances(frame, instances, scale=2.0):
     out = v.draw_instance_predictions(instances)
     return out.get_image()
 
-def draw_instances_fast(frame, instances, scale=2.0):
+def draw_instances_fast(frame, instances, dataset_name='moseq_train', scale=2.0):
     im = convert_image_to_rgb(frame, "L")
     im = cv2.resize(im, (int(im.shape[1] * scale), int(im.shape[0] * scale)))
 
@@ -50,8 +50,10 @@ def draw_instances_fast(frame, instances, scale=2.0):
         # draw mask
         mask = instances.pred_masks[i].cpu().numpy()
         mask = img_as_bool(skimage.transform.resize(mask, (im.shape[0], im.shape[1])))
-        #mask_overlay = np.zeros
-        im[mask] = np.array([255, 0, 0])
+        mask_overlay = np.zeros_like(im)
+        mask_overlay[mask] = np.array([255, 0, 0])
+        mask_alpha = 0.3
+        im = cv2.addWeighted(mask_overlay, mask_alpha, im, 1-mask_alpha, 0, im)
 
         # draw box
         box = instances.pred_boxes.tensor.to('cpu').numpy()[i]
@@ -59,11 +61,24 @@ def draw_instances_fast(frame, instances, scale=2.0):
         im = cv2.rectangle(im, tuple(box[0:2].astype(int)), tuple(box[2:4].astype(int)), (0,255,0))
 
 
-        # draw keypoints
+        # keypoints
         kpts = instances.pred_keypoints[i, :, :].cpu().numpy()
         kpts *= scale
+        
+        # draw keypoint connections
+        kn = MetadataCatalog.get(dataset_name).keypoint_names
+        kcr = MetadataCatalog.get(dataset_name).keypoint_connection_rules
+        for rule in kcr:
+            ki1 = kn.index(rule[0])
+            ki2 = kn.index(rule[1])
+            cv2.line(im, tuple(kpts[ki1, :2].astype(int)), tuple(kpts[ki2, :2].astype(int)), rule[2], 2)
+        
+        # draw keypoints
         for ki in range(kpts.shape[0]):
             im = cv2.circle(im, tuple(kpts[ki, :2].astype(int)), 3, (0,0,255), -1)
+
+        
+        
 
     return im
 
