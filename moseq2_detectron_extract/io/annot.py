@@ -37,33 +37,6 @@ class DataItem(DataItemBase, total=False):
 def get_dataset_statistics(dset: Sequence[DataItem]):
     ''' Calculate mean a standard deviation of images over a dataset.
     
-    online mean and stdev calculation: https://stackoverflow.com/a/15638726
-    '''
-
-    _count = 0
-    _mean = 0
-    _m2 = 0
-
-    for d in tqdm(dset, desc='Computing Pixel Statistics', leave=False):
-        im = cv2.imread(d["file_name"])[:, :, 0]
-        if "rescale_intensity" in d:
-            im = (im * d["rescale_intensity"]).astype(im.dtype)
-        for x in im.ravel():
-            _count += 1
-            delta = x - _mean
-            _mean += delta / _count
-            _m2 += delta * (x - _mean)
-
-    _variance = _m2 / (_count - 1)
-    _stdev = np.sqrt(_variance)
-
-    return [(_mean, _stdev)]
-
-
-def get_dataset_statistics2(dset: Sequence[DataItem]):
-    ''' Calculate mean a standard deviation of images over a dataset.
-    
-    online mean and stdev calculation: https://stackoverflow.com/a/15638726
     '''
     nchannels = 1
     _count = 0
@@ -83,7 +56,7 @@ def get_dataset_statistics2(dset: Sequence[DataItem]):
     _mean = _mean / _count
     _stdev = _stdev / _count
 
-    return [(_mean[ch], _stdev[ch]) for ch in range(nchannels)]
+    return (_mean, _stdev)
 
 def get_dataset_im_size_range(dset: Sequence[DataItem]):
     ''' Calculate min/max image width and height
