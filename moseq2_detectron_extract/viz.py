@@ -1,6 +1,7 @@
+from detectron2.data.catalog import MetadataCatalog
+from detectron2.data.detection_utils import convert_image_to_rgb
 import matplotlib.pyplot as plt
 import random
-from moseq2_detectron_extract.io.image import read_image
 from detectron2.utils.visualizer import Visualizer, ColorMode
 import cv2
 
@@ -16,3 +17,22 @@ def visualize_annotations(annotations, metadata, num=5):
         out = v.draw_dataset_dict(d)
         ax.imshow(out.get_image())
     return fig, axs
+
+def visualize_inference(frame, instances, min_height, max_height, scale=2.0):
+    im = frame[:,:,None].copy().astype('uint8')
+    im = (im-min_height)/(max_height-min_height)
+    im[im < min_height] = 0
+    im[im > max_height] = max_height
+    im = im * 255
+    return draw_instances(im, instances, scale=scale)
+
+
+def draw_instances(frame, instances, scale=2.0):
+    v = Visualizer(
+            convert_image_to_rgb(frame, "L"),
+            metadata=MetadataCatalog.get("moseq_train"),
+            scale=scale,
+            instance_mode=ColorMode.SEGMENTATION   # remove the colors of unsegmented pixels. This option is only available for segmentation models
+    )
+    out = v.draw_instance_predictions(instances)
+    return out.get_image()
