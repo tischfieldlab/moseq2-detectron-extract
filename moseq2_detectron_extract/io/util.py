@@ -64,6 +64,15 @@ def get_last_checkpoint(path: str) -> str:
     return os.path.join(path, last_checkpoint)
 
 
+def keypoints_to_dict(keypoint_names, kp_data, prefix=''):
+    out = {}
+    for ki, kp in enumerate(keypoint_names):
+        out.update({
+            k: v for k, v in zip([f"{prefix}{kp}_X", f"{prefix}{kp}_Y", f"{prefix}{kp}_S"], kp_data[ki])
+        })
+    return out
+
+
 def ensure_dir(path: str) -> str:
     """ Ensures the path exists by creating the directories specified 
     by path if they do not already exist.

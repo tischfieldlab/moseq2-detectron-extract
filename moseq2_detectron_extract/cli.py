@@ -3,12 +3,13 @@ import cProfile
 import datetime
 import json
 import os
+import time
 import warnings
 from copy import Error, deepcopy
 from pstats import Stats
+from sys import prefix
 
 import click
-import cv2
 import numpy as np
 import pandas as pd
 import tqdm
@@ -23,18 +24,20 @@ from moseq2_detectron_extract.io.annot import (
     validate_annotations)
 from moseq2_detectron_extract.io.image import write_image
 from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video,
+                                              crop_and_rotate_frame,
                                               instances_to_features,
                                               overlay_video)
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import (Tee, ensure_dir,
-                                              get_last_checkpoint)
-from moseq2_detectron_extract.io.video import write_frames_preview
+                                              get_last_checkpoint,
+                                              keypoints_to_dict)
+from moseq2_detectron_extract.io.video import PreviewVideoWriter
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config,
                                                    load_config)
 from moseq2_detectron_extract.model.model import Evaluator, Predictor, Trainer
 from moseq2_detectron_extract.model.util import select_frames_kmeans
-from moseq2_detectron_extract.viz import draw_instances, visualize_inference
+from moseq2_detectron_extract.viz import draw_instances, draw_instances_fast
 
 warnings.filterwarnings("ignore", category=UserWarning, module='torch', lineno=575)
 
@@ -252,116 +255,108 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
             bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, cache_dir=info_dir)
     print(f'Found true depth: {true_depth}')
 
-    video_pipe = None
-    vid_tqdm_opts = {
-        'leave': False,
-        'disable': True,
-    }
+    preview_video_dest = os.path.join(images_dir, '{}.mp4'.format('extraction'))
+    video_pipe = PreviewVideoWriter(preview_video_dest, fps=fps, vmin=min_height, vmax=max_height)
 
+    times = {
+        'prepare_data': [],
+        'inference': [],
+        'features': [],
+        'draw_instances': [],
+        'write_keypoints': [],
+        'crop_rotate': [],
+        'colorize': [],
+        'write_video': []
+    }
 
     # Iterate Frames and write images
     last_frame = None
     kp_out_data = []
     keypoint_names = MetadataCatalog.get("moseq_train").keypoint_names
     for frame_idxs, raw_frames in tqdm.tqdm(session.iterate(chunk_size, chunk_overlap), desc='Processing batches'):
+        start = time.time()
         raw_frames = bground_im - raw_frames
         raw_frames[raw_frames < min_height] = 0
         raw_frames[raw_frames > max_height] = max_height
         raw_frames = (raw_frames / max_height) * 255 # rescale to use full gammitt
         raw_frames = raw_frames.astype(frame_dtype)
         raw_frames = apply_roi(raw_frames, roi)
+        times['prepare_data'].append(time.time() - start)
 
 
 
         # Do the inference
+        start = time.time()
         outputs = []
         for i in tqdm.tqdm(range(0, raw_frames.shape[0], batch_size), desc="Inferring", leave=False):
-            #plt.imshow((raw_frames[i,:,:] / max_height) * 255)
-            #plt.show()
             outputs.extend(predictor(raw_frames[i:i+batch_size,:,:,None])) # rescale to use full gammitt
+        times['inference'].append(time.time() - start)
 
+        # Post process results and extract features
+        start = time.time()
         angles, centroids, masks, flips, allosteric_keypoints, rotated_keypoints = instances_to_features(outputs, raw_frames)
+        times['features'].append(time.time() - start)
 
 
-
+        sub_times = {
+            'draw_instances': [],
+            'write_keypoints': [],
+            'crop_rotate': [],
+            'colorize': []
+        }
         rfs = raw_frames.shape
         scale = 2.0
         out_video = np.zeros([rfs[0], int(rfs[1]*scale), int(rfs[2]*scale), 3], dtype='uint8')
         cropped_frames = np.zeros((rfs[0], crop_size[0], crop_size[1], 3), dtype='uint8')
-        border = (crop_size[1], crop_size[1], crop_size[0], crop_size[0])
-        for i, (raw_frame, output, angle, centroid, flip) in enumerate(tqdm.tqdm(zip(raw_frames, outputs, angles, centroids, flips), desc="Postprocessing", leave=False, total=raw_frames.shape[0])):
+        for i, (raw_frame, mask, output, angle, centroid, flip) in enumerate(tqdm.tqdm(zip(raw_frames, masks, outputs, angles, centroids, flips), desc="Postprocessing", leave=False, total=raw_frames.shape[0])):
             instances = output["instances"].to('cpu')
-            out_video[i,:,:,:] = draw_instances(raw_frame[:,:,None].copy(), instances, scale=scale)
+            start = time.time()
+            out_video[i,:,:,:] = draw_instances_fast(raw_frame[:,:,None].copy(), instances, scale=scale)
+            sub_times['draw_instances'].append(time.time() - start)
 
-            if len(instances) > 0:
-                kp_data = {
-                    'Frame_Idx': frame_idxs[i],
-                    'Flip': flip,
-                    'Centroid_X': centroid[0],
-                    'Centroid_Y': centroid[1],
-                    'Angle': angle,
-                }
-                for ki, kp in enumerate(keypoint_names):
-                    kp_data.update({
-                        k: v for k, v in zip([f"{kp}_X", f"{kp}_Y", f"{kp}_S"], allosteric_keypoints[i, 0, ki])
-                    })
-                for ki, kp in enumerate(keypoint_names):
-                    kp_data.update({
-                        k: v for k, v in zip([f"rot_{kp}_X", f"rot_{kp}_Y", f"rot_{kp}_S"], rotated_keypoints[i, 0, ki])
-                    })
-
-
-                rot_mat = cv2.getRotationMatrix2D((crop_size[0] // 2, crop_size[1] // 2), angle, 1)
-
-                xmin = int(centroid[0] - crop_size[1] // 2) + crop_size[1]
-                xmax = int(centroid[0] + crop_size[1] // 2) + crop_size[1]
-                ymin = int(centroid[1] - crop_size[0] // 2) + crop_size[0]
-                ymax = int(centroid[1] + crop_size[0] // 2) + crop_size[0]
-
-                use_frame = cv2.copyMakeBorder(raw_frame, *border, cv2.BORDER_CONSTANT, 0)
-                cropped = cv2.warpAffine(use_frame[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
-
-                use_mask = cv2.copyMakeBorder(masks[i], *border, cv2.BORDER_CONSTANT, 0)
-                cropped_mask = cv2.warpAffine(use_mask[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
-                #cropped = cropped * cropped_mask # mask the cropped image
-                cropped_frames[i, :, :, :] = colorize_video(cropped, vmax=255)
-            else:
+            if len(instances) <= 0:
                 tqdm.tqdm.write("WARNING: No instances found for frame #{}".format(frame_idxs[i]))
-                kp_data = {
-                    'Frame_Idx': frame_idxs[i],
-                    'Flip': flip,
-                    'Centroid_X': centroid[0],
-                    'Centroid_Y': centroid[1],
-                    'Angle': angle,
-                }
-                for ki, kp in enumerate(keypoint_names):
-                    kp_data.update({
-                        k: v for k, v in zip([f"{kp}_X", f"{kp}_Y", f"{kp}_S"], None)
-                    })
-                for ki, kp in enumerate(keypoint_names):
-                    kp_data.update({
-                        k: v for k, v in zip([f"rot_{kp}_X", f"rot_{kp}_Y", f"rot_{kp}_S"], None)
-                    })
 
+            start = time.time()
+            kp_data = {
+                'Frame_Idx': frame_idxs[i],
+                'Flip': flip,
+                'Centroid_X': centroid[0],
+                'Centroid_Y': centroid[1],
+                'Angle': angle,
+            }
+            kp_data.update(keypoints_to_dict(keypoint_names, allosteric_keypoints[i, 0, :]))
+            kp_data.update(keypoints_to_dict(keypoint_names, rotated_keypoints[i, 0, :], prefix='rot_'))
             kp_out_data.append(kp_data)
+            sub_times['write_keypoints'].append(time.time() - start)
 
+            start = time.time()
+            cropped = crop_and_rotate_frame(raw_frame, centroid, angle, crop_size)
+            cropped_mask = crop_and_rotate_frame(mask, centroid, angle, crop_size)
+            sub_times['crop_rotate'].append(time.time() - start)
 
+            #cropped = cropped * cropped_mask # mask the cropped image
+
+            start = time.time()
+            cropped_frames[i, :, :, :] = colorize_video(cropped, vmax=255)
+            sub_times['colorize'].append(time.time() - start)
+
+        start = time.time()
         out_video_combined = overlay_video(out_video, cropped_frames)
+        video_pipe.write_frames(frame_idxs, out_video_combined)
+        times['write_video'].append(time.time() - start)
 
-        #if last_frame is None:
-        #    last_frame = cropped[0, ...]
-
-        video_pipe = write_frames_preview(
-                os.path.join(images_dir, '{}.mp4'.format('extraction')),
-                out_video_combined,
-                pipe=video_pipe, close_pipe=False, fps=fps,
-                frame_range=frame_idxs,
-                depth_max=max_height, depth_min=min_height, tqdm_kwargs=vid_tqdm_opts)
+        for k, v in sub_times.items():
+            times[k].append(np.sum(v))
 
     pd.DataFrame(kp_out_data).to_csv(os.path.join(images_dir, 'keypoints.tsv'), sep='\t', index=False)
 
-    if video_pipe:
-        video_pipe.communicate()
+    video_pipe.close()
+
+    print('Processing Times:')
+    for k, v in times.items():
+        print(f'{k}: {np.sum(v)}')
+    print(f'Total: {np.sum(list(times.values()))}')
 
 
 

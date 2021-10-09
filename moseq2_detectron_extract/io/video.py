@@ -432,3 +432,33 @@ def get_movie_info(filename, frame_dims=(512, 424), bit_depth=16, tar_object=Non
         metadata = get_video_info(filename, tar_object=tar_object)
 
     return metadata
+
+
+
+class PreviewVideoWriter():
+    def __init__(self, filename: str, fps=30, vmin=0, vmax=100, tqdm_opts=None) -> None:
+        self.filename = filename
+        self.fps = fps
+        self.vmin = vmin
+        self.vmax = vmax
+        self.video_pipe = None
+        self.tqdm_opts = {
+            'leave': False,
+            'disable': True,
+        }
+        if tqdm_opts is not None:
+            self.tqdm_opts.update(tqdm_opts)
+
+    def write_frames(self, frame_idxs, frames):
+        self.video_pipe = write_frames_preview(
+                self.filename,
+                frames,
+                pipe=self.video_pipe, close_pipe=False,
+                fps=self.fps,
+                frame_range=frame_idxs,
+                depth_max=self.vmin, depth_min=self.vmax,
+                tqdm_kwargs=self.tqdm_opts)
+
+    def close(self):
+        if self.video_pipe:
+            self.video_pipe.communicate()

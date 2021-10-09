@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 from detectron2.data.catalog import MetadataCatalog
 from detectron2.data.detection_utils import convert_image_to_rgb
 from detectron2.utils.visualizer import ColorMode, Visualizer
+import numpy as np
+import skimage
+from skimage.util.dtype import img_as_bool
 
 
 def visualize_annotations(annotations, metadata, num=5):
@@ -38,3 +41,29 @@ def draw_instances(frame, instances, scale=2.0):
     )
     out = v.draw_instance_predictions(instances)
     return out.get_image()
+
+def draw_instances_fast(frame, instances, scale=2.0):
+    im = convert_image_to_rgb(frame, "L")
+    im = cv2.resize(im, (int(im.shape[1] * scale), int(im.shape[0] * scale)))
+
+    for i in range(len(instances)):
+        # draw mask
+        mask = instances.pred_masks[i].cpu().numpy()
+        mask = img_as_bool(skimage.transform.resize(mask, (im.shape[0], im.shape[1])))
+        #mask_overlay = np.zeros
+        im[mask] = np.array([255, 0, 0])
+
+        # draw box
+        box = instances.pred_boxes.tensor.to('cpu').numpy()[i]
+        box *= scale
+        im = cv2.rectangle(im, tuple(box[0:2].astype(int)), tuple(box[2:4].astype(int)), (0,255,0))
+
+
+        # draw keypoints
+        kpts = instances.pred_keypoints[i, :, :].cpu().numpy()
+        kpts *= scale
+        for ki in range(kpts.shape[0]):
+            im = cv2.circle(im, tuple(kpts[ki, :2].astype(int)), 3, (0,0,255), -1)
+
+    return im
+

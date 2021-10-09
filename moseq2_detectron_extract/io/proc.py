@@ -377,6 +377,18 @@ def get_frame_features(frames, frame_threshold=10, mask=np.array([]),
 
 
 
+def crop_and_rotate_frame(frame, origin, angle, crop_size=(80, 80)):
+    xmin = int(origin[0] - crop_size[1] // 2) + crop_size[1]
+    xmax = int(origin[0] + crop_size[1] // 2) + crop_size[1]
+    ymin = int(origin[1] - crop_size[0] // 2) + crop_size[0]
+    ymax = int(origin[1] + crop_size[0] // 2) + crop_size[0]
+
+    border = (crop_size[1], crop_size[1], crop_size[0], crop_size[0])
+    rot_mat = cv2.getRotationMatrix2D((crop_size[0] // 2, crop_size[1] // 2), angle, 1)
+    use_frame = cv2.copyMakeBorder(frame, *border, cv2.BORDER_CONSTANT, 0)
+    return cv2.warpAffine(use_frame[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
+
+
 
 def crop_and_rotate_frames(frames, features, crop_size=(80, 80),
                            progress_bar=True):
@@ -668,14 +680,13 @@ def instances_to_features(model_outputs, raw_frames):
         if len(output["instances"]) > 0:
             kpts = output["instances"].pred_keypoints[0, :, :].cpu().numpy()
             if allosteric_keypoints is None:
-                allosteric_keypoints = np.zeros((len(model_outputs), 1, kpts.shape[0], 3), dtype=float)
-                rotated_keypoints = np.zeros((len(model_outputs), 1, kpts.shape[0], 3), dtype=float)
+                allosteric_keypoints = np.empty((len(model_outputs), 1, kpts.shape[0], 3), dtype=float)
+                allosteric_keypoints.fill(np.nan)
+                rotated_keypoints = np.empty((len(model_outputs), 1, kpts.shape[0], 3), dtype=float)
+                rotated_keypoints.fill(np.nan)
             
             allosteric_keypoints[i, 0] = kpts
             rotated_keypoints[i, 0] = rotate_points(kpts, origin=centroids[i], degrees=angles[i])
-
-        else:
-            print(f'no instances found in frame {i}')
 
 
     # Strategy:
