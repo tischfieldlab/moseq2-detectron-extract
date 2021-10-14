@@ -2,7 +2,7 @@ import copy
 from albumentations.augmentations.geometric.rotate import RandomRotate90
 
 from albumentations.augmentations.transforms import GaussNoise
-from moseq2_detectron_extract.model.augmentations import Albumentations
+from moseq2_detectron_extract.model.augmentations import Albumentations, DoughnutNoiseAugmentation
 import os
 
 from detectron2.config.config import CfgNode
@@ -128,7 +128,8 @@ class Trainer(DefaultTrainer):
             RandomRotation([0, 360], expand=True, sample_style='range'),
             RandomBrightness(0.8, 1.2),
             RandomContrast(0.8, 1.2),
-            Albumentations(GaussNoise())
+            Albumentations(GaussNoise()),
+            DoughnutNoiseAugmentation()
         ]
         return build_detection_train_loader(cfg, mapper=MoseqDatasetMapper(cfg, is_train=True, augmentations=augs))
 

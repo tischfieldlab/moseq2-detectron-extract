@@ -268,8 +268,8 @@ class SessionFramesIterator(object):
             if stream == Stream.Depth:
                 out_data.append(load_movie_data(self.session.depth_file, frame_idxs, tar_object=self.session.tar))
             elif stream == Stream.RGB:
-                rgb_idxs = self.ts_map.map_index(Stream.Depth, Stream.RGB, frame_idxs)
-                out_data.append(load_movie_data(self.session.rgb_file, rgb_idxs, pixel_format='rgb24', tar_object=self.session.tar))
+                # rgb_idxs = self.ts_map.map_index(Stream.RGB, Stream.Depth, frame_idxs)
+                out_data.append(load_movie_data(self.session.rgb_file, frame_idxs, pixel_format='rgb24', tar_object=self.session.tar))
 
         return tuple(out_data)
 
@@ -331,5 +331,5 @@ class TimestampMapper():
             out.append(self.timestamp_map[query][query_idx])
         return out
 
-    def nearest(data, value):
+    def nearest(self, data, value):
         return np.abs(data - value).argmin()

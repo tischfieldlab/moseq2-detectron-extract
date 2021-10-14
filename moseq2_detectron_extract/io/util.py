@@ -1,9 +1,11 @@
 import os
 import sys
 from typing import Union
+import click
 import numpy as np
 import json
 import errno
+import h5py
 
 def gen_batch_sequence(nframes: int, chunk_size: int, overlap: int, offset: int=0):
     """Generate a sequence with overlap
@@ -99,6 +101,54 @@ def ensure_dir(path: str) -> str:
 #end ensure_dir()
 
 
+def dict_to_h5(h5, dic, root='/', annotations=None):
+    '''
+    Save an dict to an h5 file, mounting at root.
+    Keys are mapped to group names recursively.
+    Parameters
+    ----------
+    h5 (h5py.File instance): h5py.file object to operate on
+    dic (dict): dictionary of data to write
+    root (string): group on which to add additional groups and datasets
+    annotations (dict): annotation data to add to corresponding h5 datasets. Should contain same keys as dic.
+    Returns
+    -------
+    None
+    '''
+
+    if not root.endswith('/'):
+        root = root + '/'
+
+    if annotations is None:
+        annotations = {} #empty dict is better than None, but dicts shouldn't be default parameters
+
+    for key, item in dic.items():
+        dest = root + key
+        try:
+            if isinstance(item, (np.ndarray, np.int64, np.float64, str, bytes)):
+                h5[dest] = item
+            elif isinstance(item, (tuple, list)):
+                h5[dest] = np.asarray(item)
+            elif isinstance(item, (int, float)):
+                h5[dest] = np.asarray([item])[0]
+            elif item is None:
+                h5.create_dataset(dest, data=h5py.Empty(dtype=h5py.special_dtype(vlen=str)))
+            elif isinstance(item, dict):
+                dict_to_h5(h5, item, dest)
+            else:
+                raise ValueError('Cannot save {} type to key {}'.format(type(item), dest))
+        except Exception as e:
+            print(e)
+            if key != 'inputs':
+                print('h5py could not encode key:', key)
+
+        if key in annotations:
+            if annotations[key] is None:
+                h5[dest].attrs['description'] = ""
+            else:
+                h5[dest].attrs['description'] = annotations[key]
+
+
 class Tee(object):
     ''' Pipes stdout/stderr to a file and stdout/stderr
     '''
@@ -140,3 +190,23 @@ class Tee(object):
         ''' Flush output
         '''
         self.file.flush()
+
+
+
+def click_param_annot(click_cmd):
+    '''
+    Given a click.Command instance, return a dict that maps option names to help strings.
+    Currently skips click.Arguments, as they do not have help strings.
+    Parameters
+    ----------
+    click_cmd (click.Command): command to introspect
+    Returns
+    -------
+    annotations (dict): click.Option.human_readable_name as keys; click.Option.help as values
+    '''
+
+    annotations = {}
+    for p in click_cmd.params:
+        if isinstance(p, click.Option):
+            annotations[p.human_readable_name] = p.help
+    return annotations

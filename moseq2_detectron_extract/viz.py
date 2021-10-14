@@ -64,7 +64,7 @@ def draw_instances_fast(frame, instances, dataset_name='moseq_train', scale=2.0)
         # keypoints
         kpts = instances.pred_keypoints[i, :, :].cpu().numpy()
         kpts *= scale
-        
+
         # draw keypoint connections
         kn = MetadataCatalog.get(dataset_name).keypoint_names
         kcr = MetadataCatalog.get(dataset_name).keypoint_connection_rules
@@ -72,13 +72,10 @@ def draw_instances_fast(frame, instances, dataset_name='moseq_train', scale=2.0)
             ki1 = kn.index(rule[0])
             ki2 = kn.index(rule[1])
             cv2.line(im, tuple(kpts[ki1, :2].astype(int)), tuple(kpts[ki2, :2].astype(int)), rule[2], 2)
-        
+
         # draw keypoints
         for ki in range(kpts.shape[0]):
             im = cv2.circle(im, tuple(kpts[ki, :2].astype(int)), 3, (0,0,255), -1)
-
-        
-        
 
     return im
 

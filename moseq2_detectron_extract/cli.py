@@ -220,17 +220,6 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
     if profile:
         enable_profiling()
 
-    print('Loading model....')
-    register_dataset_metadata("moseq_train", default_keypoint_names)
-    cfg = get_base_config()
-    with open(os.path.join(model_dir, 'config.yaml'), 'r') as cfg_file:
-        cfg = cfg.load_cfg(cfg_file)
-    cfg.MODEL.WEIGHTS = get_last_checkpoint(model_dir)
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
-    cfg.TEST.DETECTIONS_PER_IMAGE = 1
-    predictor = Predictor(cfg)
-
-    print('Processing: {}'.format(input_file))
     session = Session(input_file, frame_trim=frame_trim)
 
     # set up the output directory
@@ -242,20 +231,30 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    images_dir = os.path.join(output_dir, 'images')
-    if not os.path.exists(images_dir):
-        os.makedirs(images_dir)
+    tee = Tee(os.path.join(output_dir, 'infer.log'))
+    tee.attach()
 
-    info_dir = os.path.join(images_dir, '.info')
+    info_dir = os.path.join(output_dir, '.info')
     if not os.path.exists(info_dir):
         os.makedirs(info_dir)
 
+    print('Loading model....')
+    register_dataset_metadata("moseq_train", default_keypoint_names)
+    cfg = get_base_config()
+    with open(os.path.join(model_dir, 'config.yaml'), 'r') as cfg_file:
+        cfg = cfg.load_cfg(cfg_file)
+    cfg.MODEL.WEIGHTS = get_last_checkpoint(model_dir)
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
+    cfg.TEST.DETECTIONS_PER_IMAGE = 1
+    predictor = Predictor(cfg)
+
+    print('Processing: {}'.format(input_file))
     # Find image background and ROI
     bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
             bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, cache_dir=info_dir)
     print(f'Found true depth: {true_depth}')
 
-    preview_video_dest = os.path.join(images_dir, '{}.mp4'.format('extraction'))
+    preview_video_dest = os.path.join(output_dir, '{}.mp4'.format('extraction'))
     video_pipe = PreviewVideoWriter(preview_video_dest, fps=fps, vmin=min_height, vmax=max_height)
 
     times = {
@@ -289,7 +288,7 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
         start = time.time()
         outputs = []
         for i in tqdm.tqdm(range(0, raw_frames.shape[0], batch_size), desc="Inferring", leave=False):
-            outputs.extend(predictor(raw_frames[i:i+batch_size,:,:,None])) # rescale to use full gammitt
+            outputs.extend(predictor(raw_frames[i:i+batch_size,:,:,None]))
         times['inference'].append(time.time() - start)
 
         # Post process results and extract features
@@ -349,7 +348,7 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
         for k, v in sub_times.items():
             times[k].append(np.sum(v))
 
-    pd.DataFrame(kp_out_data).to_csv(os.path.join(images_dir, 'keypoints.tsv'), sep='\t', index=False)
+    pd.DataFrame(kp_out_data).to_csv(os.path.join(output_dir, 'keypoints.tsv'), sep='\t', index=False)
 
     video_pipe.close()
 
@@ -364,7 +363,8 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
 @cli.command(name='generate-dataset', help='Generate images from a dataset')
 @click.argument('input_file', nargs=-1, type=click.Path(exists=True))
 @click.option('--num-samples', default=100, type=int, help='Total number of samples to draw')
-@click.option('--sample-method', default='uniform', type=click.Choice(['random', 'uniform', 'kmeans']), help='Method to sample the data. Random chooses a random sample of frames. Uniform will produce a temporally uniform sample. Kmeans performs clustering on downsampled frames.')
+@click.option('--indices', default=None, type=str, help='Indicies to pick when --sample-method=list. A comma separated list of indicies.')
+@click.option('--sample-method', default='uniform', type=click.Choice(['random', 'uniform', 'kmeans', 'list']), help='Method to sample the data. Random chooses a random sample of frames. Uniform will produce a temporally uniform sample. Kmeans performs clustering on downsampled frames. List interprets --indices as a comma separated list of indicies to extract.')
 @click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
 @click.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk. Useful for cable tracking')
 @click.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
@@ -382,7 +382,7 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 @click.option('--stream', default=['depth'], multiple=True, type=click.Choice(['depth', 'rgb']), help='Data type for processed frames')
 @click.option('--output-label-studio', is_flag=True, help='Output label-studio files')
-def generate_dataset(input_file, num_samples, sample_method, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
+def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
             bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, output_dir, min_height, max_height, 
             stream, output_label_studio):
 
@@ -431,6 +431,10 @@ def generate_dataset(input_file, num_samples, sample_method, chunk_size, chunk_o
         elif sample_method == 'kmeans':
             kmeans_selected_frames = select_frames_kmeans(session, num_samples_per_file, chunk_size=chunk_size, min_height=min_height, max_height=max_height)
             iterator = session.index(kmeans_selected_frames, chunk_size=chunk_size, streams=stream)
+
+        elif sample_method == 'list':
+            indices = sorted([int(i) for i in indices.split(',')])
+            iterator = session.index(indices, chunk_size=chunk_size, streams=stream)
         
         else:
             raise Error('unknown sample_method "{}"'.format(sample_method))

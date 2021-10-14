@@ -378,6 +378,9 @@ def get_frame_features(frames, frame_threshold=10, mask=np.array([]),
 
 
 def crop_and_rotate_frame(frame, origin, angle, crop_size=(80, 80)):
+    if np.isnan(angle) or np.any(np.isnan(origin)):
+        return np.zeros_like(frame, shape=crop_size)
+
     xmin = int(origin[0] - crop_size[1] // 2) + crop_size[1]
     xmax = int(origin[0] + crop_size[1] // 2) + crop_size[1]
     ymin = int(origin[1] - crop_size[0] // 2) + crop_size[0]
@@ -647,15 +650,20 @@ def filter_angles2(data):
     out[flips] = out[flips] + (-180 * signs)
     return out
 
-def iterative_filter_angles(data):
+def iterative_filter_angles(data, max_iters=1000):
     last = np.copy(data)
+    i=0
     while True:
+        if i > max_iters:
+            return curr
+
         curr = filter_angles2(last)
-        
+
         if np.allclose(curr, last):
             return curr
         else:
             last = curr
+            i += 1
 
 
 def instances_to_features(model_outputs, raw_frames):
