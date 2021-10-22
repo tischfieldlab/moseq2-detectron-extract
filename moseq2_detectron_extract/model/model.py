@@ -1,28 +1,28 @@
 import copy
-from albumentations.augmentations.geometric.rotate import RandomRotate90
-
-from albumentations.augmentations.transforms import GaussNoise
-from moseq2_detectron_extract.model.augmentations import Albumentations, DoughnutNoiseAugmentation
 import os
 
-from detectron2.config.config import CfgNode
-from detectron2.data.transforms.augmentation_impl import RandomBrightness, RandomContrast, RandomRotation
-from detectron2.evaluation.evaluator import DatasetEvaluators, inference_on_dataset
-from moseq2_detectron_extract.io.util import ensure_dir
-
-import cv2
 import detectron2.data.detection_utils as utils
 import detectron2.data.transforms as T
 import numpy as np
 import torch
+from albumentations.augmentations.transforms import GaussNoise
 from detectron2.checkpoint import DetectionCheckpointer
+from detectron2.config.config import CfgNode
 from detectron2.data import (MetadataCatalog, build_detection_test_loader,
                              build_detection_train_loader)
 from detectron2.data.dataset_mapper import DatasetMapper
+from detectron2.data.transforms.augmentation_impl import (RandomBrightness,
+                                                          RandomContrast,
+                                                          RandomRotation)
 from detectron2.engine.defaults import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
+from detectron2.evaluation.evaluator import (DatasetEvaluators,
+                                             inference_on_dataset)
 from detectron2.modeling import build_model
-
+from moseq2_detectron_extract.io.image import read_image
+from moseq2_detectron_extract.io.util import ensure_dir
+from moseq2_detectron_extract.model.augmentations import (
+    Albumentations, DoughnutNoiseAugmentation, RandomFieldNoiseAugmentation)
 from moseq2_detectron_extract.model.hooks import LossEvalHook
 
 
@@ -37,10 +37,11 @@ class MoseqDatasetMapper(DatasetMapper):
             dict: a format that builtin models in detectron2 accept
         """
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
+
         # USER: Write your own image loading if it's not from a file
-        image = cv2.imread(dataset_dict["file_name"])[:,:,0,None] # grayscale, first channel only, but keep the dimention
-        if "rescale_intensity" in dataset_dict:
-            image = (image * dataset_dict["rescale_intensity"]).astype(image.dtype)
+        scale_factor = dataset_dict["rescale_intensity"] if "rescale_intensity" in dataset_dict else None
+        image = read_image(dataset_dict["file_name"], scale_factor=scale_factor, dtype='uint8')
+        image = image[:,:,0,None] # grayscale, first channel only, but keep the dimention
         utils.check_image_size(dataset_dict, image)
 
         # USER: Remove if you don't do semantic/panoptic segmentation.
@@ -129,7 +130,8 @@ class Trainer(DefaultTrainer):
             RandomBrightness(0.8, 1.2),
             RandomContrast(0.8, 1.2),
             Albumentations(GaussNoise()),
-            DoughnutNoiseAugmentation()
+            # DoughnutNoiseAugmentation(),
+            RandomFieldNoiseAugmentation(mu=10, std_limit=(10.0, 20.0), power=(2.0, 3.0))
         ]
         return build_detection_train_loader(cfg, mapper=MoseqDatasetMapper(cfg, is_train=True, augmentations=augs))
 

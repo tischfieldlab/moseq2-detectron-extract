@@ -2,21 +2,22 @@ import random
 
 import cv2
 import matplotlib.pyplot as plt
-from detectron2.data.catalog import MetadataCatalog
-from detectron2.data.detection_utils import convert_image_to_rgb
-from detectron2.utils.visualizer import ColorMode, Visualizer
 import numpy as np
 import skimage
+from detectron2.data.catalog import MetadataCatalog
+from detectron2.data.detection_utils import convert_image_to_rgb, read_image
+from detectron2.utils.visualizer import ColorMode, Visualizer
 from skimage.util.dtype import img_as_bool
 
 
 def visualize_annotations(annotations, metadata, num=5):
     fig, axs = plt.subplots(1, num, figsize=(20*num,20))
     for d, ax in zip(random.sample(annotations, num), axs):
-        im = cv2.imread(d["file_name"])
+        scale_factor = d["rescale_intensity"] if "rescale_intensity" in d else None
+        im = read_image(d["file_name"], scale_factor=scale_factor, dtype='uint8')
         v = Visualizer(im[:, :, ::-1],
-                    metadata=metadata, 
-                    scale=2, 
+                    metadata=metadata,
+                    scale=2,
                     instance_mode=ColorMode.IMAGE   # remove the colors of unsegmented pixels. This option is only available for segmentation models
         )
         out = v.draw_dataset_dict(d)

@@ -1,21 +1,23 @@
 import ast
 import json
 from pathlib import Path
-from typing import Union
+from typing import Optional
 
+import cv2
 import numpy as np
 import tifffile
 from imageio import imwrite
 
 
 def write_image(filename: str, image, scale: bool=True,
-                scale_factor: Union[float, None]=None, dtype='uint16',
-                metadata: Union[dict, None]=None, compress: int=0):
-    """Save image data, possibly with scale factor for easy display
+                scale_factor: Optional[float]=None, dtype='uint16',
+                metadata: Optional[dict]=None, compress: int=0):
+    """ Save image data, possibly with scale factor for easy display
     """
     file = Path(filename)
 
-    metadata = {}
+    if metadata is None:
+        metadata = {}
 
     if scale:
         max_int = np.iinfo(dtype).max
@@ -30,7 +32,7 @@ def write_image(filename: str, image, scale: bool=True,
             image = (image - scale_factor[0]) / (scale_factor[1] - scale_factor[0])
             image = np.clip(image, 0, 1) * max_int
 
-        metadata = {'scale_factor': str(scale_factor)}
+        metadata['scale_factor'] = str(scale_factor)
 
     directory = file.parent
     if not directory.exists():
@@ -42,8 +44,8 @@ def write_image(filename: str, image, scale: bool=True,
         imwrite(file.as_posix(), image.astype(dtype))
 
 
-def read_image(filename: str, dtype='uint16', scale=True, scale_key='scale_factor'):
-    """Load image data, possibly with scale factor...
+def read_tiff_image(filename: str, dtype='uint16', scale=True, scale_key='scale_factor'):
+    """ Load image data, possibly with scale factor...
     """
 
     with tifffile.TiffFile(filename) as tif:
@@ -69,4 +71,12 @@ def read_image(filename: str, dtype='uint16', scale=True, scale_key='scale_facto
             image = image.astype('float32')/iinfo.max
             image = image*(scale_factor[1]-scale_factor[0])+scale_factor[0]
 
-    return image
+    return image.astype(dtype)
+
+
+def read_image(filename: str, scale_factor: Optional[float]=None, dtype: str='uint8'):
+    image = cv2.imread(filename)
+    if scale_factor is not None:
+        image = (image / scale_factor)
+    
+    return image.astype(dtype)

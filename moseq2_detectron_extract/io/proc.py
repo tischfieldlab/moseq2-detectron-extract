@@ -1,12 +1,12 @@
-import math
-from moseq2_detectron_extract.io.video import get_raw_info, get_video_info, read_frames_raw, read_frames
-import numpy as np
 import cv2
+import matplotlib.pyplot as plt
+import numpy as np
 import scipy
 import skimage
 import tqdm
-import matplotlib.pyplot as plt
-from scipy import stats
+from bottleneck import move_median
+from moseq2_detectron_extract.io.video import (get_raw_info, get_video_info,
+                                               read_frames, read_frames_raw)
 
 
 def overlay_video(video1, video2):
@@ -356,7 +356,7 @@ def get_frame_features(frames, frame_threshold=10, mask=np.array([]),
             frame_mask = np.logical_and(cc_mask, frame_mask)
 
         if has_mask:
-            frame_mask = np.logical_and(frame_mask, mask[i, ...] > mask_threshold)
+            frame_mask = np.logical_and(frame_mask, mask[i, ...])
         else:
             mask[i, ...] = frame_mask
 
@@ -502,7 +502,7 @@ def hampel_filter_forloop(input_series, window_size, n_sigmas=3):
     return new_series, indices
 
 def clean_frames(frames, prefilter_space=(3,), prefilter_time=None,
-                 strel_tail=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)),
+                 strel_tail=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)),
                  iters_tail=None, frame_dtype='uint8',
                  strel_min=cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)),
                  iters_min=None, progress_bar=True):
@@ -640,6 +640,13 @@ def rotate_points(points, origin=(0, 0), degrees=0):
     return rotated
 
 
+def rotate_points2(points, centroids, angles):
+    # expects (frames x instances x keypoints x 3 [x,, y, s])
+    for i in range(points.shape[0]):
+        points[i, 0] = rotate_points(points[i, 0], centroids[i], angles[i])
+    return points
+
+
 
 def filter_angles2(data):
     out = np.copy(data)
@@ -666,13 +673,59 @@ def iterative_filter_angles(data, max_iters=1000):
             i += 1
 
 
+def filter_angles3(angles, window=3):
+    out = np.copy(angles)
+    windows = move_median(angles, window=window, min_count=1)
+    diff = out - windows
+    absdiff = np.abs(diff)
+    flips = ((absdiff>120) & (absdiff<240))
+    signs = np.sign(diff[flips])
+    out[flips] = out[flips] + (-180 * signs)
+    #print(np.count_nonzero(flips))
+    return out
+
+def iterative_filter_angles3(data):
+    last = np.copy(data)
+    iterations = 0
+    while True:
+        iterations += 1
+        curr = filter_angles3(last)
+        
+        if np.allclose(curr, last):
+            print(f'Converged after {iterations} iterations')
+            return curr
+        else:
+            last = curr
+
+
+def mask_and_keypoints_from_model_output(model_outputs):
+    keypoints = None
+    masks = None
+    for i, output in enumerate(model_outputs):
+        if len(output["instances"]) > 0:
+            kpts = output["instances"].pred_keypoints[0, :, :].cpu().numpy()
+            if keypoints is None:
+                keypoints = np.empty((len(model_outputs), 1, kpts.shape[0], 3), dtype=float)
+                keypoints.fill(np.nan)
+            keypoints[i, 0] = kpts
+
+            msks = output["instances"].pred_masks[0, :, :].cpu().numpy()
+            if masks is None:
+                masks = np.empty((len(model_outputs), 1, *msks.shape), dtype='uint8')
+            masks[i, 0] = msks
+    return masks, keypoints
+
+
+
 def instances_to_features(model_outputs, raw_frames):
     front_keypoints = [0, 1, 2, 3]
     rear_keypoints = [4, 5, 6]
-    all_keypoints = sorted(list(set(front_keypoints + rear_keypoints)))
 
-    cleaned_frames = clean_frames(raw_frames, progress_bar=False, iters_tail=1)
-    features, masks = get_frame_features(cleaned_frames, progress_bar=False)
+    # frames x instances x keypoints x 3
+    d2_masks, allosteric_keypoints = mask_and_keypoints_from_model_output(model_outputs)
+
+    cleaned_frames = clean_frames(raw_frames, progress_bar=False, iters_tail=3, prefilter_time=(3,))
+    features, masks = get_frame_features(cleaned_frames, progress_bar=False, mask=d2_masks[:, 0, :, :], use_cc=True)
 
     centroids = features['centroid']
     angles = features['orientation']
@@ -681,20 +734,10 @@ def instances_to_features(model_outputs, raw_frames):
     angles[incl] = np.unwrap(angles[incl] * 2) / 2
     angles = -np.rad2deg(angles)
 
-    # frames x instances x keypoints x 3
-    allosteric_keypoints = None
-    rotated_keypoints = None
-    for i, output in enumerate(model_outputs):
-        if len(output["instances"]) > 0:
-            kpts = output["instances"].pred_keypoints[0, :, :].cpu().numpy()
-            if allosteric_keypoints is None:
-                allosteric_keypoints = np.empty((len(model_outputs), 1, kpts.shape[0], 3), dtype=float)
-                allosteric_keypoints.fill(np.nan)
-                rotated_keypoints = np.empty((len(model_outputs), 1, kpts.shape[0], 3), dtype=float)
-                rotated_keypoints.fill(np.nan)
-            
-            allosteric_keypoints[i, 0] = kpts
-            rotated_keypoints[i, 0] = rotate_points(kpts, origin=centroids[i], degrees=angles[i])
+    #rotate keypoints to reflect angles
+    rotated_keypoints = rotate_points2(allosteric_keypoints, centroids, angles)
+
+
 
 
     # Strategy:
@@ -714,9 +757,10 @@ def instances_to_features(model_outputs, raw_frames):
     for i, flip in enumerate(flips):
         if flip:
             rotated_keypoints[i, 0] = rotate_points(rotated_keypoints[i, 0], origin=centroids[i], degrees=180)
-    angles = iterative_filter_angles(angles)
+    #angles = iterative_filter_angles(angles)
+    angles = iterative_filter_angles3(angles)
 
-    return np.array(angles), np.array(centroids), masks, flips, allosteric_keypoints, rotated_keypoints
+    return cleaned_frames, np.array(angles), np.array(centroids), masks, flips, allosteric_keypoints, rotated_keypoints
 
 
     # for kpi in range(rotated_keypoints.shape[0]):

@@ -1,11 +1,14 @@
+import errno
+import glob
+import json
 import os
 import sys
 from typing import Union
+
 import click
-import numpy as np
-import json
-import errno
 import h5py
+import numpy as np
+
 
 def gen_batch_sequence(nframes: int, chunk_size: int, overlap: int, offset: int=0):
     """Generate a sequence with overlap
@@ -64,6 +67,22 @@ def get_last_checkpoint(path: str) -> str:
     with open(os.path.join(path, 'last_checkpoint'), 'r') as f:
         last_checkpoint = f.read()
     return os.path.join(path, last_checkpoint)
+
+
+def get_specific_checkpoint(path: str, iteration: int, ext: str='pth') -> str:
+    ''' Get the path to the model at a specific checkpoint in a model directory
+
+        Parameters:
+            path (str): directory containing the modelling results
+            iteration (int): iteration number to look for
+            ext (str): file extension of the model file
+
+        Returns:
+            Path to checkpoint at `iteration`
+    '''
+    matches = glob.glob(os.path.join(path, f'*{iteration}.{ext}'))
+    return matches[0]
+
 
 
 def keypoints_to_dict(keypoint_names, kp_data, prefix=''):

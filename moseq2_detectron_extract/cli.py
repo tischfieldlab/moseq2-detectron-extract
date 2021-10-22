@@ -30,6 +30,7 @@ from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video,
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import (Tee, ensure_dir,
                                               get_last_checkpoint,
+                                              get_specific_checkpoint,
                                               keypoints_to_dict)
 from moseq2_detectron_extract.io.video import PreviewVideoWriter
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
@@ -191,6 +192,7 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
 @cli.command(name='infer', help='run inference')
 @click.argument('model_dir', nargs=1, type=click.Path(exists=True))
 @click.argument('input_file', nargs=1, type=click.Path(exists=True))
+@click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
 @click.option('--frame-trim', default=(0, 0), type=(int, int), help='Frames to trim from beginning and end of data')
 @click.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
 @click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
@@ -212,7 +214,7 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
 @click.option('--fps', default=30, type=int, help='Frame rate of camera')
 @click.option('--crop-size', default=(80, 80), type=(int, int), help='size of crop region')
 @click.option("--profile", is_flag=True)
-def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
+def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
           bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir,
           min_height, max_height, fps, crop_size, profile):
     print("") # Empty line to give some breething room
@@ -243,7 +245,12 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
     cfg = get_base_config()
     with open(os.path.join(model_dir, 'config.yaml'), 'r') as cfg_file:
         cfg = cfg.load_cfg(cfg_file)
-    cfg.MODEL.WEIGHTS = get_last_checkpoint(model_dir)
+    if checkpoint == 'last':
+        print(' -> Using last model checkpoint....')
+        cfg.MODEL.WEIGHTS = get_last_checkpoint(model_dir)
+    else:
+        print(f' -> Using model checkpoint at iteration {checkpoint}....')
+        cfg.MODEL.WEIGHTS = get_specific_checkpoint(model_dir, checkpoint)
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
     cfg.TEST.DETECTIONS_PER_IMAGE = 1
     predictor = Predictor(cfg)
@@ -293,7 +300,7 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
 
         # Post process results and extract features
         start = time.time()
-        angles, centroids, masks, flips, allosteric_keypoints, rotated_keypoints = instances_to_features(outputs, raw_frames)
+        cleaned_frames, angles, centroids, masks, flips, allosteric_keypoints, rotated_keypoints = instances_to_features(outputs, raw_frames)
         times['features'].append(time.time() - start)
 
 
@@ -307,7 +314,7 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
         scale = 2.0
         out_video = np.zeros([rfs[0], int(rfs[1]*scale), int(rfs[2]*scale), 3], dtype='uint8')
         cropped_frames = np.zeros((rfs[0], crop_size[0], crop_size[1], 3), dtype='uint8')
-        for i, (raw_frame, mask, output, angle, centroid, flip) in enumerate(tqdm.tqdm(zip(raw_frames, masks, outputs, angles, centroids, flips), desc="Postprocessing", leave=False, total=raw_frames.shape[0])):
+        for i, (raw_frame, clean_frame, mask, output, angle, centroid, flip) in enumerate(tqdm.tqdm(zip(raw_frames, cleaned_frames, masks, outputs, angles, centroids, flips), desc="Postprocessing", leave=False, total=raw_frames.shape[0])):
             instances = output["instances"].to('cpu')
             start = time.time()
             out_video[i,:,:,:] = draw_instances_fast(raw_frame[:,:,None].copy(), instances, scale=scale)
@@ -330,11 +337,10 @@ def infer(model_dir, input_file, frame_trim, batch_size, chunk_size, chunk_overl
             sub_times['write_keypoints'].append(time.time() - start)
 
             start = time.time()
-            cropped = crop_and_rotate_frame(raw_frame, centroid, angle, crop_size)
+            cropped = crop_and_rotate_frame(clean_frame, centroid, angle, crop_size)
             cropped_mask = crop_and_rotate_frame(mask, centroid, angle, crop_size)
+            cropped = cropped * cropped_mask # mask the cropped image
             sub_times['crop_rotate'].append(time.time() - start)
-
-            #cropped = cropped * cropped_mask # mask the cropped image
 
             start = time.time()
             cropped_frames[i, :, :, :] = colorize_video(cropped, vmax=255)

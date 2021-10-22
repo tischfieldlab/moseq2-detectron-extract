@@ -3,16 +3,15 @@ import json
 import os
 import random
 from typing import Iterable, List, MutableSequence, Optional, Sequence, Union
-from click.types import Path
 
-import cv2
 import numpy as np
 import pycocotools
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
+from moseq2_detectron_extract.io.image import read_image
 from skimage.draw import polygon
-from typing_extensions import Literal, TypedDict
 from tqdm import tqdm
+from typing_extensions import Literal, TypedDict
 
 
 class Annotation(TypedDict):
@@ -44,9 +43,8 @@ def get_dataset_statistics(dset: Sequence[DataItem]):
     _stdev = np.zeros((nchannels,), dtype=float)
 
     for d in tqdm(dset, desc='Computing Pixel Statistics', leave=False):
-        im = cv2.imread(d["file_name"])[:, :, 0]
-        if "rescale_intensity" in d:
-            im = (im * d["rescale_intensity"]).astype(im.dtype)
+        scale_factor = d["rescale_intensity"] if "rescale_intensity" in d else None
+        im = read_image(d["file_name"], scale_factor=scale_factor, dtype='uint8')[:, :, 0]
 
         _count += 1
         for c in range(nchannels):

@@ -2,11 +2,11 @@ from enum import Enum
 import os
 import tarfile
 from typing import Iterable, Sequence, Tuple, Union
-from moseq2_detectron_extract.io.image import read_image, write_image
+from moseq2_detectron_extract.io.image import read_tiff_image, write_image
 from moseq2_detectron_extract.io.util import (gen_batch_sequence, load_metadata,
                                          load_timestamps)
 from moseq2_detectron_extract.io.video import get_movie_info, load_movie_data
-from moseq2_detectron_extract.io.proc import (apply_roi, get_bground_im_file,
+from moseq2_detectron_extract.io.proc import (get_bground_im_file,
                                            get_roi, select_strel)
 import numpy as np
 import tqdm
@@ -123,7 +123,7 @@ class Session(object):
         if cache_dir and os.path.exists(os.path.join(cache_dir, 'bground.tiff')):
             if verbose:
                 print('Loading background...')
-            bground_im = read_image(os.path.join(cache_dir, 'bground.tiff'), scale=True)
+            bground_im = read_tiff_image(os.path.join(cache_dir, 'bground.tiff'), scale=True)
         else:
             if verbose:
                 print('Getting background...')
@@ -143,7 +143,7 @@ class Session(object):
         if cache_dir and os.path.exists(os.path.join(cache_dir, roi_filename)):
             if verbose:
                 print('Loading ROI...')
-            roi = read_image(os.path.join(cache_dir, roi_filename), scale=True) > 0
+            roi = read_tiff_image(os.path.join(cache_dir, roi_filename), scale=True) > 0
         else:
             if verbose:
                 print('Getting roi...')
