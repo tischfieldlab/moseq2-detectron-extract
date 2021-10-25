@@ -21,6 +21,7 @@ class Annotation(TypedDict):
     segmentation: Union[Sequence[Sequence[float]], dict]
     keypoints: Sequence[float]
 
+
 class DataItemBase(TypedDict):
     file_name: str
     width: int
@@ -29,8 +30,24 @@ class DataItemBase(TypedDict):
     rescale_intensity: float
     annotations: Sequence[Annotation]
 
+
 class DataItem(DataItemBase, total=False):
     rotate: int
+
+
+MaskFormat = Literal['polygon', 'bitmask']
+
+
+default_keypoint_names = [
+    'Nose',
+    'Left Ear',
+    'Right Ear',
+    'Neck',
+    'Left Hip',
+    'Right Hip',
+    'TailBase',
+    'TailTip'
+]
 
 
 def get_dataset_statistics(dset: Sequence[DataItem]):
@@ -56,6 +73,7 @@ def get_dataset_statistics(dset: Sequence[DataItem]):
 
     return (_mean, _stdev)
 
+
 def get_dataset_im_size_range(dset: Sequence[DataItem]):
     ''' Calculate min/max image width and height
     
@@ -67,6 +85,7 @@ def get_dataset_im_size_range(dset: Sequence[DataItem]):
         (np.min(widths), np.max(widths)),
         (np.min(heights), np.max(heights))
     )
+
 
 def get_dataset_bbox_aspect_ratios(dset: Sequence[DataItem]):
     aspect_ratios = []
@@ -119,16 +138,6 @@ def get_dataset_bbox_range(dset: Sequence[DataItem]):
         }
     }
 
-default_keypoint_names = [
-    'Nose',
-    'Left Ear',
-    'Right Ear',
-    'Neck',
-    'Left Hip',
-    'Right Hip',
-    'TailBase',
-    'TailTip'
-]
 
 def split_test_train(annotations: MutableSequence[DataItem], split: float=0.90):
     random.shuffle(annotations)
@@ -142,6 +151,7 @@ def split_test_train(annotations: MutableSequence[DataItem], split: float=0.90):
 
     return (train_annotations, test_annotations)
 
+
 def register_datasets(annotations: MutableSequence[DataItem], keypoint_names, split: bool=True):
     if split:
         split_annot = split_test_train(annotations)
@@ -151,6 +161,7 @@ def register_datasets(annotations: MutableSequence[DataItem], keypoint_names, sp
     else:
         DatasetCatalog.register("moseq_train", annotations)
         register_dataset_metadata("moseq_train", keypoint_names)
+
 
 def register_dataset_metadata(name: str, keypoint_names: Iterable[str]):
     MetadataCatalog.get(name).thing_classes = ["mouse"]
@@ -190,7 +201,6 @@ def augment_annotations_with_rotation(annotations: Sequence[DataItem], angles: I
             out_annotations.append(annot)
     return out_annotations
 
-MaskFormat = Literal['polygon', 'bitmask']
 
 def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_format: MaskFormat='polygon', rescale=1.0) -> Sequence[DataItem]:
     ''' Read annotations from json file output by labelstudio (coco-ish) format
@@ -225,6 +235,8 @@ def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_forma
 
 
 def get_polygon_data(entry: dict, mask_format: MaskFormat) -> dict:
+    ''' Extract polygon data from an annotation entry
+    '''
     poly = np.array(entry['value']['points'])
     poly[:,1] = (poly[:,1] * entry['original_width']) / 100
     poly[:,0] = (poly[:,0] * entry['original_height']) / 100
@@ -256,6 +268,8 @@ def get_polygon_data(entry: dict, mask_format: MaskFormat) -> dict:
 
 
 def get_keypoint_data(entry: dict) -> dict:
+    ''' Extract keypoint data from an annotation entry
+    '''
     return {
         entry['value']['keypointlabels'][0]: {
             'x': (entry['value']['x'] * entry['original_width']) / 100,
@@ -266,6 +280,8 @@ def get_keypoint_data(entry: dict) -> dict:
 
 
 def sort_keypoints(keypoint_order: List[str], keypoints: dict):
+    ''' Sort `keypoints` to the order specified by `keypoint_order`
+    '''
     annot_keypoints = []
     for kp in keypoint_order:
         if kp in keypoints:
@@ -278,6 +294,8 @@ def sort_keypoints(keypoint_order: List[str], keypoints: dict):
 
 
 def get_image_path(entry: dict) -> str:
+    ''' Extract image file path from an annotation entry
+    '''
     if 'task_path' in entry:
         return entry['task_path']
     elif 'data' in entry and 'image' in entry['data']:
@@ -318,7 +336,8 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
 
 
 def replace_data_path_in_annotations(annotations: Sequence[DataItem], search: str, replace: str):
-    '''
+    ''' Replace substrings in the filename of annotations.
+    Useful when moving datasets to another computer
     
     '''
     for annot in annotations:
@@ -344,11 +363,18 @@ def show_dataset_info(annotations: Sequence[DataItem]):
     print(f" -> Height: {bbox_sizes['height']['min']:.2f} - {bbox_sizes['height']['max']:.2f}; mean {bbox_sizes['height']['mean']:.2f} ± {bbox_sizes['height']['stdev']:.2f} stdev")
     print(f" -> Ratio: {bbox_ratios['min']:.2f} - {bbox_ratios['max']:.2f}; mean {bbox_ratios['mean']:.2f} ± {bbox_ratios['stdev']:.2f} stdev")
 
-    #print(get_dataset_statistics(annotations))
-    #print(get_dataset_bbox_range(annotations))
+    print("Pixel Intensity Statistics:")
+    im_means, im_stdevs = get_dataset_statistics(annotations)
+    for ch in range(im_means.shape[0]):
+        print(f" -> Ch{ch}: mean {im_means[ch]:.2f} ± {im_stdevs[ch]:.2f} stdev")
 
 
 def validate_annotations(annotations: Sequence[DataItem]):
+    ''' Validate annotations
+
+    Checks performed:
+     - The file path exists on the file system
+    '''
     for annot in annotations:
         if not os.path.isfile(annot['file_name']):
             raise FileNotFoundError(annot['file_name'])
