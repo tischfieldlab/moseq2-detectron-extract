@@ -76,7 +76,7 @@ def get_base_config() -> CfgNode:
 def add_dataset_cfg(cfg: CfgNode, train_dset_name: str="moseq_train", test_dset_name: str="moseq_test", recompute_pixel_stats: bool=True) -> CfgNode:
     cfg.DATASETS.TRAIN = (train_dset_name,)
     cfg.DATASETS.TEST = (test_dset_name,)
-    
+
     metadata = MetadataCatalog.get(train_dset_name)
     cfg.MODEL.ROI_KEYPOINT_HEAD.NUM_KEYPOINTS = len(metadata.keypoint_names)
     cfg.TEST.KEYPOINT_OKS_SIGMAS = [
@@ -98,6 +98,5 @@ def add_dataset_cfg(cfg: CfgNode, train_dset_name: str="moseq_train", test_dset_
         # use premeasured
         cfg.MODEL.PIXEL_MEAN = [1.8554014629469981]
         cfg.MODEL.PIXEL_STD = [6.392353752797691]
-
 
     return cfg
