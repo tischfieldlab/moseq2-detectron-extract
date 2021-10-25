@@ -176,7 +176,7 @@ class Session(object):
         if verbose:
             print('Detected true depth: {}'.format(true_depth))
 
-        return bground_im, roi, true_depth
+        return first_frame, bground_im, roi, true_depth
     #end find_roi()
 
     def iterate(self, chunk_size: int=1000, chunk_overlap: int=0, streams: Iterable[Stream]=(Stream.Depth,)):

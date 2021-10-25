@@ -7,15 +7,15 @@ import time
 import warnings
 from copy import Error, deepcopy
 from pstats import Stats
-from sys import prefix
+import uuid
 
 import click
+import h5py
 import numpy as np
 import pandas as pd
 import tqdm
 from detectron2.data.catalog import MetadataCatalog
 from detectron2.utils.env import seed_all_rng
-from matplotlib import pyplot as plt
 
 from moseq2_detectron_extract.io.annot import (
     augment_annotations_with_rotation, default_keypoint_names,
@@ -26,8 +26,9 @@ from moseq2_detectron_extract.io.image import write_image
 from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video,
                                               crop_and_rotate_frame,
                                               instances_to_features,
-                                              overlay_video)
-from moseq2_detectron_extract.io.session import Session
+                                              overlay_video, scalar_attributes)
+from moseq2_detectron_extract.io.result import create_extract_h5, write_extracted_chunk_to_h5
+from moseq2_detectron_extract.io.session import Session, Stream
 from moseq2_detectron_extract.io.util import (Tee, ensure_dir,
                                               get_last_checkpoint,
                                               get_specific_checkpoint,
@@ -38,7 +39,7 @@ from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    load_config)
 from moseq2_detectron_extract.model.model import Evaluator, Predictor, Trainer
 from moseq2_detectron_extract.model.util import select_frames_kmeans
-from moseq2_detectron_extract.viz import draw_instances, draw_instances_fast
+from moseq2_detectron_extract.viz import draw_instances_fast
 
 warnings.filterwarnings("ignore", category=UserWarning, module='torch', lineno=575)
 
@@ -222,6 +223,16 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
     if profile:
         enable_profiling()
 
+    config_data = locals()
+
+    status_dict = {
+        'complete': False,
+        'skip': False,
+        'uuid': str(uuid.uuid4()),
+        'metadata': '',
+        'parameters': deepcopy(config_data)
+    }
+
     session = Session(input_file, frame_trim=frame_trim)
 
     # set up the output directory
@@ -257,12 +268,16 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
 
     print('Processing: {}'.format(input_file))
     # Find image background and ROI
-    bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
+    first_frame, bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
             bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, cache_dir=info_dir)
     print(f'Found true depth: {true_depth}')
 
     preview_video_dest = os.path.join(output_dir, '{}.mp4'.format('extraction'))
     video_pipe = PreviewVideoWriter(preview_video_dest, fps=fps, vmin=min_height, vmax=max_height)
+
+    result_h5_dest = os.path.join(output_dir, '{}.h5'.format('result'))
+    result_h5 = create_extract_h5(h5py.File(result_h5_dest, mode='w'), acquisition_metadata=session.load_metadata(), config_data=config_data, status_dict=status_dict, scalars_attrs=scalar_attributes(),
+                      nframes=session.nframes, roi=roi, bground_im=bground_im, first_frame=first_frame, timestamps=session.load_timestamps(Stream.Depth))
 
     times = {
         'prepare_data': [],
@@ -337,7 +352,7 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
             sub_times['write_keypoints'].append(time.time() - start)
 
             start = time.time()
-            cropped = crop_and_rotate_frame(clean_frame, centroid, angle, crop_size)
+            cropped = crop_and_rotate_frame(raw_frame, centroid, angle, crop_size)
             cropped_mask = crop_and_rotate_frame(mask, centroid, angle, crop_size)
             cropped = cropped * cropped_mask # mask the cropped image
             sub_times['crop_rotate'].append(time.time() - start)
@@ -345,6 +360,11 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
             start = time.time()
             cropped_frames[i, :, :, :] = colorize_video(cropped, vmax=255)
             sub_times['colorize'].append(time.time() - start)
+
+
+        #write_extracted_chunk_to_h5(result_h5, results=, scalars=, frame_range=, offset=)
+
+
 
         start = time.time()
         out_video_combined = overlay_video(out_video, cropped_frames)
@@ -414,7 +434,7 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
         session_info_dir = ensure_dir(os.path.join(info_dir, session.session_id))
 
         # Find image background and ROI
-        bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
+        first_frame, bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
                 bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, cache_dir=session_info_dir)
 
 
@@ -521,10 +541,10 @@ def dataset_info(annot_file, replace_data_path, min_height, max_height):
     print('Dataset information:')
     show_dataset_info(annotations)
 
-    print("Pixel Intensity Statistics:")
-    im_stats = get_dataset_statistics(annotations)
-    for ch, ch_stats in enumerate(im_stats):
-        print(f" -> Ch{ch}: mean {ch_stats[0]:.2f} ± {ch_stats[1]:.2f} stdev")
+    #print("Pixel Intensity Statistics:")
+    #im_stats = get_dataset_statistics(annotations)
+    #for ch, ch_stats in enumerate(im_stats):
+    #    print(f" -> Ch{ch}: mean {ch_stats[0]:.2f} ± {ch_stats[1]:.2f} stdev")
 
 
 

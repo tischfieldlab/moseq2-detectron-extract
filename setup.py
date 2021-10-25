@@ -36,7 +36,8 @@ setup(
         'tabulate',
         'tqdm',
         'albumentations',
-        'FyeldGenerator'
+        'FyeldGenerator',
+        'bottleneck'
     ],
     extras_require={
         'dev': [

@@ -96,3 +96,30 @@ def create_extract_h5(h5_file, acquisition_metadata, config_data, status_dict, s
             h5_file.create_dataset(f'metadata/acquisition/{key}', data=value)
         else:
             h5_file.create_dataset(f'metadata/acquisition/{key}', dtype="f")
+
+
+def write_extracted_chunk_to_h5(h5_file, results, scalars, frame_range, offset):
+    '''
+    Write extracted frames, frame masks, and scalars to an open h5 file.
+    Parameters
+    ----------
+    h5_file (H5py.File): open results_00 h5 file to save data in.
+    results (dict): extraction results dict.
+    scalars (list): list of keys to scalar attribute values
+    frame_range (range object): current chunk frame range
+    offset (int): frame offset
+    Returns
+    -------
+    '''
+
+    # Writing computed scalars to h5 file
+    for scalar in scalars:
+        h5_file[f'scalars/{scalar}'][frame_range] = results['scalars'][scalar][offset:]
+
+    # Writing frames and mask to h5
+    h5_file['frames'][frame_range] = results['depth_frames'][offset:]
+    h5_file['frames_mask'][frame_range] = results['mask_frames'][offset:]
+
+    # Writing flip classifier results to h5
+    if 'flips' in results and results['flips'] is not None:
+        h5_file['metadata/extraction/flips'][frame_range] = results['flips'][offset:]

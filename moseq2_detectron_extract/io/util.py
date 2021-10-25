@@ -94,6 +94,39 @@ def keypoints_to_dict(keypoint_names, kp_data, prefix=''):
     return out
 
 
+def convert_pxs_to_mm(coords, resolution=(512, 424), field_of_view=(70.6, 60), true_depth=673.1):
+    '''
+    Converts x, y coordinates in pixel space to mm.
+    http://stackoverflow.com/questions/17832238/kinect-intrinsic-parameters-from-field-of-view/18199938#18199938
+    http://www.imaginativeuniversal.com/blog/post/2014/03/05/quick-reference-kinect-1-vs-kinect-2.aspx
+    http://smeenk.com/kinect-field-of-view-comparison/
+    Parameters
+    ----------
+    coords (list): list of x,y pixel coordinates
+    resolution (tuple): image dimensions
+    field_of_view (tuple): width and height scaling params
+    true_depth (float): detected true depth
+    Returns
+    -------
+    new_coords (list): x,y coordinates in mm
+    '''
+
+    cx = resolution[0] // 2
+    cy = resolution[1] // 2
+
+    xhat = coords[:, 0] - cx
+    yhat = coords[:, 1] - cy
+
+    fw = resolution[0] / (2 * np.deg2rad(field_of_view[0] / 2))
+    fh = resolution[1] / (2 * np.deg2rad(field_of_view[1] / 2))
+
+    new_coords = np.zeros_like(coords)
+    new_coords[:, 0] = true_depth * xhat / fw
+    new_coords[:, 1] = true_depth * yhat / fh
+
+    return new_coords
+
+
 def ensure_dir(path: str) -> str:
     """ Ensures the path exists by creating the directories specified 
     by path if they do not already exist.

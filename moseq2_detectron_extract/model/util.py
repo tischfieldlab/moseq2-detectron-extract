@@ -7,7 +7,7 @@ from sklearn.cluster import MiniBatchKMeans
 
 def select_frames_kmeans(session, num_frames_to_pick, num_clusters=None, chunk_size=1000, scale=4, min_height=5, max_height=100, kmeans_batchsize=100, kmeans_max_iter=50):
 
-    bground_im, roi, true_depth = session.find_roi()
+    first_frame, bground_im, roi, true_depth = session.find_roi()
     downsampled = np.zeros((session.nframes, int(roi.shape[0] / scale), int(roi.shape[1] / scale)))
     for frame_idxs, raw_frames in tqdm.tqdm(session.iterate(chunk_size=chunk_size), desc='Processing batches', leave=False):
         raw_frames = bground_im - raw_frames
