@@ -5,7 +5,6 @@ import time
 import detectron2.utils.comm as comm
 import numpy as np
 import torch
-from detectron2.data import DatasetMapper, build_detection_test_loader
 from detectron2.engine.hooks import HookBase
 from detectron2.evaluation import inference_context
 from detectron2.utils.logger import log_every_n_seconds
@@ -25,7 +24,7 @@ class LossEvalHook(HookBase):
 
         start_time = time.perf_counter()
         total_compute_time = 0
-        losses = []
+        losses = {}
         for idx, inputs in enumerate(self._data_loader):
             if idx == num_warmup:
                 start_time = time.perf_counter()
@@ -47,23 +46,28 @@ class LossEvalHook(HookBase):
                     n=5,
                 )
             loss_batch = self._get_loss(inputs)
-            losses.append(loss_batch)
-        mean_loss = np.mean(losses)
-        self.trainer.storage.put_scalar('validation_loss', mean_loss)
+            for k, v in loss_batch.items():
+                try:
+                    losses[k].append(v)
+                except KeyError:
+                    losses[k] = [v]
+
+        for k, v in losses.items():
+            self.trainer.storage.put_scalar(f'validation_{k}', np.mean(v))
         comm.synchronize()
 
         return losses
 
 
     def _get_loss(self, data):
-        # How loss is calculated on train_loop 
+        # How loss is calculated on train_loop
         metrics_dict = self._model(data)
         metrics_dict = {
             k: v.detach().cpu().item() if isinstance(v, torch.Tensor) else float(v)
             for k, v in metrics_dict.items()
         }
-        total_losses_reduced = sum(loss for loss in metrics_dict.values())
-        return total_losses_reduced
+        metrics_dict['loss_total'] = sum(loss for loss in metrics_dict.values())
+        return metrics_dict
 
 
     def after_step(self):
