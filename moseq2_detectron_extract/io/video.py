@@ -1,11 +1,11 @@
-from copy import Error
 import datetime
 import os
 import subprocess
 import tarfile
+import tempfile
+from copy import Error
 from itertools import groupby
 from operator import itemgetter
-import tempfile
 
 import cv2
 import matplotlib.pyplot as plt

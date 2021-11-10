@@ -78,5 +78,5 @@ def read_image(filename: str, scale_factor: Optional[float]=None, dtype: str='ui
     image = cv2.imread(filename)
     if scale_factor is not None:
         image = (image / scale_factor)
-    
+
     return image.astype(dtype)

@@ -1,63 +1,133 @@
-from concurrent.futures.thread import ThreadPoolExecutor
-from moseq2_detectron_extract.io.proc import apply_roi, instances_to_features
 import os
+import time
+import uuid
+from copy import deepcopy
+from threading import Thread
+from typing import List, Union
 
-from detectron2.data.catalog import MetadataCatalog
 import tqdm
-from moseq2_detectron_extract.model.model import Predictor
+from torch.multiprocessing import Process, Queue, SimpleQueue
+
+from moseq2_detectron_extract.io.annot import (
+    default_keypoint_connection_rules, default_keypoint_names)
+from moseq2_detectron_extract.io.memory import SharedMemoryDict
 from moseq2_detectron_extract.io.session import Session
-from queue import Queue
+from moseq2_detectron_extract.io.util import write_yaml
+from moseq2_detectron_extract.pipeline import (ExtractFeaturesStep,
+                                               FrameCropStep, InferenceStep,
+                                               KeypointWriterStep,
+                                               PreviewVideoWriterStep,
+                                               ProcessProgress,
+                                               ResultH5WriterStep)
+from moseq2_detectron_extract.proc.proc import prep_raw_frames
+from moseq2_detectron_extract.proc.util import check_completion_status
 
 
+def extract_session(session: Session, config: dict):
 
-def extract(session: Session, predictor: Predictor, output_dir, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
-            bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, min_height, max_height, 
-            chunk_size, chunk_overlap, frame_dtype):
+    overall_time = time.time()
+
     # set up the output directory
-    if output_dir is None:
+    if config['output_dir'] is None:
         output_dir = os.path.join(session.dirname, 'proc')
+        config['output_dir'] = output_dir
     else:
-        output_dir = os.path.join(session.dirname, output_dir)
+        output_dir = config['output_dir']
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    images_dir = os.path.join(output_dir, 'images')
-    if not os.path.exists(images_dir):
-        os.makedirs(images_dir)
+    status_filename = os.path.join(output_dir, 'results_{:02d}.yaml'.format(config['bg_roi_index']))
+    if check_completion_status(status_filename):
+        print('WARNING: Sessions appears to already be extracted, so skipping!')
+        return
 
-    info_dir = os.path.join(images_dir, '.info')
-    if not os.path.exists(info_dir):
-        os.makedirs(info_dir)
+    status_dict = {
+        'complete': False,
+        'skip': False,
+        'uuid': str(uuid.uuid4()),
+        'metadata': session.load_metadata(),
+        'parameters': deepcopy(config)
+    }
+    
+    write_yaml(status_filename, status_dict)
+
 
     # Find image background and ROI
-    bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
-            bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, cache_dir=info_dir)
+    first_frame, bground_im, roi, true_depth = session.find_roi(bg_roi_dilate=config['bg_roi_dilate'], bg_roi_shape=config['bg_roi_shape'],
+        bg_roi_index=config['bg_roi_index'], bg_roi_weights=config['bg_roi_weights'], bg_roi_depth_range=config['bg_roi_depth_range'],
+        bg_roi_gradient_filter=config['bg_roi_gradient_filter'], bg_roi_gradient_threshold=config['bg_roi_gradient_threshold'],
+        bg_roi_gradient_kernel=config['bg_roi_gradient_kernel'], bg_roi_fill_holes=config['bg_roi_fill_holes'],
+        use_plane_bground=config['use_plane_bground'], cache_dir=output_dir)
     print(f'Found true depth: {true_depth}')
+    config.update({
+        'nframes': session.nframes,
+        'true_depth': true_depth,
+        'keypoint_names': default_keypoint_names,
+        'keypoint_connection_rules': default_keypoint_connection_rules,
+    })
+
+
+    progress = ProcessProgress()
+    reader_pbar = progress.add(desc='Processing batches', total=session.nframes)
+
+    inference_in: Queue = Queue(maxsize=1)
+    inference_out: Queue = SimpleQueue()
+    inference_pbar = progress.add(desc='Inferring')
+    inference_thread = InferenceStep(config=config, progress=inference_pbar, in_queue=inference_in, out_queue=inference_out)
+
+    extract_features_out: Queue = SimpleQueue()
+    extract_features_pbar = None #progress.add(desc='Extracting Features')
+    extract_features_thread = ExtractFeaturesStep(config=config, progress=extract_features_pbar, in_queue=inference_out, out_queue=extract_features_out)
+
+    frame_crop_out: List[Queue] = [
+        SimpleQueue(),
+        SimpleQueue(),
+        SimpleQueue(),
+    ]
+    frame_crop_pbar = progress.add(desc='Crop and Rotate')
+    frame_crop_thread = FrameCropStep(config=config, progress=frame_crop_pbar, in_queue=extract_features_out, out_queue=frame_crop_out)
+
+    preview_vid_pbar = progress.add(desc='Preview Video')
+    preview_vid_thread = PreviewVideoWriterStep(config=config, progress=preview_vid_pbar, in_queue=frame_crop_out[0], out_queue=None)
+
+    keypoint_writer_pbar = None #progress.add(desc='Writing Keypoints')
+    keypoint_writer_thread = KeypointWriterStep(config=config, progress=keypoint_writer_pbar, in_queue=frame_crop_out[1], out_queue=None)
+
+    result_writer_thread = ResultH5WriterStep(session, roi=roi, bground_im=bground_im, first_frame=first_frame,
+        config=config, status_dict=status_dict, in_queue=frame_crop_out[2], out_queue=None)
+
+    all_threads: List[Union[Thread, Process]] = [
+        inference_thread,
+        extract_features_thread,
+        frame_crop_thread,
+        preview_vid_thread,
+        keypoint_writer_thread,
+        result_writer_thread,
+    ]
+    # start the threads
+    for t in all_threads:
+        t.start()
+    progress.start()
 
 
 
-    q = Queue()
-    futures = []
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    for i, (frame_idxs, raw_frames) in enumerate(session.iterate(config['chunk_size'], config['chunk_overlap'])):
+        offset = config['chunk_overlap'] if i > 0 else 0
+        raw_frames = prep_raw_frames(raw_frames, bground_im=bground_im, roi=roi, vmin=config['min_height'], vmax=config['max_height'], scale=255)
+        shm = { 'batch': i, 'chunk': raw_frames, 'frame_idxs': frame_idxs, 'offset': offset }
+        inference_in.put(SharedMemoryDict(shm))
+        reader_pbar.put({'update': raw_frames.shape[0]})
+    inference_in.put(None) # signal we are done
 
-        kp_out_data = []
-        keypoint_names = MetadataCatalog.get("moseq_train").keypoint_names
-        for frame_idxs, raw_frames in tqdm.tqdm(session.iterate(chunk_size, chunk_overlap), desc='Processing batches'):
-            raw_frames = bground_im - raw_frames
-            raw_frames[raw_frames < min_height] = 0
-            raw_frames[raw_frames > max_height] = max_height
-            raw_frames = (raw_frames / max_height) * 255 # rescale to use full gammitt
-            raw_frames = raw_frames.astype(frame_dtype)
-            raw_frames = apply_roi(raw_frames, roi)
+    # join the threads
+    for t in all_threads:
+        t.join()
+    progress.shutdown()
+    progress.join()
 
+    # mark status as complete and flush to filesystem
+    status_dict['complete'] = True
+    write_yaml(status_filename, status_dict)
 
-def do_inference(predictor, raw_frames, batch_size):
-    # Do the inference
-    outputs = []
-    for i in tqdm.tqdm(range(0, raw_frames.shape[0], batch_size), desc="Inferring", leave=False):
-        #plt.imshow((raw_frames[i,:,:] / max_height) * 255)
-        #plt.show()
-        outputs.extend(predictor(raw_frames[i:i+batch_size,:,:,None])) # rescale to use full gammitt
-
-    angles, centroids, masks, flips, allosteric_keypoints, rotated_keypoints = instances_to_features(outputs, raw_frames)
+    tqdm.tqdm.write(f'Finished processing {session.nframes} frames in {time.time() - overall_time} seconds')

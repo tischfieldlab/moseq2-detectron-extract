@@ -1,0 +1,60 @@
+
+
+import os
+
+from moseq2_detectron_extract.io.annot import (default_keypoint_names,
+                                               register_dataset_metadata)
+from moseq2_detectron_extract.model import Predictor
+from moseq2_detectron_extract.model.config import get_base_config
+from moseq2_detectron_extract.model.util import (get_last_checkpoint,
+                                                 get_specific_checkpoint)
+from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
+
+
+class InferenceStep(PipelineStep):
+
+    def initialize(self):
+        self.write_message('Loading model....')
+        register_dataset_metadata("moseq_train", default_keypoint_names)
+
+        model_path: str = self.config['model_dir']
+
+        if os.path.isfile(model_path) and model_path.endswith('.ts'):
+            self.write_message(' -> Using torchscript model....')
+            self.predictor = Predictor.from_torchscript(model_path)
+
+        else:
+            cfg = get_base_config()
+            checkpoint = self.config['checkpoint']
+            with open(os.path.join(self.config['model_dir'], 'config.yaml'), 'r') as cfg_file:
+                cfg = cfg.load_cfg(cfg_file)
+
+            if checkpoint == 'last':
+                self.write_message(' -> Using last model checkpoint....')
+                cfg.MODEL.WEIGHTS = get_last_checkpoint(self.config['model_dir'])
+            else:
+                self.write_message(f' -> Using model checkpoint at iteration {checkpoint}....')
+                cfg.MODEL.WEIGHTS = get_specific_checkpoint(self.config['model_dir'], checkpoint)
+
+            cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
+            cfg.TEST.DETECTIONS_PER_IMAGE = 1
+            self.predictor = Predictor.from_config(cfg)
+
+        self.write_message('')
+
+    def process(self, data):
+
+        batch_size = self.config['batch_size']
+        raw_frames = data['chunk']
+
+        # Do the inference
+        batches = range(0, raw_frames.shape[0], batch_size)
+        #self.reset_progress(len(batches))
+        outputs = []
+        for i in batches:
+            pred = self.predictor(raw_frames[i:i+batch_size,:,:,None])
+            outputs.extend([{ 'instances': p['instances'].to('cpu') } for p in pred])
+            self.update_progress(batch_size)
+
+        data['inference'] = outputs
+        return data

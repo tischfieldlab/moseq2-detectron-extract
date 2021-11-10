@@ -1,50 +1,55 @@
-import numpy as np
-import tqdm
-from moseq2_detectron_extract.io.proc import apply_roi
-from skimage.transform import resize
-from sklearn.cluster import MiniBatchKMeans
+import glob
+import os
+from typing import Dict, List
+
+import torch
+from detectron2.modeling.postprocessing import detector_postprocess
+from detectron2.structures import Boxes, Instances
 
 
-def select_frames_kmeans(session, num_frames_to_pick, num_clusters=None, chunk_size=1000, scale=4, min_height=5, max_height=100, kmeans_batchsize=100, kmeans_max_iter=50):
+def get_last_checkpoint(path: str) -> str:
+    ''' Get the path to the last model checkpoint in a model directory
+        Looks at the "last_checkpoint" file in the directory
 
-    first_frame, bground_im, roi, true_depth = session.find_roi()
-    downsampled = np.zeros((session.nframes, int(roi.shape[0] / scale), int(roi.shape[1] / scale)))
-    for frame_idxs, raw_frames in tqdm.tqdm(session.iterate(chunk_size=chunk_size), desc='Processing batches', leave=False):
-        raw_frames = bground_im - raw_frames
-        raw_frames[raw_frames < min_height] = 0
-        raw_frames[raw_frames > max_height] = max_height
-        raw_frames = apply_roi(raw_frames, roi)
-        raw_frames = raw_frames
-        
-        for i, idx in enumerate(tqdm.tqdm(frame_idxs, desc='Resizing Frames', leave=False, disable=False)):
-            downsampled[idx, :, :] = resize(raw_frames[i], downsampled.shape[1:], anti_aliasing=True, preserve_range=True, mode='constant')
-    
-    with tqdm.tqdm(total=1, leave=False, desc="Kmeans clustering ... (this might take a while)") as pbar:
-        data = downsampled - downsampled.mean(axis=0)
-        data = data.reshape(data.shape[0], -1)  # stacking
+        Parameters:
+            path (str): directory containing the modelling results
 
-        if num_clusters is None:
-            num_clusters = num_frames_to_pick
+        Returns:
+            Path to the last checkpoint
+    '''
+    with open(os.path.join(path, 'last_checkpoint'), 'r') as f:
+        last_checkpoint = f.read()
+    return os.path.join(path, last_checkpoint)
 
-        kmeans = MiniBatchKMeans(
-            n_clusters=num_clusters,
-            tol=1e-3,
-            batch_size=kmeans_batchsize,
-            max_iter=kmeans_max_iter
+
+def get_specific_checkpoint(path: str, iteration: int, ext: str='pth') -> str:
+    ''' Get the path to the model at a specific checkpoint in a model directory
+
+        Parameters:
+            path (str): directory containing the modelling results
+            iteration (int): iteration number to look for
+            ext (str): file extension of the model file
+
+        Returns:
+            Path to checkpoint at `iteration`
+    '''
+    matches = glob.glob(os.path.join(path, f'*{iteration}.{ext}'))
+    return matches[0]
+
+
+def outputs_to_instances(inputs: List[Dict[str, torch.Tensor]], outputs: List[Dict[str, torch.Tensor]]) -> List[dict]:
+    instances = []
+    for i, o in zip(inputs, outputs):
+        height = i.get("height", i['image'].shape[0])
+        width = i.get("width", i['image'].shape[1])
+        ins = Instances(
+            (height, width),
+            **{
+                'pred_boxes': Boxes(o.pop('pred_boxes')),
+                **o,
+            }
         )
-        kmeans.fit(data)
-        pbar.update(1)
+        ins = detector_postprocess(ins, height, width)
+        instances.append({"instances": ins})
 
-    num_frames_per_cluster = num_frames_to_pick // num_clusters
-    if num_frames_per_cluster < 1:
-        num_frames_per_cluster = 1
-    
-    selected_frames = []
-    for cluster_id in range(num_clusters):  # pick one frame per cluster
-        cluster_ids = np.where(cluster_id == kmeans.labels_)[0]
-
-        num_images_in_cluster = len(cluster_ids)
-        if num_images_in_cluster > 0:
-            selected_frames.extend(list(cluster_ids[np.random.choice(num_images_in_cluster, size=num_frames_per_cluster, replace=False)]))
-
-    return selected_frames
+    return instances

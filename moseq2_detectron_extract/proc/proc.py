@@ -1,0 +1,423 @@
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy
+import tqdm
+from bottleneck import move_median
+from moseq2_detectron_extract.proc.keypoints import rotate_points_batch
+from moseq2_detectron_extract.proc.roi import apply_roi
+
+
+def overlay_video(video1, video2):
+    channels = video1.shape[-1]
+    nframes, rows1, cols1 = video1.shape[:3]
+    _, rows2, cols2 = video2.shape[:3]
+    output_movie = np.zeros((nframes, (rows1 + rows2), (cols1 + cols2), channels), 'uint16')
+    output_movie[:, :rows2, :cols2, :] = video2
+    output_movie[:, rows2:, cols2:, :] = video1
+    return output_movie
+
+
+def colorize_video(frames, vmin=0, vmax=100, cmap='jet'):
+    use_cmap = plt.get_cmap(cmap)
+
+    disp_img = frames.copy().astype('float32')
+    disp_img = (disp_img-vmin)/(vmax-vmin)
+    disp_img[disp_img < 0] = 0
+    disp_img[disp_img > 1] = 1
+    disp_img = use_cmap(disp_img)[:,:,:,:3]*255
+
+    return disp_img
+
+
+def prep_raw_frames(frames, bground_im, roi=None, vmin=None, vmax=None, scale=None, dtype='uint8'):
+    if frames is not None:
+        frames = bground_im - frames
+
+    if vmin is not None:
+        frames[frames < vmin] = 0
+
+    if vmax is not None:
+        frames[frames > vmax] = vmax
+
+    if scale is not None:
+        frames = (frames / vmax) * scale # rescale to use full gammitt
+
+    if roi is not None:
+        frames = apply_roi(frames, roi)
+
+    return frames.astype(dtype)
+
+
+def get_frame_features(frames, frame_threshold=10, mask=np.array([]),
+                       mask_threshold=-30, use_cc=False, progress_bar=True):
+    """
+    Use image moments to compute features of the largest object in the frame
+
+    Args:
+        frames (3d np array)
+        frame_threshold (int): threshold in mm separating floor from mouse
+
+    Returns:
+        features (dict list): dictionary with simple image features
+
+    """
+
+    features = []
+    nframes = frames.shape[0]
+
+    if type(mask) is np.ndarray and mask.size > 0:
+        has_mask = True
+    else:
+        has_mask = False
+        mask = np.zeros((frames.shape), 'uint8')
+
+    features = {
+        'centroid': np.empty((nframes, 2)),
+        'orientation': np.empty((nframes,)),
+        'axis_length': np.empty((nframes, 2))
+    }
+
+    for k, v in features.items():
+        features[k][:] = np.nan
+
+    for i in tqdm.tqdm(range(nframes), disable=not progress_bar, desc='Computing moments'):
+
+        frame_mask = frames[i, ...] > frame_threshold
+
+        if use_cc:
+            cc_mask = get_largest_cc((frames[[i], ...] > mask_threshold).astype('uint8')).squeeze()
+            frame_mask = np.logical_and(cc_mask, frame_mask)
+
+        if has_mask:
+            frame_mask = np.logical_and(frame_mask, mask[i, ...])
+        else:
+            mask[i, ...] = frame_mask
+
+        cnts, hierarchy = cv2.findContours(
+            frame_mask.astype('uint8'),
+            cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        tmp = np.array([cv2.contourArea(x) for x in cnts])
+
+        if tmp.size == 0:
+            continue
+
+        mouse_cnt = tmp.argmax()
+
+        for key, value in im_moment_features(cnts[mouse_cnt]).items():
+            features[key][i] = value
+
+    return features, mask
+
+
+def crop_and_rotate_frame(frame, center, angle, crop_size=(80, 80)):
+    if np.isnan(angle) or np.any(np.isnan(center)):
+        return np.zeros_like(frame, shape=crop_size)
+
+    xmin = int(center[0] - crop_size[0] // 2) + crop_size[0]
+    xmax = int(center[0] + crop_size[0] // 2) + crop_size[0]
+    ymin = int(center[1] - crop_size[1] // 2) + crop_size[1]
+    ymax = int(center[1] + crop_size[1] // 2) + crop_size[1]
+
+    border = (crop_size[1], crop_size[1], crop_size[0], crop_size[0])
+    rot_mat = cv2.getRotationMatrix2D((crop_size[0] // 2, crop_size[1] // 2), angle, 1)
+    use_frame = cv2.copyMakeBorder(frame, *border, cv2.BORDER_CONSTANT, 0)
+    return cv2.warpAffine(use_frame[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
+
+
+def crop_and_rotate_frames(frames, features, crop_size=(80, 80),
+                           progress_bar=True):
+
+    nframes = frames.shape[0]
+    cropped_frames = np.zeros((nframes, crop_size[0], crop_size[1]), frames.dtype)
+    win = (crop_size[0] // 2, crop_size[1] // 2 + 1)
+    border = (crop_size[1], crop_size[1], crop_size[0], crop_size[0])
+
+    for i in tqdm.tqdm(range(frames.shape[0]), disable=not progress_bar, desc='Rotating'):
+
+        if np.any(np.isnan(features['centroid'][i, :])):
+            continue
+
+        # use_frame = np.pad(frames[i, ...], (crop_size, crop_size), 'constant', constant_values=0)
+        use_frame = cv2.copyMakeBorder(frames[i, ...], *border, cv2.BORDER_CONSTANT, 0)
+
+        rr = np.arange(features['centroid'][i, 1]-win[0],
+                       features['centroid'][i, 1]+win[1]).astype('int16')
+        cc = np.arange(features['centroid'][i, 0]-win[0],
+                       features['centroid'][i, 0]+win[1]).astype('int16')
+
+        rr = rr+crop_size[0]
+        cc = cc+crop_size[1]
+
+        if (np.any(rr >= use_frame.shape[0]) or np.any(rr < 1)
+                or np.any(cc >= use_frame.shape[1]) or np.any(cc < 1)):
+            continue
+
+        rot_mat = cv2.getRotationMatrix2D((crop_size[0] // 2, crop_size[1] // 2),
+                                          -np.rad2deg(features['orientation'][i]), 1)
+        cropped_frames[i, :, :] = cv2.warpAffine(use_frame[rr[0]:rr[-1], cc[0]:cc[-1]],
+                                                 rot_mat, (crop_size[0], crop_size[1]))
+
+    return cropped_frames
+
+
+def feature_hampel_filter(features, centroid_hampel_span=None, centroid_hampel_sig=3,
+                          angle_hampel_span=None, angle_hampel_sig=3):
+
+    if centroid_hampel_span is not None and centroid_hampel_span > 0:
+        padded_centroids = np.pad(features['centroid'],
+                                  (((centroid_hampel_span // 2, centroid_hampel_span // 2)),
+                                   (0, 0)),
+                                  'constant', constant_values = np.nan)
+        for i in range(1):
+            vws = strided_app(padded_centroids[:, i], centroid_hampel_span, 1)
+            med = np.nanmedian(vws, axis=1)
+            mad = np.nanmedian(np.abs(vws - med[:, None]), axis=1)
+            vals = np.abs(features['centroid'][:, i] - med)
+            fill_idx = np.where(vals > med + centroid_hampel_sig * mad)[0]
+            features['centroid'][fill_idx, i] = med[fill_idx]
+
+
+    if angle_hampel_span is not None and angle_hampel_span > 0:
+        padded_orientation = np.pad(features['orientation'],
+                                    (angle_hampel_span // 2, angle_hampel_span // 2),
+                                    'constant', constant_values = np.nan)
+        vws = strided_app(padded_orientation, angle_hampel_span, 1)
+        med = np.nanmedian(vws, axis=1)
+        mad = np.nanmedian(np.abs(vws - med[:, None]), axis=1)
+        vals = np.abs(features['orientation'] - med)
+        fill_idx = np.where(vals > med + angle_hampel_sig * mad)[0]
+        features['orientation'][fill_idx] = med[fill_idx]
+
+    return features
+
+
+def hampel_filter(data, span, sigma=3):
+    if len(data.shape) == 1:
+        padded_data = np.pad(data, (span // 2, span // 2), 'constant', constant_values=np.nan)
+        vws = broadcasting_app(padded_data, span, 1)
+        med = np.nanmedian(vws, axis=1)
+        mad = np.nanmedian(np.abs(vws - med[:, None]), axis=1)
+        vals = np.abs(data - med)
+        fill_idx = np.where(vals > med + sigma * mad)[0]
+        data[fill_idx] = med[fill_idx]
+
+    elif len(data.shape) == 2:
+        padded_data = np.pad(data, ((span // 2, span // 2), (0,)*data.shape[1]), 'constant', constant_values=np.nan)
+        for i in range(data.shape[1]):
+            vws = strided_app(padded_data[:, i], span, 1)
+            med = np.nanmedian(vws, axis=1)
+            mad = np.nanmedian(np.abs(vws - med[:, None]), axis=1)
+            vals = np.abs(data[:, i] - med)
+            fill_idx = np.where(vals > med + sigma * mad)[0]
+            data[fill_idx, i] = med[fill_idx]
+    else:
+        raise ValueError("cannot accept data with {} dimentions!".format(len(data.shape)))
+
+    return data
+
+
+def clean_frames(frames, prefilter_space=(3,), prefilter_time=None,
+                 strel_tail=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)),
+                 iters_tail=None, frame_dtype='uint8',
+                 strel_min=cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)),
+                 iters_min=None, progress_bar=True):
+    """
+    Simple filtering, median filter and morphological opening
+
+    Args:
+        frames (3d np array): frames x r x c
+        strel (opencv structuring element): strel for morph opening
+        iters_tail (int): number of iterations to run opening
+
+    Returns:
+        filtered_frames (3d np array): frame x r x c
+
+    """
+    # seeing enormous speed gains w/ opencv
+    filtered_frames = frames.copy().astype(frame_dtype)
+
+    for i in tqdm.tqdm(range(frames.shape[0]),
+                       disable=not progress_bar, desc='Cleaning frames'):
+
+        if iters_min is not None and iters_min > 0:
+            filtered_frames[i, ...] = cv2.erode(filtered_frames[i, ...], strel_min, iters_min)
+
+        if prefilter_space is not None and np.all(np.array(prefilter_space) > 0):
+            for j in range(len(prefilter_space)):
+                filtered_frames[i, ...] = cv2.medianBlur(filtered_frames[i, ...], prefilter_space[j])
+
+        if iters_tail is not None and iters_tail > 0:
+            filtered_frames[i, ...] = cv2.morphologyEx(
+                filtered_frames[i, ...], cv2.MORPH_OPEN, strel_tail, iters_tail)
+
+    if prefilter_time is not None and np.all(np.array(prefilter_time) > 0):
+        for j in range(len(prefilter_time)):
+            filtered_frames = scipy.signal.medfilt(
+                filtered_frames, [prefilter_time[j], 1, 1])
+
+    return filtered_frames
+
+
+def im_moment_features(IM):
+    """
+    Use the method of moments and centralized moments to get image properties
+
+    Args:
+        IM (2d numpy array): depth image
+
+    Returns:
+        Features (dictionary): returns a dictionary with orientation,
+        centroid, and ellipse axis length
+
+    """
+
+    tmp = cv2.moments(IM)
+    num = 2*tmp['mu11']
+    den = tmp['mu20']-tmp['mu02']
+
+    common = np.sqrt(4*np.square(tmp['mu11'])+np.square(den))
+
+    if tmp['m00'] == 0:
+        features = {
+            'orientation': np.nan,
+            'centroid': np.nan,
+            'axis_length': [np.nan, np.nan]
+        }
+    else:
+        features = {
+            'orientation': -.5*np.arctan2(num, den),
+            'centroid': [tmp['m10']/tmp['m00'], tmp['m01']/tmp['m00']],
+            'axis_length': [2*np.sqrt(2)*np.sqrt((tmp['mu20']+tmp['mu02']+common)/tmp['m00']),
+                            2*np.sqrt(2)*np.sqrt((tmp['mu20']+tmp['mu02']-common)/tmp['m00'])]
+        }
+
+    return features
+
+
+def get_largest_cc(frames, progress_bar=False):
+    """Returns largest connected component blob in image
+    Args:
+        frame (3d numpy array): frames x r x c, uncropped mouse
+        progress_bar (bool): display progress bar
+
+    Returns:
+        flips (3d bool array):  frames x r x c, true where blob was found
+    """
+    foreground_obj = np.zeros((frames.shape), 'bool')
+
+    for i in tqdm.tqdm(range(frames.shape[0]), disable=not progress_bar, desc='CC'):
+        nb_components, output, stats, centroids =\
+            cv2.connectedComponentsWithStats(frames[i, ...], connectivity=4)
+        szs = stats[:, -1]
+        foreground_obj[i, ...] = output == szs[1:].argmax()+1
+
+    return foreground_obj
+
+
+# from https://stackoverflow.com/questions/40084931/taking-subarrays-from-numpy-array-with-given-stride-stepsize/40085052#40085052
+# dang this is fast!
+def strided_app(a, L, S):  # Window len = L, Stride len/stepsize = S
+    nrows = ((a.size-L)//S)+1
+    n = a.strides[0]
+    return np.lib.stride_tricks.as_strided(a, shape=(nrows, L), strides=(S*n, n))
+
+
+def broadcasting_app(a, L, S ):  # Window len = L, Stride len/stepsize = S
+    nrows = ((a.size-L)//S)+1
+    return a[S*np.arange(nrows)[:,None] + np.arange(L)]
+
+
+def filter_angles(angles, window=3):
+    out = np.copy(angles)
+    windows = move_median(angles, window=window, min_count=1)
+    diff = out - windows
+    absdiff = np.abs(diff)
+    flips = ((absdiff>120) & (absdiff<240))
+    signs = np.sign(diff[flips])
+    out[flips] = out[flips] + (-180 * signs)
+    #print(np.count_nonzero(flips))
+    return out
+
+
+def iterative_filter_angles(data, max_iters=1000):
+    last = np.copy(data)
+    iterations = 0
+    while True:
+        if iterations > max_iters:
+            break
+
+        iterations += 1
+        curr = filter_angles(last)
+
+        if np.allclose(curr, last):
+            #print(f'Converged after {iterations} iterations')
+            break
+        else:
+            last = curr
+    flips = np.isclose(np.abs(curr - data), 180)
+    return curr, flips
+
+
+def mask_and_keypoints_from_model_output(model_outputs):
+    # initialize output arrays
+    first = model_outputs[0]["instances"]
+    masks = np.empty((len(model_outputs), 1, *first.pred_masks.shape[1:]), dtype='uint8')
+    keypoints = np.empty((len(model_outputs), 1, first.pred_keypoints.shape[1], 3), dtype=float)
+    keypoints.fill(np.nan)
+    num_instances = np.zeros((len(model_outputs)), dtype=int)
+
+    # fill output with data
+    for i, output in enumerate(model_outputs):
+        num_instances[i] = len(output["instances"])
+        if len(output["instances"]) > 0:
+            keypoints[i, 0] = output["instances"].pred_keypoints[0, :, :].cpu().numpy()
+            masks[i, 0] = output["instances"].pred_masks[0, :, :].cpu().numpy()
+    return masks, keypoints, num_instances
+
+
+def instances_to_features(model_outputs, raw_frames):
+    front_keypoints = [0, 1, 2, 3]
+    rear_keypoints = [4, 5, 6]
+
+    # frames x instances x keypoints x 3
+    d2_masks, allosteric_keypoints, num_instances = mask_and_keypoints_from_model_output(model_outputs)
+
+    cleaned_frames = clean_frames(raw_frames, progress_bar=False, iters_tail=3, prefilter_time=(3,))
+    features, masks = get_frame_features(cleaned_frames, progress_bar=False, mask=d2_masks[:, 0, :, :], use_cc=True)
+
+    angles = features['orientation']
+    lengths = np.max(features['axis_length'], axis=1)
+    incl = ~np.isnan(angles)
+    angles[incl] = np.unwrap(angles[incl] * 2) / 2
+    angles = -np.rad2deg(angles)
+
+    #rotate keypoints to reflect angles
+    rotated_keypoints = rotate_points_batch(allosteric_keypoints, features['centroid'], angles)
+
+    # Strategy:
+    # Compute the distance of each keypoint to the left and right edge of the bounding box
+    # The groups of front and rear keypoints vote on which edge they are closer to (left=-1; right=1)
+    # The votes are compared, and if indicate a flip is needed, add 180 degrees to the angle
+    extent_x_min = features['centroid'][:, 0] - (lengths / 2)
+    extent_x_max = features['centroid'][:, 0] + (lengths / 2)
+    rot_keypoint_scores = np.zeros(rotated_keypoints.shape[:-1], dtype=float)
+    left_dist = np.abs(extent_x_min[:, np.newaxis] - rotated_keypoints[:, 0, :, 0])
+    right_dist = np.abs(extent_x_max[:, np.newaxis] - rotated_keypoints[:, 0, :, 0])
+    rot_keypoint_scores = np.where(left_dist < right_dist, -1, 1)
+    front_votes = np.mean(rot_keypoint_scores[:, front_keypoints], axis=1)
+    rear_votes = np.mean(rot_keypoint_scores[:, rear_keypoints], axis=1)
+    flips = np.where(front_votes < rear_votes, True, False)
+    angles[flips] += 180
+    angles, filter_flips = iterative_filter_angles(angles)
+    features['orientation'] = np.array(angles)
+    flips = np.logical_xor(flips, filter_flips)
+
+    return {
+        'cleaned_frames': cleaned_frames,
+        'masks': masks,
+        'features': features,
+        'flips': flips,
+        'keypoints': allosteric_keypoints,
+        'num_instances': num_instances
+    }

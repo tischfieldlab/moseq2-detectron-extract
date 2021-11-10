@@ -1,5 +1,4 @@
 import errno
-import glob
 import json
 import os
 import sys
@@ -8,6 +7,7 @@ from typing import Union
 import click
 import h5py
 import numpy as np
+import ruamel.yaml as yaml
 
 
 def gen_batch_sequence(nframes: int, chunk_size: int, overlap: int, offset: int=0):
@@ -54,77 +54,35 @@ def load_metadata(metadata_file: str) -> dict:
     return metadata
 
 
-def get_last_checkpoint(path: str) -> str:
-    ''' Get the path to the last model checkpoint in a model directory
-        Looks at the "last_checkpoint" file in the directory
 
-        Parameters:
-            path (str): directory containing the modelling results
 
-        Returns:
-            Path to the last checkpoint
+
+
+def read_yaml(yaml_file: str) -> dict:
+    ''' Read a yaml file into dict object
+
+    Parameters:
+        yaml_file (str): path to yaml file
+
+    Returns:
+        return_dict (dict): dict of yaml contents
     '''
-    with open(os.path.join(path, 'last_checkpoint'), 'r') as f:
-        last_checkpoint = f.read()
-    return os.path.join(path, last_checkpoint)
+    with open(yaml_file, 'r') as f:
+        yml = yaml.YAML(typ='safe')
+        return yml.load(f)
 
 
-def get_specific_checkpoint(path: str, iteration: int, ext: str='pth') -> str:
-    ''' Get the path to the model at a specific checkpoint in a model directory
+def write_yaml(yaml_file: str, data: dict) -> None:
+    ''' Write a dict object into a yaml file
 
-        Parameters:
-            path (str): directory containing the modelling results
-            iteration (int): iteration number to look for
-            ext (str): file extension of the model file
-
-        Returns:
-            Path to checkpoint at `iteration`
+    Parameters:
+        yaml_file (str): path to yaml file
+        data (dict): dict of data to write to `yaml_file`
     '''
-    matches = glob.glob(os.path.join(path, f'*{iteration}.{ext}'))
-    return matches[0]
-
-
-
-def keypoints_to_dict(keypoint_names, kp_data, prefix=''):
-    out = {}
-    for ki, kp in enumerate(keypoint_names):
-        out.update({
-            k: v for k, v in zip([f"{prefix}{kp}_X", f"{prefix}{kp}_Y", f"{prefix}{kp}_S"], kp_data[ki])
-        })
-    return out
-
-
-def convert_pxs_to_mm(coords, resolution=(512, 424), field_of_view=(70.6, 60), true_depth=673.1):
-    '''
-    Converts x, y coordinates in pixel space to mm.
-    http://stackoverflow.com/questions/17832238/kinect-intrinsic-parameters-from-field-of-view/18199938#18199938
-    http://www.imaginativeuniversal.com/blog/post/2014/03/05/quick-reference-kinect-1-vs-kinect-2.aspx
-    http://smeenk.com/kinect-field-of-view-comparison/
-    Parameters
-    ----------
-    coords (list): list of x,y pixel coordinates
-    resolution (tuple): image dimensions
-    field_of_view (tuple): width and height scaling params
-    true_depth (float): detected true depth
-    Returns
-    -------
-    new_coords (list): x,y coordinates in mm
-    '''
-
-    cx = resolution[0] // 2
-    cy = resolution[1] // 2
-
-    xhat = coords[:, 0] - cx
-    yhat = coords[:, 1] - cy
-
-    fw = resolution[0] / (2 * np.deg2rad(field_of_view[0] / 2))
-    fh = resolution[1] / (2 * np.deg2rad(field_of_view[1] / 2))
-
-    new_coords = np.zeros_like(coords)
-    new_coords[:, 0] = true_depth * xhat / fw
-    new_coords[:, 1] = true_depth * yhat / fh
-
-    return new_coords
+    with open(yaml_file, 'w') as f:
+        yml = yaml.YAML(typ='safe')
+        yml.default_flow_style = False
+        yml.dump(data, f)
 
 
 def ensure_dir(path: str) -> str:

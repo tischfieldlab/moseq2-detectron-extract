@@ -1,9 +1,12 @@
-from typing import List, Tuple, Union
-from detectron2.data.transforms import Augmentation, Transform, BlendTransform, NoOpTransform
 import random
-import numpy as np
-from FyeldGenerator import generate_field
 from functools import partial
+from typing import List, Tuple, Union
+
+import numpy as np
+from detectron2.data.transforms import (Augmentation, BlendTransform,
+                                        NoOpTransform, Transform)
+from FyeldGenerator import generate_field
+
 
 RangeType = Union[int, float, Tuple[int, int], Tuple[float, float], List[int], List[float]]
 
@@ -66,7 +69,6 @@ class DoughnutNoiseAugmentation(Augmentation):
             return BlendTransform(im, self.weight, 1-self.weight)
         else:
             return NoOpTransform()
-
 
 
 class RandomFieldNoiseAugmentation(Augmentation):

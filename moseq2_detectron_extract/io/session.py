@@ -1,15 +1,17 @@
-from enum import Enum
 import os
 import tarfile
+from enum import Enum
 from typing import Iterable, Sequence, Tuple, Union
-from moseq2_detectron_extract.io.image import read_tiff_image, write_image
-from moseq2_detectron_extract.io.util import (gen_batch_sequence, load_metadata,
-                                         load_timestamps)
-from moseq2_detectron_extract.io.video import get_movie_info, load_movie_data
-from moseq2_detectron_extract.io.proc import (get_bground_im_file,
-                                           get_roi, select_strel)
+
 import numpy as np
 import tqdm
+from moseq2_detectron_extract.io.image import read_tiff_image, write_image
+from moseq2_detectron_extract.io.util import (gen_batch_sequence,
+                                              load_metadata, load_timestamps)
+from moseq2_detectron_extract.io.video import get_movie_info, load_movie_data
+from moseq2_detectron_extract.proc.roi import get_bground_im_file, get_roi
+from moseq2_detectron_extract.proc.util import select_strel
+
 
 class Stream(str, Enum):
     Depth = 'depth'

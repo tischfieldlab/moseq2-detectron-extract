@@ -24,6 +24,7 @@ def visualize_annotations(annotations, metadata, num=5):
         ax.imshow(out.get_image())
     return fig, axs
 
+
 def visualize_inference(frame, instances, min_height, max_height, scale=2.0):
     im = frame[:,:,None].copy().astype('uint8')
     im = (im-min_height)/(max_height-min_height)
@@ -43,7 +44,8 @@ def draw_instances(frame, instances, scale=2.0):
     out = v.draw_instance_predictions(instances)
     return out.get_image()
 
-def draw_instances_fast(frame, instances, dataset_name='moseq_train', scale=2.0):
+
+def draw_instances_fast(frame, instances, keypoint_names, keypoint_connection_rules, scale=2.0):
     im = convert_image_to_rgb(frame, "L")
     im = cv2.resize(im, (int(im.shape[1] * scale), int(im.shape[0] * scale)))
 
@@ -61,17 +63,14 @@ def draw_instances_fast(frame, instances, dataset_name='moseq_train', scale=2.0)
         box *= scale
         im = cv2.rectangle(im, tuple(box[0:2].astype(int)), tuple(box[2:4].astype(int)), (0,255,0))
 
-
         # keypoints
         kpts = instances.pred_keypoints[i, :, :].cpu().numpy()
         kpts *= scale
 
         # draw keypoint connections
-        kn = MetadataCatalog.get(dataset_name).keypoint_names
-        kcr = MetadataCatalog.get(dataset_name).keypoint_connection_rules
-        for rule in kcr:
-            ki1 = kn.index(rule[0])
-            ki2 = kn.index(rule[1])
+        for rule in keypoint_connection_rules:
+            ki1 = keypoint_names.index(rule[0])
+            ki2 = keypoint_names.index(rule[1])
             cv2.line(im, tuple(kpts[ki1, :2].astype(int)), tuple(kpts[ki2, :2].astype(int)), rule[2], 2)
 
         # draw keypoints
@@ -79,4 +78,3 @@ def draw_instances_fast(frame, instances, dataset_name='moseq_train', scale=2.0)
             im = cv2.circle(im, tuple(kpts[ki, :2].astype(int)), 3, (0,0,255), -1)
 
     return im
-

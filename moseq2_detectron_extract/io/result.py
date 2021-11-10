@@ -1,11 +1,12 @@
-
-
-from pkg_resources import get_distribution
-from moseq2_detectron_extract.io.util import click_param_annot, dict_to_h5
+import h5py
 import numpy as np
+from moseq2_detectron_extract.io.util import click_param_annot, dict_to_h5
+from moseq2_detectron_extract.proc.keypoints import keypoint_attributes
+from moseq2_detectron_extract.proc.scalars import scalar_attributes
+from pkg_resources import get_distribution
 
 
-def create_extract_h5(h5_file, acquisition_metadata, config_data, status_dict, scalars_attrs,
+def create_extract_h5(h5_file: h5py.File, acquisition_metadata: dict, config_data, status_dict,
                       nframes, roi, bground_im, first_frame, timestamps, **kwargs):
     '''
     This is a helper function for extract_wrapper(); handles writing the following metadata
@@ -17,7 +18,6 @@ def create_extract_h5(h5_file, acquisition_metadata, config_data, status_dict, s
     acquisition_metadata (dict): Dictionary containing extracted session acquisition metadata.
     config_data (dict): dictionary object containing all required extraction parameters. (auto generated)
     status_dict (dict): dictionary that helps indicate if the session has been extracted fully.
-    scalars_attrs (dict): dict of computed scalar attributes and descriptions to save.
     nframes (int): number of frames being recorded
     roi (2d np.ndarray): Computed 2D ROI Image.
     bground_im (2d np.ndarray): Computed 2D Background Image.
@@ -32,9 +32,16 @@ def create_extract_h5(h5_file, acquisition_metadata, config_data, status_dict, s
     h5_file.create_dataset('metadata/uuid', data=status_dict['uuid'])
 
     # Creating scalar dataset
+    scalars_attrs = scalar_attributes()
     for scalar in list(scalars_attrs.keys()):
         h5_file.create_dataset(f'scalars/{scalar}', (nframes,), 'float32', compression='gzip')
         h5_file[f'scalars/{scalar}'].attrs['description'] = scalars_attrs[scalar]
+
+    # Creating keypoints dataset
+    keypoint_attrs = keypoint_attributes()
+    for kp in list(keypoint_attrs.keys()):
+        h5_file.create_dataset(f'keypoints/{kp}', (nframes,), 'float32', compression='gzip')
+        h5_file[f'keypoints/{kp}'].attrs['description'] = keypoint_attrs[kp]
 
     # Timestamps
     if timestamps is not None:
@@ -79,7 +86,7 @@ def create_extract_h5(h5_file, acquisition_metadata, config_data, status_dict, s
 
     # Extract Version
     package_name = 'moseq2-detectron-extract'
-    extract_version = '{} v{}'.format(package_name, np.string_(get_distribution('moseq2-extract').version))
+    extract_version = '{} v{}'.format(package_name, np.string_(get_distribution(package_name).version))
     h5_file.create_dataset('metadata/extraction/extract_version', data=extract_version)
     h5_file['metadata/extraction/extract_version'].attrs['description'] = 'Version of moseq2-extract'
 
@@ -98,22 +105,21 @@ def create_extract_h5(h5_file, acquisition_metadata, config_data, status_dict, s
             h5_file.create_dataset(f'metadata/acquisition/{key}', dtype="f")
 
 
-def write_extracted_chunk_to_h5(h5_file, results, scalars, frame_range, offset):
+def write_extracted_chunk_to_h5(h5_file, results):
     '''
     Write extracted frames, frame masks, and scalars to an open h5 file.
     Parameters
     ----------
     h5_file (H5py.File): open results_00 h5 file to save data in.
     results (dict): extraction results dict.
-    scalars (list): list of keys to scalar attribute values
-    frame_range (range object): current chunk frame range
-    offset (int): frame offset
     Returns
     -------
     '''
+    frame_range = results['frame_idxs']
+    offset = results['offset']
 
     # Writing computed scalars to h5 file
-    for scalar in scalars:
+    for scalar in results['scalars'].keys():
         h5_file[f'scalars/{scalar}'][frame_range] = results['scalars'][scalar][offset:]
 
     # Writing frames and mask to h5
@@ -122,4 +128,8 @@ def write_extracted_chunk_to_h5(h5_file, results, scalars, frame_range, offset):
 
     # Writing flip classifier results to h5
     if 'flips' in results and results['flips'] is not None:
-        h5_file['metadata/extraction/flips'][frame_range] = results['flips'][offset:]
+        h5_file['metadata/extraction/flips'][frame_range] = results['features']['flips'][offset:]
+
+    # Writing keypoints dataset
+    for kp in results['keypoints'].keys():
+        h5_file[f'keypoints/{kp}'][frame_range] = results['keypoints'][kp][offset:]

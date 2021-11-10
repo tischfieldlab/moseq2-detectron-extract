@@ -6,7 +6,6 @@ import detectron2.utils.comm as comm
 import numpy as np
 import torch
 from detectron2.engine.hooks import HookBase
-from detectron2.evaluation import inference_context
 from detectron2.utils.logger import log_every_n_seconds
 
 

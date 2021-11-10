@@ -4,10 +4,10 @@ import datetime
 import json
 import os
 import time
+import uuid
 import warnings
 from copy import Error, deepcopy
 from pstats import Stats
-import uuid
 
 import click
 import h5py
@@ -17,28 +17,32 @@ import tqdm
 from detectron2.data.catalog import MetadataCatalog
 from detectron2.utils.env import seed_all_rng
 
+from moseq2_detectron_extract.extract import extract_session
 from moseq2_detectron_extract.io.annot import (
-    augment_annotations_with_rotation, default_keypoint_names,
-    get_dataset_statistics, read_annotations, register_dataset_metadata,
+    default_keypoint_names, read_annotations, register_dataset_metadata,
     register_datasets, replace_data_path_in_annotations, show_dataset_info,
     validate_annotations)
 from moseq2_detectron_extract.io.image import write_image
-from moseq2_detectron_extract.io.proc import (apply_roi, colorize_video,
-                                              crop_and_rotate_frame,
-                                              instances_to_features,
-                                              overlay_video, scalar_attributes)
-from moseq2_detectron_extract.io.result import create_extract_h5, write_extracted_chunk_to_h5
+from moseq2_detectron_extract.io.result import (create_extract_h5,
+                                                write_extracted_chunk_to_h5)
 from moseq2_detectron_extract.io.session import Session, Stream
-from moseq2_detectron_extract.io.util import (Tee, ensure_dir,
-                                              get_last_checkpoint,
-                                              get_specific_checkpoint,
-                                              keypoints_to_dict)
+from moseq2_detectron_extract.io.util import Tee, ensure_dir
 from moseq2_detectron_extract.io.video import PreviewVideoWriter
+from moseq2_detectron_extract.model import Evaluator, Predictor, Trainer
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config,
                                                    load_config)
-from moseq2_detectron_extract.model.model import Evaluator, Predictor, Trainer
-from moseq2_detectron_extract.model.util import select_frames_kmeans
+from moseq2_detectron_extract.model.deploy import export_model
+from moseq2_detectron_extract.model.util import (get_last_checkpoint,
+                                                 get_specific_checkpoint)
+from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict
+from moseq2_detectron_extract.proc.kmeans import select_frames_kmeans
+from moseq2_detectron_extract.proc.proc import (colorize_video,
+                                                crop_and_rotate_frame,
+                                                instances_to_features,
+                                                overlay_video, prep_raw_frames)
+from moseq2_detectron_extract.proc.roi import apply_roi
+from moseq2_detectron_extract.proc.scalars import compute_scalars
 from moseq2_detectron_extract.viz import draw_instances_fast
 
 warnings.filterwarnings("ignore", category=UserWarning, module='torch', lineno=575)
@@ -179,7 +183,7 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
     for search, replace in replace_data_path:
         replace_data_path_in_annotations(annotations, search, replace)
     validate_annotations(annotations)
-    annotations = augment_annotations_with_rotation(annotations)
+
     print('Dataset information:')
     show_dataset_info(annotations)
     register_datasets(annotations, default_keypoint_names, split=False)
@@ -187,6 +191,50 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
     evaluator = Evaluator(cfg)
     evaluator()
 
+
+@cli.command(name='extract', help='run extraction')
+@click.argument('model_dir', nargs=1, type=click.Path(exists=True))
+@click.argument('input_file', nargs=1, type=click.Path(exists=True))
+@click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
+@click.option('--frame-trim', default=(0, 0), type=(int, int), help='Frames to trim from beginning and end of data')
+@click.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
+@click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
+@click.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk. Useful for cable tracking')
+@click.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
+@click.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
+@click.option('--bg-roi-index', default=0, type=int, help='Index of which background mask(s) to use')
+@click.option('--bg-roi-weights', default=(1, .1, 1), type=(float, float, float), help='Feature weighting (area, extent, dist) of the background mask')
+@click.option('--bg-roi-depth-range', default=(650, 750), type=(float, float), help='Range to search for floor of arena (in mm)')
+@click.option('--bg-roi-gradient-filter', default=False, type=bool, help='Exclude walls with gradient filtering')
+@click.option('--bg-roi-gradient-threshold', default=3000, type=float, help='Gradient must be < this to include points')
+@click.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
+@click.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
+@click.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
+@click.option('--frame-dtype', default='uint8', type=click.Choice(['uint8', 'uint16']), help='Data type for processed frames')
+@click.option('--output-dir', default=None, help='Output directory to save the results h5 file')
+@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
+@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
+@click.option('--fps', default=30, type=int, help='Frame rate of camera')
+@click.option('--crop-size', default=(80, 80), type=(int, int), help='size of crop region')
+@click.option("--profile", is_flag=True)
+def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
+          bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir,
+          min_height, max_height, fps, crop_size, profile):
+
+    print("") # Empty line to give some breething room
+
+    if profile:
+        enable_profiling()
+
+    config_data = locals()
+    config_data.update({
+        'use_tracking_model': False,
+        'flip_classifier': model_dir
+    })
+
+    session = Session(input_file, frame_trim=frame_trim)
+
+    extract_session(session=session, config=config_data)
 
 
 
@@ -224,6 +272,10 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
         enable_profiling()
 
     config_data = locals()
+    config_data.update({
+        'use_tracking_model': False,
+        'flip_classifier': model_dir,
+    })
 
     status_dict = {
         'complete': False,
@@ -271,12 +323,16 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
     first_frame, bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
             bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, cache_dir=info_dir)
     print(f'Found true depth: {true_depth}')
+    config_data.update({
+        'true_depth': true_depth,
+    })
 
     preview_video_dest = os.path.join(output_dir, '{}.mp4'.format('extraction'))
     video_pipe = PreviewVideoWriter(preview_video_dest, fps=fps, vmin=min_height, vmax=max_height)
 
     result_h5_dest = os.path.join(output_dir, '{}.h5'.format('result'))
-    result_h5 = create_extract_h5(h5py.File(result_h5_dest, mode='w'), acquisition_metadata=session.load_metadata(), config_data=config_data, status_dict=status_dict, scalars_attrs=scalar_attributes(),
+    result_h5 = h5py.File(result_h5_dest, mode='w')
+    create_extract_h5(result_h5, acquisition_metadata=session.load_metadata(), config_data=config_data, status_dict=status_dict,
                       nframes=session.nframes, roi=roi, bground_im=bground_im, first_frame=first_frame, timestamps=session.load_timestamps(Stream.Depth))
 
     times = {
@@ -294,14 +350,10 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
     last_frame = None
     kp_out_data = []
     keypoint_names = MetadataCatalog.get("moseq_train").keypoint_names
-    for frame_idxs, raw_frames in tqdm.tqdm(session.iterate(chunk_size, chunk_overlap), desc='Processing batches'):
+    for i, (frame_idxs, raw_frames) in enumerate(tqdm.tqdm(session.iterate(chunk_size, chunk_overlap), desc='Processing batches')):
+        offset = chunk_overlap if i > 0 else 0
         start = time.time()
-        raw_frames = bground_im - raw_frames
-        raw_frames[raw_frames < min_height] = 0
-        raw_frames[raw_frames > max_height] = max_height
-        raw_frames = (raw_frames / max_height) * 255 # rescale to use full gammitt
-        raw_frames = raw_frames.astype(frame_dtype)
-        raw_frames = apply_roi(raw_frames, roi)
+        raw_frames = prep_raw_frames(raw_frames, bground_im=bground_im, roi=roi, vmin=min_height, vmax=max_height, scale=255)
         times['prepare_data'].append(time.time() - start)
 
 
@@ -315,7 +367,7 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
 
         # Post process results and extract features
         start = time.time()
-        cleaned_frames, angles, centroids, masks, flips, allosteric_keypoints, rotated_keypoints = instances_to_features(outputs, raw_frames)
+        features = instances_to_features(outputs, raw_frames)
         times['features'].append(time.time() - start)
 
 
@@ -323,51 +375,69 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
             'draw_instances': [],
             'write_keypoints': [],
             'crop_rotate': [],
-            'colorize': []
         }
         rfs = raw_frames.shape
         scale = 2.0
-        out_video = np.zeros([rfs[0], int(rfs[1]*scale), int(rfs[2]*scale), 3], dtype='uint8')
-        cropped_frames = np.zeros((rfs[0], crop_size[0], crop_size[1], 3), dtype='uint8')
-        for i, (raw_frame, clean_frame, mask, output, angle, centroid, flip) in enumerate(tqdm.tqdm(zip(raw_frames, cleaned_frames, masks, outputs, angles, centroids, flips), desc="Postprocessing", leave=False, total=raw_frames.shape[0])):
-            instances = output["instances"].to('cpu')
-            start = time.time()
-            out_video[i,:,:,:] = draw_instances_fast(raw_frame[:,:,None].copy(), instances, scale=scale)
-            sub_times['draw_instances'].append(time.time() - start)
+        out_video = np.zeros((rfs[0], int(rfs[1]*scale), int(rfs[2]*scale), 3), dtype='uint8')
+        cropped_frames = np.zeros((rfs[0], crop_size[0], crop_size[1]), dtype='uint8')
+        cropped_masks = np.zeros((rfs[0], crop_size[0], crop_size[1]), dtype='uint8')
+        for i in tqdm.tqdm(range(raw_frames.shape[0]), desc="Postprocessing", leave=False):
+            raw_frame = raw_frames[i]
+            clean_frame = features['cleaned_frames'][i]
+            mask = features['masks'][i]
+            output = outputs[i]
+            angle = features['features']['orientation'][i]
+            centroid = features['features']['centroid'][i]
+            flip = features['flips'][i]
+            allosteric_keypoints = features['allosteric_keypoints'][i, 0]
+            rotated_keypoints = features['rotated_keypoints'][i, 0]
+            
+            
+            
 
             if len(instances) <= 0:
                 tqdm.tqdm.write("WARNING: No instances found for frame #{}".format(frame_idxs[i]))
 
             start = time.time()
-            kp_data = {
+            kp_out_data.append({
                 'Frame_Idx': frame_idxs[i],
                 'Flip': flip,
                 'Centroid_X': centroid[0],
                 'Centroid_Y': centroid[1],
                 'Angle': angle,
-            }
-            kp_data.update(keypoints_to_dict(keypoint_names, allosteric_keypoints[i, 0, :]))
-            kp_data.update(keypoints_to_dict(keypoint_names, rotated_keypoints[i, 0, :], prefix='rot_'))
-            kp_out_data.append(kp_data)
+                **keypoints_to_dict(keypoint_names, allosteric_keypoints),
+                **keypoints_to_dict(keypoint_names, rotated_keypoints, prefix='rot_')
+            })
             sub_times['write_keypoints'].append(time.time() - start)
+
+            instances = output["instances"].to('cpu')
+            start = time.time()
+            out_video[i,:,:,:] = draw_instances_fast(raw_frame[:,:,None].copy(), instances, scale=scale)
+            sub_times['draw_instances'].append(time.time() - start)
 
             start = time.time()
             cropped = crop_and_rotate_frame(raw_frame, centroid, angle, crop_size)
             cropped_mask = crop_and_rotate_frame(mask, centroid, angle, crop_size)
             cropped = cropped * cropped_mask # mask the cropped image
+            cropped_frames[i] = cropped
+            cropped_masks[i] = cropped_mask
             sub_times['crop_rotate'].append(time.time() - start)
 
-            start = time.time()
-            cropped_frames[i, :, :, :] = colorize_video(cropped, vmax=255)
-            sub_times['colorize'].append(time.time() - start)
+        results = {
+            'chunk': raw_frames,
+            'depth_frames': cropped_frames,
+            'mask_frames': cropped_masks,
+            'scalars': compute_scalars(raw_frames * features['masks'], features['features'], min_height=min_height, max_height=max_height, true_depth=true_depth),
+            'flips': features['flips'],
+            'parameters': None # only not None if EM tracking was used (we don't support that here)
+        }
 
-
-        #write_extracted_chunk_to_h5(result_h5, results=, scalars=, frame_range=, offset=)
+        write_extracted_chunk_to_h5(result_h5, results=results, frame_range=frame_idxs, offset=offset)
 
 
 
         start = time.time()
-        out_video_combined = overlay_video(out_video, cropped_frames)
+        out_video_combined = overlay_video(out_video, colorize_video(cropped_frames, vmax=255))
         video_pipe.write_frames(frame_idxs, out_video_combined)
         times['write_video'].append(time.time() - start)
 
@@ -375,7 +445,7 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
             times[k].append(np.sum(v))
 
     pd.DataFrame(kp_out_data).to_csv(os.path.join(output_dir, 'keypoints.tsv'), sep='\t', index=False)
-
+    result_h5.close()
     video_pipe.close()
 
     print('Processing Times:')
@@ -484,11 +554,7 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
                 }
 
             if 'depth' in stream:
-                raw_frames = data[stream.index('depth')+1]
-                raw_frames = bground_im - raw_frames
-                raw_frames[raw_frames < min_height] = 0
-                raw_frames[raw_frames > max_height] = max_height
-                raw_frames = apply_roi(raw_frames, roi)
+                raw_frames = prep_raw_frames(data[stream.index('depth')+1], bground_im=bground_im, roi=roi, vmin=min_height, vmax=max_height)
 
                 for idx, rf in zip(frame_idxs, raw_frames):
                     dest = os.path.join(images_dir, '{}_{}_{}.png'.format(session.session_id, 'depth', idx))
@@ -541,10 +607,49 @@ def dataset_info(annot_file, replace_data_path, min_height, max_height):
     print('Dataset information:')
     show_dataset_info(annotations)
 
-    #print("Pixel Intensity Statistics:")
-    #im_stats = get_dataset_statistics(annotations)
-    #for ch, ch_stats in enumerate(im_stats):
-    #    print(f" -> Ch{ch}: mean {ch_stats[0]:.2f} ± {ch_stats[1]:.2f} stdev")
+
+
+@cli.command(name='compile', help='compile a model for deployment')
+@click.argument('model_dir', nargs=1, type=click.Path(exists=True))
+@click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
+@click.option('--replace-data-path', multiple=True, default=[], type=(str, str), help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
+@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
+@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
+@click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
+@click.option('--evaluate', is_flag=True, help='Run COCO evaluation metrics on supplied annotations.')
+def dataset_info(model_dir, annot_file, replace_data_path, min_height, max_height, checkpoint, evaluate):
+
+    print('Loading model....')
+    register_dataset_metadata("moseq_train", default_keypoint_names)
+    cfg = get_base_config()
+    with open(os.path.join(model_dir, 'config.yaml'), 'r') as cfg_file:
+        cfg = cfg.load_cfg(cfg_file)
+
+    if checkpoint == 'last':
+        print(' -> Using last model checkpoint....')
+        cfg.MODEL.WEIGHTS = get_last_checkpoint(model_dir)
+    else:
+        print(f' -> Using model checkpoint at iteration {checkpoint}....')
+        cfg.MODEL.WEIGHTS = get_specific_checkpoint(model_dir, checkpoint)
+
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
+    cfg.TEST.DETECTIONS_PER_IMAGE = 1
+
+
+    print('Loading annotations....')
+    intensity_scale = (max_height/255)
+    annotations = []
+    for anot_f in annot_file:
+        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, rescale=intensity_scale)
+        annotations.extend(annot)
+
+    for search, replace in replace_data_path:
+        replace_data_path_in_annotations(annotations, search, replace)
+    validate_annotations(annotations)
+    register_datasets(annotations, default_keypoint_names)
+
+    print('Exporting model....')
+    export_model(cfg, model_dir, run_eval=evaluate)
 
 
 

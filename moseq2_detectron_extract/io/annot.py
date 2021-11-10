@@ -48,6 +48,17 @@ default_keypoint_names = [
     'TailBase',
     'TailTip'
 ]
+default_keypoint_connection_rules = [
+        ('Nose', 'Left Ear', (166, 206, 227)),
+        ('Nose', 'Right Ear', (31,  120, 180)),
+        ('Neck', 'Left Ear', (166, 206, 227)),
+        ('Neck', 'Right Ear', (31,  120, 180)),
+        ('Neck', 'Left Hip', (178, 223, 138)),
+        ('Neck', 'Right Hip', (51,  160, 44 )),
+        ('TailBase', 'Left Hip', (178, 223, 138)),
+        ('TailBase', 'Right Hip', (51,  160, 44 )),
+        ('TailBase', 'TailTip', (251, 154, 153)),
+    ]
 
 
 def get_dataset_statistics(dset: Sequence[DataItem]):
@@ -168,17 +179,7 @@ def register_dataset_metadata(name: str, keypoint_names: Iterable[str]):
     MetadataCatalog.get(name).thing_colors = [(0, 0, 255)]
     MetadataCatalog.get(name).keypoint_names = list(keypoint_names)
     MetadataCatalog.get(name).keypoint_flip_map = [] #[('Left Ear', 'Right Ear'), ('Left Hip', 'Right Hip')]
-    MetadataCatalog.get(name).keypoint_connection_rules = [
-        ('Nose', 'Left Ear', (166, 206, 227)),
-        ('Nose', 'Right Ear', (31,  120, 180)),
-        ('Neck', 'Left Ear', (166, 206, 227)),
-        ('Neck', 'Right Ear', (31,  120, 180)),
-        ('Neck', 'Left Hip', (178, 223, 138)),
-        ('Neck', 'Right Hip', (51,  160, 44 )),
-        ('TailBase', 'Left Hip', (178, 223, 138)),
-        ('TailBase', 'Right Hip', (51,  160, 44 )),
-        ('TailBase', 'TailTip', (251, 154, 153)),
-    ]
+    MetadataCatalog.get(name).keypoint_connection_rules = default_keypoint_connection_rules
 
 
 def poly_to_mask(poly, out_shape):
