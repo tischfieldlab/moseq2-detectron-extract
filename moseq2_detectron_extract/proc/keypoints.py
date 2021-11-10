@@ -73,10 +73,10 @@ def keypoints_to_dict(keypoints, frames, centers, angles, crop_size=(80, 80), tr
     out = {}
     for cs in ['reference', 'rotated']:
         if cs == 'rotated':
-            kpts = rotate_points_batch(keypoints, centers=centers, angles=angles)
+            kpts = rotate_points_batch(np.copy(keypoints), centers=centers, angles=angles)
             kpts = crop_points(kpts, centers, crop_size=crop_size)
         else:
-            kpts = keypoints
+            kpts = np.copy(keypoints)
 
         for kpi, kpn in enumerate(default_keypoint_names):
             out[f'{cs}/{kpn}_x_px'] = kpts[:, 0, kpi, 0]

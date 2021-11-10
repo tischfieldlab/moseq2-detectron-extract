@@ -393,7 +393,7 @@ def instances_to_features(model_outputs, raw_frames):
     angles = -np.rad2deg(angles)
 
     #rotate keypoints to reflect angles
-    rotated_keypoints = rotate_points_batch(allosteric_keypoints, features['centroid'], angles)
+    rotated_keypoints = rotate_points_batch(np.copy(allosteric_keypoints), features['centroid'], angles)
 
     # Strategy:
     # Compute the distance of each keypoint to the left and right edge of the bounding box
