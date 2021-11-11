@@ -1,6 +1,6 @@
 import numpy as np
 import tqdm
-from moseq2_detectron_extract.proc.proc import prep_raw_frames
+from moseq2_detectron_extract.proc.proc import prep_raw_frames, scale_raw_frames
 from skimage.transform import resize
 from sklearn.cluster import MiniBatchKMeans
 
@@ -10,7 +10,8 @@ def select_frames_kmeans(session, num_frames_to_pick, num_clusters=None, chunk_s
     first_frame, bground_im, roi, true_depth = session.find_roi()
     downsampled = np.zeros((session.nframes, int(roi.shape[0] / scale), int(roi.shape[1] / scale)))
     for frame_idxs, raw_frames in tqdm.tqdm(session.iterate(chunk_size=chunk_size), desc='Processing batches', leave=False):
-        raw_frames = prep_raw_frames(raw_frames, bground_im=bground_im, roi=roi, vmin=min_height, vmax=max_height, scale=255)
+        raw_frames = prep_raw_frames(raw_frames, bground_im=bground_im, roi=roi, vmin=min_height, vmax=max_height)
+        raw_frames = scale_raw_frames(raw_frames, vmin=min_height, vmax=max_height)
 
         for i, idx in enumerate(tqdm.tqdm(frame_idxs, desc='Resizing Frames', leave=False, disable=False)):
             downsampled[idx, :, :] = resize(raw_frames[i], downsampled.shape[1:], anti_aliasing=True, preserve_range=True, mode='constant')

@@ -40,7 +40,7 @@ from moseq2_detectron_extract.proc.kmeans import select_frames_kmeans
 from moseq2_detectron_extract.proc.proc import (colorize_video,
                                                 crop_and_rotate_frame,
                                                 instances_to_features,
-                                                overlay_video, prep_raw_frames)
+                                                overlay_video, prep_raw_frames, scale_raw_frames)
 from moseq2_detectron_extract.proc.roi import apply_roi
 from moseq2_detectron_extract.proc.scalars import compute_scalars
 from moseq2_detectron_extract.viz import draw_instances_fast
@@ -362,7 +362,7 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
         start = time.time()
         outputs = []
         for i in tqdm.tqdm(range(0, raw_frames.shape[0], batch_size), desc="Inferring", leave=False):
-            outputs.extend(predictor(raw_frames[i:i+batch_size,:,:,None]))
+            outputs.extend(predictor(scale_raw_frames(raw_frames[i:i+batch_size,:,:,None], vmin=min_height, vmax=max_height)))
         times['inference'].append(time.time() - start)
 
         # Post process results and extract features

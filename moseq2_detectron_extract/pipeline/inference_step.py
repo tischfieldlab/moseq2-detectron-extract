@@ -1,6 +1,7 @@
 
 
 import os
+from functools import partial
 
 from moseq2_detectron_extract.io.annot import (default_keypoint_names,
                                                register_dataset_metadata)
@@ -9,11 +10,14 @@ from moseq2_detectron_extract.model.config import get_base_config
 from moseq2_detectron_extract.model.util import (get_last_checkpoint,
                                                  get_specific_checkpoint)
 from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
+from moseq2_detectron_extract.proc.proc import scale_raw_frames
 
 
 class InferenceStep(PipelineStep):
 
     def initialize(self):
+        self.scale = partial(scale_raw_frames, vmin=self.config['min_height'], vmax=self.config['max_height'])
+
         self.write_message('Loading model....')
         register_dataset_metadata("moseq_train", default_keypoint_names)
 
@@ -46,13 +50,12 @@ class InferenceStep(PipelineStep):
 
         batch_size = self.config['batch_size']
         raw_frames = data['chunk']
+        batches = range(0, raw_frames.shape[0], batch_size)
 
         # Do the inference
-        batches = range(0, raw_frames.shape[0], batch_size)
-        #self.reset_progress(len(batches))
         outputs = []
         for i in batches:
-            pred = self.predictor(raw_frames[i:i+batch_size,:,:,None])
+            pred = self.predictor(self.scale(raw_frames[i:i+batch_size,:,:,None]))
             outputs.extend([{ 'instances': p['instances'].to('cpu') } for p in pred])
             self.update_progress(batch_size)
 

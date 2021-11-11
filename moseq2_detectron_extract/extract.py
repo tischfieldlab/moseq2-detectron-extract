@@ -114,7 +114,7 @@ def extract_session(session: Session, config: dict):
 
     for i, (frame_idxs, raw_frames) in enumerate(session.iterate(config['chunk_size'], config['chunk_overlap'])):
         offset = config['chunk_overlap'] if i > 0 else 0
-        raw_frames = prep_raw_frames(raw_frames, bground_im=bground_im, roi=roi, vmin=config['min_height'], vmax=config['max_height'], scale=255)
+        raw_frames = prep_raw_frames(raw_frames, bground_im=bground_im, roi=roi, vmin=config['min_height'], vmax=config['max_height'])
         shm = { 'batch': i, 'chunk': raw_frames, 'frame_idxs': frame_idxs, 'offset': offset }
         inference_in.put(SharedMemoryDict(shm))
         reader_pbar.put({'update': raw_frames.shape[0]})

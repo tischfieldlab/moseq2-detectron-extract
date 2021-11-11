@@ -30,9 +30,20 @@ def colorize_video(frames, vmin=0, vmax=100, cmap='jet'):
     return disp_img
 
 
-def prep_raw_frames(frames, bground_im, roi=None, vmin=None, vmax=None, scale=None, dtype='uint8'):
-    if frames is not None:
+def prep_raw_frames(frames, bground_im=None, roi=None, vmin=None, vmax=None, dtype='uint8'):
+    ''' Prepare raw `frames` by:
+            1) subtracting background based on `bground_im`
+            2) applying a region of interest (crop and mask according to `roi`)
+            3) clamping values in the image to `vmin` and `vmax`
+                a) values less than `vmin` are set to zero
+                b) values greater than `vmax` are set to `vmax`
+            All operations are optional.
+    '''
+    if bground_im is not None:
         frames = bground_im - frames
+
+    if roi is not None:
+        frames = apply_roi(frames, roi)
 
     if vmin is not None:
         frames[frames < vmin] = 0
@@ -40,13 +51,22 @@ def prep_raw_frames(frames, bground_im, roi=None, vmin=None, vmax=None, scale=No
     if vmax is not None:
         frames[frames > vmax] = vmax
 
-    if scale is not None:
-        frames = (frames / vmax) * scale # rescale to use full gammitt
-
-    if roi is not None:
-        frames = apply_roi(frames, roi)
-
     return frames.astype(dtype)
+
+
+def scale_raw_frames(frames, vmin, vmax, dtype='uint8'):
+    ''' Linear scale `frames` to the range afforded by `dtype`
+    '''
+    if np.issubdtype(np.dtype(dtype), np.integer):
+        info = np.iinfo(dtype)
+        dmin = info.min
+        dmax = info.max
+    else:
+        info = np.finfo(dtype)
+        dmin = info.min
+        dmax = info.max
+
+    return ((frames - vmin) * ((dmax - dmin) / (vmax - vmin)) + dmin).astype(dtype)
 
 
 def get_frame_features(frames, frame_threshold=10, mask=np.array([]),
