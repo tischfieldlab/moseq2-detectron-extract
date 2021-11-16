@@ -6,22 +6,24 @@ import tempfile
 from copy import Error
 from itertools import groupby
 from operator import itemgetter
+from typing import List, Tuple
 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
 import tqdm
 
 
-def get_raw_info(filename, bit_depth=16, frame_dims=(512, 424)):
-    """
+def get_raw_info(filename: str, bit_depth: int=16, frame_dims: Tuple[int, int]=(512, 424)):
+    '''
     Gets info from a raw data file with specified frame dimensions and bit depth
 
     Args:
         filename (string): name of raw data file
         bit_depth (int): bits per pixel (default: 16)
         frame_dims (tuple): wxh or hxw of each frame
-    """
+    '''
 
     bytes_per_frame = (frame_dims[0] * frame_dims[1] * bit_depth) / 8
 
@@ -42,8 +44,8 @@ def get_raw_info(filename, bit_depth=16, frame_dims=(512, 424)):
     return file_info
 
 
-def read_frames_raw(filename, frames=None, frame_dims=(512, 424), bit_depth=16, dtype="<i2", tar_object=None):
-    """
+def read_frames_raw(filename: str, frames=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16, dtype: npt.DTypeLike="<i2", tar_object: tarfile.TarInfo=None):
+    '''
     Reads in data from raw binary file
 
     Args:
@@ -55,7 +57,7 @@ def read_frames_raw(filename, frames=None, frame_dims=(512, 424), bit_depth=16, 
 
     Returns:
         frames (numpy ndarray): frames x h x w
-    """
+    '''
 
     vid_info = get_raw_info(filename, frame_dims=frame_dims, bit_depth=bit_depth)
 
@@ -93,9 +95,8 @@ def read_frames_raw(filename, frames=None, frame_dims=(512, 424), bit_depth=16, 
     return out_buffer
 
 
-
-def collapse_consecutive_values(a):
-    """ Collapses consecutive values in an array
+def collapse_consecutive_values(a: np.ndarray) -> List[Tuple[float, int]]:
+    ''' Collapses consecutive values in an array
 
     Example:
     collapse_consecutive_values([0,1,2,3,10,11,12,13,21,22,23])
@@ -106,7 +107,7 @@ def collapse_consecutive_values(a):
 
     Returns
     array of tuple: each tuple contains (label, run_count)
-    """
+    '''
     grouped_instances = []
     for _, g in groupby(enumerate(a), lambda ix : ix[0] - ix[1]):
         local_group = list(map(itemgetter(1), g))
@@ -114,14 +115,15 @@ def collapse_consecutive_values(a):
     return grouped_instances
 #end collapse_adjacent_values()
 
+
 # https://gist.github.com/hiwonjoon/035a1ead72a767add4b87afe03d0dd7b
-def get_video_info(filename, tar_object=None):
-    """
+def get_video_info(filename: str, tar_object: tarfile.TarInfo=None):
+    '''
     Get dimensions of data compressed using ffv1, along with duration via ffmpeg
 
     Args:
         filename (string): name of file
-    """
+    '''
     is_stream = isinstance(filename, tarfile.TarInfo)
     if is_stream:
         f = tempfile.NamedTemporaryFile(delete=False)
@@ -129,14 +131,16 @@ def get_video_info(filename, tar_object=None):
         f.close()
         filename = f.name
 
-    command = ['ffprobe',
-               '-v', 'fatal',
-               '-show_entries',
-               'stream=width,height,r_frame_rate,nb_frames,codec_name,pix_fmt',
-               '-of',
-               'default=noprint_wrappers=1:nokey=1',
-               filename,
-               '-sexagesimal']
+    command = [
+        'ffprobe',
+        '-v', 'fatal',
+        '-show_entries',
+        'stream=width,height,r_frame_rate,nb_frames,codec_name,pix_fmt',
+        '-of',
+        'default=noprint_wrappers=1:nokey=1',
+        filename,
+        '-sexagesimal'
+    ]
 
     ffmpeg = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
     out, err = ffmpeg.communicate()
@@ -144,25 +148,27 @@ def get_video_info(filename, tar_object=None):
     if is_stream:
         os.remove(f.name)
 
-    if(err):
+    if err:
         print(err)
     out = out.decode().split(os.linesep)
 
-    return {'file': filename,
-            'codec': out[0],
-            'pixel_format': out[3],
-            'dims': (int(out[1]), int(out[2])),
-            'fps': float(out[4].split('/')[0])/float(out[4].split('/')[1]),
-            'nframes': int(out[5])}
+    return {
+        'file': filename,
+        'codec': out[0],
+        'pixel_format': out[3],
+        'dims': (int(out[1]), int(out[2])),
+        'fps': float(out[4].split('/')[0])/float(out[4].split('/')[1]),
+        'nframes': int(out[5])
+    }
 
 
 # simple command to pipe frames to an ffv1 file
-def write_frames(filename, frames, threads=6, fps=30,
-                 pixel_format='gray16le', codec='ffv1', close_pipe=True,
-                 pipe=None, slices=24, slicecrc=1, frame_size=None, get_cmd=False):
-    """
+def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
+                 pixel_format: str='gray16le', codec: str='ffv1', close_pipe: bool=True,
+                 pipe=None, slices: int=24, slicecrc: int=1, frame_size: Tuple[int, int]=None, get_cmd=False):
+    '''
     Write frames to avi file using the ffv1 lossless encoder
-    """
+    '''
 
     # we probably want to include a warning about multiples of 32 for videos
     # (then we can use pyav and some speedier tools)
@@ -172,21 +178,23 @@ def write_frames(filename, frames, threads=6, fps=30,
     elif not frame_size and type(frames) is tuple:
         frame_size = '{0:d}x{1:d}'.format(frames[0], frames[1])
 
-    command = ['ffmpeg',
-               '-y',
-               '-loglevel', 'fatal',
-               '-framerate', str(fps),
-               '-f', 'rawvideo',
-               '-s', frame_size,
-               '-pix_fmt', pixel_format,
-               '-i', '-',
-               '-an',
-               '-vcodec', codec,
-               '-threads', str(threads),
-               '-slices', str(slices),
-               '-slicecrc', str(slicecrc),
-               '-r', str(fps),
-               filename]
+    command = [
+        'ffmpeg',
+        '-y',
+        '-loglevel', 'fatal',
+        '-framerate', str(fps),
+        '-f', 'rawvideo',
+        '-s', frame_size,
+        '-pix_fmt', pixel_format,
+        '-i', '-',
+        '-an',
+        '-vcodec', codec,
+        '-threads', str(threads),
+        '-slices', str(slices),
+        '-slicecrc', str(slicecrc),
+        '-r', str(fps),
+        filename
+    ]
 
     if get_cmd:
         return command
@@ -205,10 +213,10 @@ def write_frames(filename, frames, threads=6, fps=30,
         return pipe
 
 
-def read_frames(filename, frames=range(0,), threads=6, fps=30,
-                pixel_format='gray16le', frame_size=None,
-                slices=24, slicecrc=1, get_cmd=False, tar_object=None, **_):
-    """
+def read_frames(filename: str, frames=range(0,), threads: int=6, fps: int=30,
+                pixel_format: str='gray16le', frame_size: Tuple[int, int]=None,
+                slices: int=24, slicecrc: int=1, get_cmd=False, tar_object=None, **_):
+    '''
     Reads in frames from the .nut/.avi file using a pipe from ffmpeg.
 
     Args:
@@ -223,7 +231,7 @@ def read_frames(filename, frames=range(0,), threads=6, fps=30,
 
     Returns:
         3d numpy array:  frames x h x w
-    """
+    '''
     is_stream = isinstance(filename, tarfile.TarInfo)
     if is_stream:
         f = tempfile.NamedTemporaryFile(delete=False)
@@ -280,15 +288,15 @@ def read_frames(filename, frames=range(0,), threads=6, fps=30,
 # simple command to pipe frames from an ffv1 file
 
 
-def write_frames_preview(filename, frames=np.empty((0,)), threads=6,
-                         fps=30, pixel_format='rgb24',
-                         codec='h264', slices=24, slicecrc=1,
-                         frame_size=None, depth_min=0, depth_max=80,
-                         get_cmd=False, cmap='jet',
-                         pipe=None, close_pipe=True, frame_range=None, tqdm_kwargs=None):
-    """
+def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
+                         fps: int=30, pixel_format: str='rgb24',
+                         codec: str='h264', slices: int=24, slicecrc: int=1,
+                         frame_size=None, depth_min: float=0, depth_max: float=80,
+                         get_cmd: bool=False, cmap: str='jet',
+                         pipe=None, close_pipe: bool=True, frame_range=None, tqdm_kwargs=None):
+    '''
     Writes out a false-colored mp4 video
-    """
+    '''
 
     if tqdm_kwargs is None:
         tqdm_kwargs = {}
@@ -308,22 +316,24 @@ def write_frames_preview(filename, frames=np.empty((0,)), threads=6,
     elif not frame_size and type(frames) is tuple:
         frame_size = '{0:d}x{1:d}'.format(frames[0], frames[1])
 
-    command = ['ffmpeg',
-               '-y',
-               '-loglevel', 'fatal',
-               '-threads', str(threads),
-               '-framerate', str(fps),
-               '-f', 'rawvideo',
-               '-s', frame_size,
-               '-pix_fmt', pixel_format,
-               '-i', '-',
-               '-an',
-               '-vcodec', codec,
-               '-slices', str(slices),
-               '-slicecrc', str(slicecrc),
-               '-r', str(fps),
-               '-pix_fmt', 'yuv420p',
-               filename]
+    command = [
+        'ffmpeg',
+        '-y',
+        '-loglevel', 'fatal',
+        '-threads', str(threads),
+        '-framerate', str(fps),
+        '-f', 'rawvideo',
+        '-s', frame_size,
+        '-pix_fmt', pixel_format,
+        '-i', '-',
+        '-an',
+        '-vcodec', codec,
+        '-slices', str(slices),
+        '-slicecrc', str(slicecrc),
+        '-r', str(fps),
+        '-pix_fmt', 'yuv420p',
+        filename
+    ]
 
     if get_cmd:
         return command
@@ -392,10 +402,10 @@ def write_frames_preview(filename, frames=np.empty((0,)), threads=6,
 #     return dest_filename
 
 
-def load_movie_data(filename, frames=None, frame_dims=(512, 424), bit_depth=16, **kwargs):
-    """
+def load_movie_data(filename: str, frames=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16, **kwargs):
+    '''
     Reads in frames
-    """
+    '''
 
     if isinstance(filename, tarfile.TarInfo):
         fname =  filename.name.lower()
@@ -417,10 +427,10 @@ def load_movie_data(filename, frames=None, frame_dims=(512, 424), bit_depth=16, 
     return frame_data
 
 
-def get_movie_info(filename, frame_dims=(512, 424), bit_depth=16, tar_object=None):
-    """
+def get_movie_info(filename: str, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16, tar_object: tarfile.TarInfo=None):
+    '''
     Gets movie info
-    """
+    '''
     if isinstance(filename, tarfile.TarInfo):
         fname =  filename.name.lower()
     else:
@@ -436,7 +446,7 @@ def get_movie_info(filename, frame_dims=(512, 424), bit_depth=16, tar_object=Non
 
 
 class PreviewVideoWriter():
-    def __init__(self, filename: str, fps=30, vmin=0, vmax=100, tqdm_opts=None) -> None:
+    def __init__(self, filename: str, fps: int=30, vmin: float=0, vmax: float=100, tqdm_opts: dict=None) -> None:
         self.filename = filename
         self.fps = fps
         self.vmin = vmin
@@ -449,7 +459,7 @@ class PreviewVideoWriter():
         if tqdm_opts is not None:
             self.tqdm_opts.update(tqdm_opts)
 
-    def write_frames(self, frame_idxs, frames):
+    def write_frames(self, frame_idxs: np.ndarray, frames: np.ndarray):
         self.video_pipe = write_frames_preview(
                 self.filename,
                 frames,

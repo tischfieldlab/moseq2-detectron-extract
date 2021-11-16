@@ -8,14 +8,14 @@ from detectron2.structures import Boxes, Instances
 
 
 def get_last_checkpoint(path: str) -> str:
-    ''' Get the path to the last model checkpoint in a model directory
-        Looks at the "last_checkpoint" file in the directory
+    ''' Get the path to the last model checkpoint in a model directory by looking
+    at the "last_checkpoint" file in the directory
 
-        Parameters:
-            path (str): directory containing the modelling results
+    Parameters:
+    path (str): directory containing the modelling results
 
-        Returns:
-            Path to the last checkpoint
+    Returns:
+    Path to the last checkpoint
     '''
     with open(os.path.join(path, 'last_checkpoint'), 'r') as f:
         last_checkpoint = f.read()
@@ -25,13 +25,13 @@ def get_last_checkpoint(path: str) -> str:
 def get_specific_checkpoint(path: str, iteration: int, ext: str='pth') -> str:
     ''' Get the path to the model at a specific checkpoint in a model directory
 
-        Parameters:
-            path (str): directory containing the modelling results
-            iteration (int): iteration number to look for
-            ext (str): file extension of the model file
+    Parameters:
+    path (str): directory containing the modelling results
+    iteration (int): iteration number to look for
+    ext (str): file extension of the model file
 
-        Returns:
-            Path to checkpoint at `iteration`
+    Returns:
+    Path to checkpoint at `iteration`
     '''
     matches = glob.glob(os.path.join(path, f'*{iteration}.{ext}'))
     return matches[0]

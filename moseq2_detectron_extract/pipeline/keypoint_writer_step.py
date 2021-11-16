@@ -1,10 +1,8 @@
 import os
-from typing import List, Union
 
 import pandas as pd
 from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
 from moseq2_detectron_extract.proc.util import slice_dict
-from torch.multiprocessing import Queue
 
 
 class KeypointWriterStep(PipelineStep):

@@ -37,7 +37,8 @@ setup(
         'tqdm',
         'albumentations',
         'FyeldGenerator',
-        'bottleneck'
+        'bottleneck',
+        'statsmodels'
     ],
     extras_require={
         'dev': [

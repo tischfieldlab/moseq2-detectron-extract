@@ -22,6 +22,8 @@ class Predictor:
 
     @classmethod
     def from_config(cls, cfg: CfgNode):
+        ''' Create a predictor given a Detectron2 config
+        '''
         cfg = cfg.clone()  # cfg can be modified by model
         model = build_model(cfg)
         model.eval()
@@ -35,21 +37,23 @@ class Predictor:
 
     @classmethod
     def from_torchscript(cls, path):
+        ''' Create a predictor given a path to a torchscript model
+        '''
         model = torch.jit.load(path)
         return cls(model, is_torchscript=True)
 
     def __call__(self, original_image: np.ndarray):
-        """
-        Args:
-            original_image (np.ndarray): an image of shape (H, W, C) (in BGR order).
-            -- OR -- 
-            original_image (np.ndarray): an image of shape (N, H, W, C) (in BGR order).
+        '''
+        Parameters:
+        original_image (np.ndarray): an image of shape (H, W, C) (in BGR order).
+        -- OR -- 
+        original_image (np.ndarray): an image of shape (N, H, W, C) (in BGR order).
 
         Returns:
-            predictions (dict):
-                the output of the model for one image only.
-                See :doc:`/tutorials/models` for details about the format.
-        """
+        predictions (dict):
+            the output of the model for one image only.
+            See :doc:`/tutorials/models` for details about the format.
+        '''
         #with torch.no_grad():  # https://github.com/sphinx-doc/sphinx/issues/4258
         # Apply pre-processing to image.
         return_as_list = True

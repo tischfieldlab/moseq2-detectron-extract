@@ -43,6 +43,7 @@ from moseq2_detectron_extract.proc.proc import (colorize_video,
                                                 overlay_video, prep_raw_frames, scale_raw_frames)
 from moseq2_detectron_extract.proc.roi import apply_roi
 from moseq2_detectron_extract.proc.scalars import compute_scalars
+from moseq2_detectron_extract.quality import find_outliers_h5
 from moseq2_detectron_extract.viz import draw_instances_fast
 
 warnings.filterwarnings("ignore", category=UserWarning, module='torch', lineno=575)
@@ -131,7 +132,6 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
     for search, replace in replace_data_path:
         replace_data_path_in_annotations(annotations, search, replace)
     validate_annotations(annotations)
-    #annotations = augment_annotations_with_rotation(annotations)
     print('Dataset information:')
     show_dataset_info(annotations)
     register_datasets(annotations, default_keypoint_names)
@@ -217,9 +217,10 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
 @click.option('--fps', default=30, type=int, help='Frame rate of camera')
 @click.option('--crop-size', default=(80, 80), type=(int, int), help='size of crop region')
 @click.option("--profile", is_flag=True)
+@click.option("--report-outliers", is_flag=True)
 def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
           bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir,
-          min_height, max_height, fps, crop_size, profile):
+          min_height, max_height, fps, crop_size, profile, report_outliers):
 
     print("") # Empty line to give some breething room
 
@@ -234,7 +235,15 @@ def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_siz
 
     session = Session(input_file, frame_trim=frame_trim)
 
-    extract_session(session=session, config=config_data)
+    status_filename = extract_session(session=session, config=config_data)
+
+    if report_outliers:
+        print("")
+        print("Searching for outlier frames....")
+        result_filename = os.path.splitext(status_filename)[0] + '.h5'
+        kpt_names = [kp for kp in default_keypoint_names if kp != 'TailTip']
+        outliers = find_outliers_h5(result_filename, keypoint_names=kpt_names)
+        print(f"Found {len(outliers)} putative outlier frames out of {session.nframes} extracted frames ({len(outliers)/session.nframes:.2%})")
 
 
 
@@ -519,7 +528,7 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
 
         if sample_method == 'random':
             iterator = session.sample(num_samples_per_file, chunk_size=chunk_size, streams=stream)
-        
+
         elif sample_method == 'uniform':
             step = session.nframes // num_samples_per_file
             iterator = session.index(np.arange(step, session.nframes, step), chunk_size=chunk_size, streams=stream)
@@ -531,9 +540,9 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
         elif sample_method == 'list':
             indices = sorted([int(i) for i in indices.split(',')])
             iterator = session.index(indices, chunk_size=chunk_size, streams=stream)
-        
+
         else:
-            raise Error('unknown sample_method "{}"'.format(sample_method))
+            raise ValueError('Unknown sample_method "{}"'.format(sample_method))
 
         session_data = {}
         # Iterate Frames and write images
@@ -572,7 +581,6 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
                     session_data[idx]['data']['rgb_image'] = dest
                     session_data[idx]['data']['images'].append(dest)
 
-        
         output_info.extend(list(session_data.values()))
 
     print('Wrote dataset to "{}" '.format(output_dir))
@@ -651,6 +659,15 @@ def dataset_info(model_dir, annot_file, replace_data_path, min_height, max_heigh
     print('Exporting model....')
     export_model(cfg, model_dir, run_eval=evaluate)
 
+
+
+@cli.command(name='find-outliers', help='find putative outlier frames')
+@click.argument('result_h5', required=True, nargs=-1, type=click.Path(exists=True))
+def find_outliers(result_h5):
+    kpt_names = [kp for kp in default_keypoint_names if kp != 'TailTip']
+
+    for h5_path in result_h5:
+        find_outliers_h5(h5_path, keypoint_names=kpt_names)
 
 
 

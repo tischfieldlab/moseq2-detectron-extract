@@ -21,6 +21,7 @@ class Stream(str, Enum):
 class Session(object):
 
     def __init__(self, path: str, frame_trim: Tuple[int, int]=(0, 0)):
+        self.session_path = path
         self.__init_session(path)
         self.__trim_frames(frame_trim)
 
@@ -51,6 +52,7 @@ class Session(object):
         self.rgb_metadata = get_movie_info(self.rgb_file, tar_object=self.tar)
     #end init_session()
 
+
     def __trim_frames(self, frame_trim: Tuple[int, int]):
         self.frame_trim = frame_trim
         self.nframes = self.depth_metadata['nframes']
@@ -68,11 +70,24 @@ class Session(object):
         self.nframes = self.last_frame_idx - self.first_frame_idx
     #end trim_frames()
 
+
     @property
-    def is_compressed(self):
+    def is_compressed(self) -> bool:
+        ''' Tells if this session is compressed (True) or not (False)
+
+        Returns:
+        True if this session is compressed
+        False if this session is not compressed
+        '''
         return self.tar is not None
 
-    def load_metadata(self):
+
+    def load_metadata(self) -> dict:
+        ''' Load metadata from this session (metadata.json)
+
+        Returns:
+        dict, metadata for this session
+        '''
         if self.tar is not None:
             metadata_path = self.tar.extractfile(self.tar_members[self.tar_names.index('metadata.json')])
         else:
@@ -80,7 +95,16 @@ class Session(object):
         return load_metadata(metadata_path)
     #end load_metadata()
 
-    def load_timestamps(self, stream: Stream):
+
+    def load_timestamps(self, stream: Stream) -> np.ndarray:
+        ''' Load timestamps for `stream` from this session
+
+        Parameters:
+        stream (Stream): stream for which to retrieve timestamps for
+
+        Returns:
+        np.ndarray, array of timestamps
+        '''
         timestamp_path = None
         correction_factor = 1.0
         ts_search = []
@@ -117,6 +141,7 @@ class Session(object):
 
         return timestamps
     #end load_timestamps()
+
 
     def find_roi(self, bg_roi_dilate: Tuple[int, int]=(10,10), bg_roi_shape='ellipse', bg_roi_index: int=0, bg_roi_weights=(1, .1, 1),
                  bg_roi_depth_range: Tuple[int, int]=(650, 750), bg_roi_gradient_filter: bool=False, bg_roi_gradient_threshold: int=3000,
@@ -181,6 +206,7 @@ class Session(object):
         return first_frame, bground_im, roi, true_depth
     #end find_roi()
 
+
     def iterate(self, chunk_size: int=1000, chunk_overlap: int=0, streams: Iterable[Stream]=(Stream.Depth,)):
         ''' Iterate over all frames, returning `chunck_size` frames on each iteration with `chunk_overlap` overlap
 
@@ -190,6 +216,7 @@ class Session(object):
                 streams (Iterable[Stream]): Streams from which to return data
         '''
         return SessionFramesIterator(self, chunk_size, chunk_overlap, streams)
+
 
     def sample(self, num_samples: int, chunk_size: int=1000, streams: Iterable[Stream]=(Stream.Depth,)):
         ''' Randomally sample `num_samples` frames, returning `chunck_size` frames on each iteration.
@@ -201,6 +228,7 @@ class Session(object):
         '''
         return SessionFramesSampler(self, num_samples, chunk_size=chunk_size, chunk_overlap=0, streams=streams)
 
+
     def index(self, frame_idxs: Sequence[int], chunk_size: int=1000, streams: Iterable[Stream]=(Stream.Depth,)):
         ''' Fetch specific frames, given by `frame_idxs`, returning `chunck_size` frames on each iteration.
 
@@ -211,15 +239,19 @@ class Session(object):
         '''
         return SessionFramesIndexer(self, frame_idxs, chunk_size=chunk_size, chunk_overlap=0, streams=streams)
 
+
     def __str__(self) -> str:
-        return "{} ({} frames, [{}:{}])".format(self.depth_file, self.nframes, self.first_frame_idx, self.last_frame_idx)
+        return "{} ({} frames, [{}:{}])".format(self.session_path, self.nframes, self.first_frame_idx, self.last_frame_idx)
+
 
     def __repr__(self) -> str:
-        return '{}("{}", frame_trim=({}, {}))'.format(self.__class__.__name__, self.depth_file, *self.frame_trim)
+        return '{}("{}", frame_trim=({}, {}))'.format(self.__class__.__name__, self.session_path, *self.frame_trim)
 #end class Session
 
 
 class SessionFramesIterator(object):
+    ''' Iterator that iterates over Session frames in order
+    '''
     def __init__(self, session: Session, chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
         ''' Iterator that iterates over Session frames
 
@@ -239,21 +271,25 @@ class SessionFramesIterator(object):
         for stream in streams:
             self.ts_map.add_timestamps(stream, session.load_timestamps(stream))
 
+
     def generate_samples(self):
         ''' Generate the sequence of batches of frames indicies
 
-            Default is to linear read. Override this if you want to change behaviour
+        Default is to linear read. Override this if you want to change behaviour
 
-            Returns
-            list<(range|list<int>)>
+        Returns
+        list<(range|list<int>)>
         '''
         return gen_batch_sequence(self.session.nframes, self.chunk_size, self.chunk_overlap, self.session.first_frame_idx)
+
 
     def __len__(self):
         return len(self.batches)
 
+
     def __iter__(self):
         return self
+
 
     def __next__(self):
         if self.current >= len(self):
@@ -277,13 +313,16 @@ class SessionFramesIterator(object):
 
 
 class SessionFramesSampler(SessionFramesIterator):
+    ''' Iterator which randomly samples `num_frames` indicies
+    '''
     def __init__(self, session: Session, num_samples: int, chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
         self.num_samples = int(num_samples)
         super().__init__(session, chunk_size, chunk_overlap, streams)
 
+
     def generate_samples(self):
-        """Generate a sequence with overlap
-        """
+        '''Generate a sequence with overlap
+        '''
         offset = self.session.first_frame_idx
         seq = range(offset, self.session.nframes)
         seq = np.random.choice(seq, self.num_samples, replace=False)
@@ -292,13 +331,16 @@ class SessionFramesSampler(SessionFramesIterator):
 
 
 class SessionFramesIndexer(SessionFramesIterator):
+    ''' Iterator which iterates from a fixed sequence of indicies
+    '''
     def __init__(self, session: Session, frame_idxs: Sequence[int], chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
         self.frame_idxs = frame_idxs
         super().__init__(session, chunk_size, chunk_overlap, streams)
 
+
     def generate_samples(self):
-        """Generate a sequence with overlap
-        """
+        '''Generate a sequence with overlap
+        '''
         offset = self.session.first_frame_idx
         for i in range(offset, len(self.frame_idxs)-self.chunk_overlap, self.chunk_size-self.chunk_overlap):
             yield self.frame_idxs[i:i+self.chunk_size]
@@ -309,8 +351,10 @@ class TimestampMapper():
     def __init__(self) -> None:
         self.timestamp_map = {}
 
+
     def add_timestamps(self, name: str, timestamps: np.array):
         self.timestamp_map[name] = np.asarray(timestamps)
+
 
     def map_index(self, query: str, reference: str, index: Union[int, Sequence[int]]):
         if isinstance(index, int):
@@ -322,6 +366,7 @@ class TimestampMapper():
             out.append(self.nearest(self.timestamp_map[query], reference_time))
         return out
 
+
     def map_time(self, query: str, reference: str, index: Union[int, Sequence[int]]):
         if isinstance(index, int):
             index = [index]
@@ -332,6 +377,7 @@ class TimestampMapper():
             query_idx = self.nearest(self.timestamp_map[query], reference_time)
             out.append(self.timestamp_map[query][query_idx])
         return out
+
 
     def nearest(self, data, value):
         return np.abs(data - value).argmin()

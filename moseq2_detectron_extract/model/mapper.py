@@ -11,13 +11,13 @@ from moseq2_detectron_extract.io.image import read_image
 class MoseqDatasetMapper(DatasetMapper):
 
     def __call__(self, dataset_dict: dict):
-        """
+        '''
         Args:
             dataset_dict (dict): Metadata of one image, in Detectron2 Dataset format.
 
         Returns:
             dict: a format that builtin models in detectron2 accept
-        """
+        '''
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
 
         # USER: Write your own image loading if it's not from a file

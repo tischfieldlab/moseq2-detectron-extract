@@ -49,7 +49,7 @@ class Evaluator:
 def inference_on_dataset_readonly_model(
     model, data_loader, evaluator: Union[DatasetEvaluator, List[DatasetEvaluator], None]
 ):
-    """
+    '''
     Run model on the data_loader and evaluate the metrics with evaluator.
     Also benchmark the inference speed of `model.__call__` accurately.
     The model will be used in eval mode.
@@ -68,7 +68,7 @@ def inference_on_dataset_readonly_model(
 
     Returns:
         The return value of `evaluator.evaluate()`
-    """
+    '''
     num_devices = get_world_size()
     logger = logging.getLogger(__name__)
     logger.info("Start inference on {} batches".format(len(data_loader)))

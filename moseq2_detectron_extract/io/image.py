@@ -5,15 +5,16 @@ from typing import Optional
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import tifffile
 from imageio import imwrite
 
 
 def write_image(filename: str, image, scale: bool=True,
-                scale_factor: Optional[float]=None, dtype='uint16',
+                scale_factor: Optional[float]=None, dtype: npt.DTypeLike='uint16',
                 metadata: Optional[dict]=None, compress: int=0):
-    """ Save image data, possibly with scale factor for easy display
-    """
+    ''' Save image data, possibly with scale factor for easy display
+    '''
     file = Path(filename)
 
     if metadata is None:
@@ -44,9 +45,13 @@ def write_image(filename: str, image, scale: bool=True,
         imwrite(file.as_posix(), image.astype(dtype))
 
 
-def read_tiff_image(filename: str, dtype='uint16', scale=True, scale_key='scale_factor'):
-    """ Load image data, possibly with scale factor...
-    """
+def read_tiff_image(filename: str, dtype: npt.DTypeLike='uint16', scale: bool=True, scale_key: str='scale_factor') -> np.ndarray:
+    ''' Load TIFF image data, possibly with scale factor
+
+    Parameters:
+    filename (str): path to the image to read
+    dtype (npt.DTypeLike): 
+    '''
 
     with tifffile.TiffFile(filename) as tif:
         tmp = tif
@@ -74,7 +79,7 @@ def read_tiff_image(filename: str, dtype='uint16', scale=True, scale_key='scale_
     return image.astype(dtype)
 
 
-def read_image(filename: str, scale_factor: Optional[float]=None, dtype: str='uint8'):
+def read_image(filename: str, scale_factor: Optional[float]=None, dtype: npt.DTypeLike='uint8') -> np.ndarray:
     image = cv2.imread(filename)
     if scale_factor is not None:
         image = (image / scale_factor)

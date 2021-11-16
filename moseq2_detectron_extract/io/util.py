@@ -2,7 +2,7 @@ import errno
 import json
 import os
 import sys
-from typing import Union
+from typing import Dict
 
 import click
 import h5py
@@ -11,16 +11,29 @@ import ruamel.yaml as yaml
 
 
 def gen_batch_sequence(nframes: int, chunk_size: int, overlap: int, offset: int=0):
-    """Generate a sequence with overlap
-    """
+    ''' Generate a sequence with overlap
+
+    Parameters:
+    nframes (int): number of frames to produce
+    chunk_size (int): size of each chunk
+    overlap (int): overlap between successive chunks
+    offset (int): offset of the initial chunk
+    '''
     seq = range(offset, nframes)
     for i in range(offset, len(seq)-overlap, chunk_size-overlap):
         yield seq[i:i+chunk_size]
 
 
-def load_timestamps(timestamp_file: str, col: int=0) -> Union[np.array, None]:
-    """Read timestamps from space delimited text file
-    """
+def load_timestamps(timestamp_file: str, col: int=0) -> np.ndarray:
+    ''' Read timestamps from space delimited text file
+
+    Parameters:
+    timestamp_file (str): path to a file containing timestamp data
+    col (int): column of the file containing timestamp data
+
+    Returns:
+    np.ndarray containing timestamp data.
+    '''
 
     ts = []
     try:
@@ -35,13 +48,19 @@ def load_timestamps(timestamp_file: str, col: int=0) -> Union[np.array, None]:
             cols = line.split()
             ts.append(float(cols[col]))
         ts = np.array(ts)
-    except FileNotFoundError as e:
-        ts = None
 
     return ts
 
 
 def load_metadata(metadata_file: str) -> dict:
+    ''' Load session metadata from a json file
+
+    Parameters:
+    metadata_file (str): path to the file containing metadata in json format
+
+    Returns:
+    dict containing session metadata
+    '''
     metadata = {}
     try:
         if os.path.exists(metadata_file):
@@ -54,18 +73,14 @@ def load_metadata(metadata_file: str) -> dict:
     return metadata
 
 
-
-
-
-
 def read_yaml(yaml_file: str) -> dict:
     ''' Read a yaml file into dict object
 
     Parameters:
-        yaml_file (str): path to yaml file
+    yaml_file (str): path to yaml file
 
     Returns:
-        return_dict (dict): dict of yaml contents
+    return_dict (dict): dict of yaml contents
     '''
     with open(yaml_file, 'r') as f:
         yml = yaml.YAML(typ='safe')
@@ -76,8 +91,8 @@ def write_yaml(yaml_file: str, data: dict) -> None:
     ''' Write a dict object into a yaml file
 
     Parameters:
-        yaml_file (str): path to yaml file
-        data (dict): dict of data to write to `yaml_file`
+    yaml_file (str): path to yaml file
+    data (dict): dict of data to write to `yaml_file`
     '''
     with open(yaml_file, 'w') as f:
         yml = yaml.YAML(typ='safe')
@@ -86,7 +101,7 @@ def write_yaml(yaml_file: str, data: dict) -> None:
 
 
 def ensure_dir(path: str) -> str:
-    """ Ensures the path exists by creating the directories specified 
+    ''' Ensures the path exists by creating the directories specified 
     by path if they do not already exist.
     
     Parameters:
@@ -97,7 +112,7 @@ def ensure_dir(path: str) -> str:
 
     Returns:
     path (string): the ensured path
-    """
+    '''
     if not os.path.exists(path):
         try:
             os.makedirs(path)
@@ -111,19 +126,14 @@ def ensure_dir(path: str) -> str:
 #end ensure_dir()
 
 
-def dict_to_h5(h5, dic, root='/', annotations=None):
-    '''
-    Save an dict to an h5 file, mounting at root.
-    Keys are mapped to group names recursively.
-    Parameters
-    ----------
-    h5 (h5py.File instance): h5py.file object to operate on
-    dic (dict): dictionary of data to write
+def dict_to_h5(h5: h5py.File, data: dict, root: str='/', annotations: dict=None) -> None:
+    ''' Save an dict to an h5 file, mounting at root. Keys are mapped to group names recursively.
+
+    Parameters:
+    h5 (h5py.File): h5py.file object to operate on
+    data (dict): dictionary of data to write
     root (string): group on which to add additional groups and datasets
-    annotations (dict): annotation data to add to corresponding h5 datasets. Should contain same keys as dic.
-    Returns
-    -------
-    None
+    annotations (dict): annotation data to add to corresponding h5 datasets. Should contain same keys as data.
     '''
 
     if not root.endswith('/'):
@@ -132,7 +142,7 @@ def dict_to_h5(h5, dic, root='/', annotations=None):
     if annotations is None:
         annotations = {} #empty dict is better than None, but dicts shouldn't be default parameters
 
-    for key, item in dic.items():
+    for key, item in data.items():
         dest = root + key
         try:
             if isinstance(item, (np.ndarray, np.int64, np.float64, str, bytes)):
@@ -203,18 +213,16 @@ class Tee(object):
 
 
 
-def click_param_annot(click_cmd):
-    '''
-    Given a click.Command instance, return a dict that maps option names to help strings.
+def click_param_annot(click_cmd: click.Command) -> Dict[str, str]:
+    ''' Given a click.Command instance, return a dict that maps option names to help strings.
     Currently skips click.Arguments, as they do not have help strings.
-    Parameters
-    ----------
+
+    Parameters:
     click_cmd (click.Command): command to introspect
-    Returns
-    -------
+
+    Returns:
     annotations (dict): click.Option.human_readable_name as keys; click.Option.help as values
     '''
-
     annotations = {}
     for p in click_cmd.params:
         if isinstance(p, click.Option):

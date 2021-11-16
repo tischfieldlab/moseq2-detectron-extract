@@ -6,15 +6,18 @@ from moseq2_detectron_extract.proc.scalars import scalar_attributes
 from pkg_resources import get_distribution
 
 
-def create_extract_h5(h5_file: h5py.File, acquisition_metadata: dict, config_data, status_dict,
-                      nframes, roi, bground_im, first_frame, timestamps, **kwargs):
-    '''
-    This is a helper function for extract_wrapper(); handles writing the following metadata
-    to an open results_00.h5 file:
-    Acquisition metadata, extraction metadata, computed scalars, timestamps, and original frames/frames_mask.
-    Parameters
-    ----------
-    h5_file (h5py.File object): opened h5 file object to write to.
+def create_extract_h5(h5_file: h5py.File, acquisition_metadata: dict, config_data: dict, status_dict: dict,
+                      nframes: int, roi: np.ndarray, bground_im: np.ndarray, first_frame: np.ndarray, timestamps: np.ndarray) -> None:
+    ''' Prepare a h5 file for writing extraction results. Creates the necessary datasets and writes initial metadata:
+     - Acquisition metadata
+     - extraction metadata
+     - computed scalars
+     - computed keypoints
+     - timestamps
+     - original frames/frames_mask.
+
+    Parameters:
+    h5_file (h5py.File): opened h5 file object to write to.
     acquisition_metadata (dict): Dictionary containing extracted session acquisition metadata.
     config_data (dict): dictionary object containing all required extraction parameters. (auto generated)
     status_dict (dict): dictionary that helps indicate if the session has been extracted fully.
@@ -24,9 +27,6 @@ def create_extract_h5(h5_file: h5py.File, acquisition_metadata: dict, config_dat
     first_frame (2d np.ndarray): Computed 2D First Frame Image.
     timestamps (np.array): Array of session timestamps.
     kwargs (dict): additional keyword arguments.
-    Returns
-    -------
-    None
     '''
 
     h5_file.create_dataset('metadata/uuid', data=status_dict['uuid'])
@@ -105,15 +105,12 @@ def create_extract_h5(h5_file: h5py.File, acquisition_metadata: dict, config_dat
             h5_file.create_dataset(f'metadata/acquisition/{key}', dtype="f")
 
 
-def write_extracted_chunk_to_h5(h5_file, results):
-    '''
-    Write extracted frames, frame masks, and scalars to an open h5 file.
-    Parameters
-    ----------
+def write_extracted_chunk_to_h5(h5_file: h5py.File, results: dict) -> None:
+    ''' Write extracted frames, frame masks, scalars, and keypoints to an open h5 file.
+
+    Parameters:
     h5_file (H5py.File): open results_00 h5 file to save data in.
     results (dict): extraction results dict.
-    Returns
-    -------
     '''
     frame_range = results['frame_idxs']
     offset = results['offset']

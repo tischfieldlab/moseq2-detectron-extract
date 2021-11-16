@@ -18,12 +18,12 @@ from moseq2_detectron_extract.model.mapper import MoseqDatasetMapper
 
 
 class Trainer(DefaultTrainer):
-    """
+    '''
     We use the "DefaultTrainer" which contains pre-defined default logic for
     standard training workflow. They may not work for you, especially if you
     are working on a new research project. In that case you can write your
     own training loop. You can use "tools/plain_train_net.py" as an example.
-    """
+    '''
 
     @classmethod
     def build_train_loader(cls, cfg: CfgNode):

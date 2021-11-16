@@ -45,6 +45,20 @@ def draw_instances(frame, instances, scale=2.0):
     return out.get_image()
 
 
+def scale_depth_frames(frames, scale=2.0):
+    if len(frames.shape) == 2:
+        # single frame
+        return cv2.resize(frames, (int(frames.shape[1] * scale), int(frames.shape[0] * scale)))
+
+    else:
+        #batch of frames
+        width, height = (int(frames.shape[2] * scale), int(frames.shape[1] * scale))
+        out = np.zeros_like(frames, shape=(frames.shape[0], width, height))
+        for i in range(frames.shape[0]):
+            out[i] = cv2.resize(frames[i], (width, height))
+        return out
+
+
 def draw_instances_fast(frame, instances, keypoint_names, keypoint_connection_rules, scale=2.0):
     im = convert_image_to_rgb(frame, "L")
     im = cv2.resize(im, (int(im.shape[1] * scale), int(im.shape[0] * scale)))

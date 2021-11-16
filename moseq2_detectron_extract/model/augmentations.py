@@ -165,7 +165,7 @@ class AlbumentationsTransform(Transform):
 
 
 class Albumentations(Augmentation):
-    """
+    '''
     Wrap an augmentor form the albumentations library: https://github.com/albu/albumentations.
     Coordinate augmentation is not supported by the library.
     Example:
@@ -180,13 +180,13 @@ class Albumentations(Augmentation):
         transform_1 = augs1(input)
         image_transformed_1 = input.image
         cv2_imshow(image_transformed_1)
-    """
+    '''
 
     def __init__(self, augmentor):
-        """
+        '''
         Args:
             augmentor (albumentations.BasicTransform):
-        """
+        '''
         super(Albumentations, self).__init__()
         self._aug = augmentor
 

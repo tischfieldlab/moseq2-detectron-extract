@@ -1,10 +1,12 @@
-import numpy as np
-import cv2
-import skimage
-import scipy
-import tqdm
+from typing import Union
 
-from moseq2_detectron_extract.io.video import get_raw_info, get_video_info, read_frames, read_frames_raw
+import cv2
+import numpy as np
+import scipy
+import skimage
+import tqdm
+from moseq2_detectron_extract.io.video import (get_raw_info, get_video_info,
+                                               read_frames, read_frames_raw)
 
 
 def get_roi(depth_image,
@@ -18,9 +20,9 @@ def get_roi(depth_image,
             gradient_threshold=3000,
             fill_holes=True,
             **kwargs):
-    """
+    '''
     Get an ROI using RANSAC plane fitting and simple blob features
-    """
+    '''
 
     if gradient_filter:
         gradient_x = np.abs(cv2.Sobel(depth_image, cv2.CV_64F,
@@ -101,15 +103,16 @@ def get_roi(depth_image,
 
 
 def plane_fit3(points):
-    """Fit a plane to 3 points (min number of points for fitting a plane)
-    Args:
-        points (2d numpy array): each row is a group of points,
-        columns correspond to x,y,z
+    '''Fit a plane to 3 points (min number of points for fitting a plane)
+
+    Parameters:
+    points (2d numpy array): each row is a group of points,
+    columns correspond to x,y,z
 
     Returns:
-        plane (1d numpy array): linear plane fit-->a*x+b*y+c*z+d
+    plane (1d numpy array): linear plane fit-->a*x+b*y+c*z+d
 
-    """
+    '''
     a = points[1, :]-points[0, :]
     b = points[2, :]-points[0, :]
     # cross prod
@@ -131,17 +134,18 @@ def plane_fit3(points):
 def plane_ransac(depth_image, depth_range=(650, 750), iters=1000,
                  noise_tolerance=30, in_ratio=.1, progress_bar=True,
                  mask=None):
-    """Naive RANSAC implementation for plane fitting
-    Args:
-        depth_image (2d numpy array): hxw, background image to fit plane to
-        depth_range (tuple): min/max depth (mm) to consider pixels for plane
-        iters (int): number of RANSAC iterations
-        noise_tolerance (float): dist. from plane to consider a point an inlier
-        in_ratio (float): frac. of points required to consider a plane fit good
+    ''' Naive RANSAC implementation for plane fitting
+
+    Parameters:
+    depth_image (2d numpy array): hxw, background image to fit plane to
+    depth_range (tuple): min/max depth (mm) to consider pixels for plane
+    iters (int): number of RANSAC iterations
+    noise_tolerance (float): dist. from plane to consider a point an inlier
+    in_ratio (float): frac. of points required to consider a plane fit good
 
     Returns:
-        best_plane (1d numpy array): plane fit to data
-    """
+    best_plane (1d numpy array): plane fit to data
+    '''
     use_points = np.logical_and(
         depth_image > depth_range[0], depth_image < depth_range[1])
 
@@ -209,52 +213,71 @@ def plane_ransac(depth_image, depth_range=(650, 750), iters=1000,
     return best_plane, dist
 
 
-def apply_roi(frames, roi):
-    """
-    Apply ROI to data, consider adding constraints (e.g. mod32==0)
-    """
+def apply_roi(frames: np.ndarray, roi: np.ndarray) -> np.ndarray:
+    ''' Apply ROI to data:
+        1) mask `frames` according to mask `roi`
+        2) crop `frames` to the bounding box of `roi`
+
+    consider adding constraints (e.g. mod32==0)
+
+    Parameters:
+    frames (np.ndarray): frame data of shape (nframes, rows, cols) to crop and mask
+    roi (np.ndarray): 2D mask indicating region of interest
+
+    Returns:
+    3D np.ndarray containing masked and cropped frames
+    '''
     # yeah so fancy indexing slows us down by 3-5x
     if len(frames.shape) == 3: # (N, W, H)
-        frames = frames*roi
-    
+        frames = frames * roi
+
     bbox = get_bbox(roi)
     return frames[:, bbox[0, 0]:bbox[1, 0], bbox[0, 1]:bbox[1, 1]]
 
 
-def get_bbox(roi):
-    """
-    Given a binary mask, return an array with the x and y boundaries
-    """
+def get_bbox(roi: np.ndarray) -> Union[np.array, None]:
+    ''' Given a binary mask, return an array with the x and y boundaries
+
+    Parameters:
+    roi (np.ndarray): 2D mask representing region of interest
+
+    Returns:
+    bounding box (np.array) of the form ((y_min, x_min), (y_max, x_max)).
+    If no elements of the roi contain non-zero values, `None` will be returned.
+    '''
     y, x = np.where(roi > 0)
 
     if len(y) == 0 or len(x) == 0:
         return None
     else:
-        bbox = np.array([[y.min(), x.min()], [y.max(), x.max()]])
-        return bbox
+        return np.array([[y.min(), x.min()], [y.max(), x.max()]])
 
 
-def get_bground_im(frames):
-    """Returns background
-    Args:
-        frames (3d numpy array): frames x r x c, uncropped mouse
+def get_bground_im(frames: np.ndarray) -> np.ndarray:
+    ''' Returns background
+
+    Parameters:
+    frames (3d numpy array): frames x r x c, uncropped mouse
 
     Returns:
-        bground (2d numpy array):  r x c, background image
-    """
-    bground = np.median(frames, 0)
+    bground (2d numpy array):  r x c, background image
+    '''
+    bground = np.median(frames, axis=0)
     return bground
 
 
-def get_bground_im_file(frames_file, frame_stride=500, med_scale=5, **kwargs):
-    """Returns background from file
-    Args:
-        frames_file (path): path to data with frames
-        frame_stride
+def get_bground_im_file(frames_file: str, frame_stride: int=500, med_scale: int=5, **kwargs) -> np.ndarray:
+    ''' Returns background from file
+
+    Parameters:
+    frames_file (path): path to data with frames
+    frame_stride (int): steps between frames to consider for background
+    med_scale (int): size of the median blur operation, must be odd and greater than 1
+    **kwargs: kwargs passed to read_frames_raw()
 
     Returns:
-        bground (2d numpy array):  r x c, background image
-    """
+    bground (2d numpy array):  shape (r x c), background image
+    '''
 
     try:
         if frames_file.endswith('dat'):

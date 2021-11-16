@@ -1,12 +1,12 @@
+from typing import Dict
 import numpy as np
 from moseq2_detectron_extract.proc.util import convert_pxs_to_mm
 
 
-def scalar_attributes():
-    '''
-    Gets scalar attributes dict with names paired with descriptions.
-    Returns
-    -------
+def scalar_attributes() -> Dict[str, str]:
+    ''' Gets scalar attributes dict with names paired with descriptions.
+
+    Returns:
     attributes (dict): collection of metadata keys and descriptions.
     '''
 
@@ -33,18 +33,17 @@ def scalar_attributes():
     return attributes
 
 
-def compute_scalars(frames, track_features, min_height=10, max_height=100, true_depth=673.1):
-    '''
-    Computes scalars.
-    Parameters
-    ----------
-    frames (3d np.ndarray): frames x r x c, uncropped mouse
+def compute_scalars(frames: np.ndarray, track_features: dict, min_height: float=10, max_height: float=100, true_depth: float=673.1) -> Dict[str, np.ndarray]:
+    ''' Computes scalars.
+
+    Parameters:
+    frames (3d np.ndarray): (frames x r x c), uncropped mouse
     track_features (dict):  dictionary with tracking variables (centroid and orientation)
     min_height (float): minimum height of the mouse
     max_height (float): maximum height of the mouse
     true_depth (float): detected true depth
-    Returns
-    -------
+
+    Returns:
     features (dict): dictionary of scalars
     '''
 

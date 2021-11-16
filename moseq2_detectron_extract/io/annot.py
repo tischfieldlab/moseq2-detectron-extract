@@ -1,8 +1,8 @@
-import copy
 import json
 import os
 import random
-from typing import Iterable, List, MutableSequence, Optional, Sequence, Union
+from typing import (Callable, Dict, Iterable, List, MutableSequence, Optional,
+                    Sequence, Tuple, Union)
 
 import numpy as np
 import pycocotools
@@ -64,6 +64,11 @@ default_keypoint_connection_rules = [
 def get_dataset_statistics(dset: Sequence[DataItem]):
     ''' Calculate mean a standard deviation of images over a dataset.
     
+    Parameters:
+    dest (Sequence[DataItem]): annotations to compute statistics on
+
+    Returns:
+    Tuple(np.ndarray, np.ndarray), tuple of (mean, stdev), each an array indexed by channel
     '''
     nchannels = 1
     _count = 0
@@ -85,10 +90,14 @@ def get_dataset_statistics(dset: Sequence[DataItem]):
     return (_mean, _stdev)
 
 
-def get_dataset_im_size_range(dset: Sequence[DataItem]):
+def get_dataset_im_size_range(dset: Sequence[DataItem]) -> Tuple[Tuple[float, float], Tuple[float, float]]:
     ''' Calculate min/max image width and height
-    
-    Returns: ((min_width, max_width), (min_height, max_height))
+
+    Parameters:
+    dest (Sequence[DataItem]): annotations to compute statistics on
+
+    Returns:
+    ((min_width, max_width), (min_height, max_height))
     '''
     widths = [d['width'] for d in dset]
     heights = [d['height'] for d in dset]
@@ -98,7 +107,15 @@ def get_dataset_im_size_range(dset: Sequence[DataItem]):
     )
 
 
-def get_dataset_bbox_aspect_ratios(dset: Sequence[DataItem]):
+def get_dataset_bbox_aspect_ratios(dset: Sequence[DataItem]) -> Dict[str, float]:
+    ''' Calculate descriptive stats for bounding box aspect ratios
+
+    Parameters:
+    dest (Sequence[DataItem]): annotations to compute statistics on
+
+    Returns:
+    dict with keys [min, max, mean, median, stdev] and corresponding values
+    '''
     aspect_ratios = []
     for d in dset:
         box = d['annotations'][0]['bbox']
@@ -150,7 +167,18 @@ def get_dataset_bbox_range(dset: Sequence[DataItem]):
     }
 
 
-def split_test_train(annotations: MutableSequence[DataItem], split: float=0.90):
+def split_test_train(annotations: MutableSequence[DataItem], split: float=0.90) -> Tuple[Callable[[], MutableSequence[DataItem]], Callable[[], MutableSequence[DataItem]]]:
+    ''' Split annotations into training and testing datasets according to `split` ratio
+
+    Parameters:
+    annotations (MutableSequence[DataItem]): annotations to spit
+    split (float): Fraction of `annotations` to be put into train set, the compliment will be put into test set
+
+    Returns:
+    Tuple[Callable[[], MutableSequence[DataItem]], Callable[[], MutableSequence[DataItem]]]
+    index zero contains function that when called will return the training dataset
+    index one contains function that when called will return the testing dataset
+    '''
     random.shuffle(annotations)
     split_idx = int(len(annotations) * split)
 
@@ -163,7 +191,14 @@ def split_test_train(annotations: MutableSequence[DataItem], split: float=0.90):
     return (train_annotations, test_annotations)
 
 
-def register_datasets(annotations: MutableSequence[DataItem], keypoint_names, split: bool=True):
+def register_datasets(annotations: MutableSequence[DataItem], keypoint_names: Iterable[str], split: bool=True) -> None:
+    ''' Register annotations with the Detectron2 DatasetCatalog
+
+    Parameters:
+    annotations (MutableSequence[DataItem]): annotations to register
+    keypoint_names (Iterable[str]): names of the keypoints to register
+    split (bool): If true, split annotations into training and test subsets, otherwise all annotations will be assigned to training
+    '''
     if split:
         split_annot = split_test_train(annotations)
         for i, d in enumerate(['train', 'test']):
@@ -174,7 +209,13 @@ def register_datasets(annotations: MutableSequence[DataItem], keypoint_names, sp
         register_dataset_metadata("moseq_train", keypoint_names)
 
 
-def register_dataset_metadata(name: str, keypoint_names: Iterable[str]):
+def register_dataset_metadata(name: str, keypoint_names: Iterable[str]) -> None:
+    ''' Register dataset metadata with the Detectron2 MetadataCatalog
+
+    Parameters:
+    name (str): name of the dataset, should correspond to a dataset registered with Detectron2 DatasetCatalog
+    keypoint_names (Iterable[str]): names of the keypoints to register
+    '''
     MetadataCatalog.get(name).thing_classes = ["mouse"]
     MetadataCatalog.get(name).thing_colors = [(0, 0, 255)]
     MetadataCatalog.get(name).keypoint_names = list(keypoint_names)
@@ -182,8 +223,15 @@ def register_dataset_metadata(name: str, keypoint_names: Iterable[str]):
     MetadataCatalog.get(name).keypoint_connection_rules = default_keypoint_connection_rules
 
 
-def poly_to_mask(poly, out_shape):
+def poly_to_mask(poly: np.ndarray, out_shape: Tuple[int, int]) -> np.ndarray:
     ''' Convert a polygon mask into a bitmap mask
+
+    Parameters:
+    poly (np.ndarray): array of polygon coordinates of shape (ncoords, 2 [x, y])
+    out_shape (Tuple[int, int]): Shape of the output mask
+
+    Returns:
+    np.ndarray of shape `out_shape` containing ones inside the polygon specified by `poly`, and zeros elsewhere
     '''
     mask = np.zeros((*out_shape, 1), dtype=np.uint8)
     rr,cc = polygon(poly[:,0], poly[:,1], out_shape)
@@ -191,25 +239,17 @@ def poly_to_mask(poly, out_shape):
     return mask
 
 
-def augment_annotations_with_rotation(annotations: Sequence[DataItem], angles: Iterable[int]=None) -> Sequence[DataItem]:
-    if angles is None:
-        angles = [0, 90, 180, 270]
-
-    out_annotations = []
-    for angle in angles:
-        for annot in copy.deepcopy(annotations):
-            annot['rotate'] = angle
-            out_annotations.append(annot)
-    return out_annotations
-
-
-def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_format: MaskFormat='polygon', rescale=1.0) -> Sequence[DataItem]:
+def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_format: MaskFormat='polygon', rescale: float=1.0) -> Sequence[DataItem]:
     ''' Read annotations from json file output by labelstudio (coco-ish) format
 
-        Parameters:
-            annot_file (string): path to the annotation json file
-            keypoint_names (list<string>): list of the keypoint names, in the order desired. If None, ignore keypoints
-            mask_format (string): 'polygon'|'bitmask'
+    Parameters:
+    annot_file (string): path to the annotation json file
+    keypoint_names (List[str]): list of the keypoint names, in the order desired. If None, ignore keypoints
+    mask_format (MaskFormat): 'polygon'|'bitmask', format of the masks to output
+    rescale (float): instensity rescaling to apply (by dataset mapper) to image when loading
+
+    Returns:
+    Sequence[DataItem] annotations
     '''
     if keypoint_names is None:
         print("WARNING: Ignoring any keypoint information because `keypoint_names` is None.")
@@ -220,6 +260,7 @@ def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_forma
 
         completions = []
         for entry in data:
+            # depending version, we have seen keys `annotations` and `completions`
             if 'annotations' in entry:
                 key = 'annotations'
             elif 'completions' in entry:
@@ -232,7 +273,6 @@ def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_forma
             completions.append(entry_data)
 
         return completions
-
 
 
 def get_polygon_data(entry: dict, mask_format: MaskFormat) -> dict:
@@ -336,19 +376,29 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
     }
 
 
-def replace_data_path_in_annotations(annotations: Sequence[DataItem], search: str, replace: str):
+def replace_data_path_in_annotations(annotations: Sequence[DataItem], search: str, replace: str) -> Sequence[DataItem]:
     ''' Replace substrings in the filename of annotations.
     Useful when moving datasets to another computer
-    
+
+    Parameters:
+    annotations (Sequence[DataItem]): annotations to validate
+    search (str): substring to search for
+    replace (str): replacement string
+
+    Returns:
+    Sequence[DataItem], annotations with data path modified according to `search` and `replace`
     '''
     for annot in annotations:
         annot['file_name'] = annot['file_name'].replace(search, replace)
     return annotations
 
 
-def show_dataset_info(annotations: Sequence[DataItem]):
-    ''' Print some basic information about a list of annotations
+def show_dataset_info(annotations: Sequence[DataItem]) -> None:
+    ''' Print some basic information about a list of annotations.
         Includes the number of items, the size range of images, and the size range of bboxes
+
+    Parameters:
+    annotations (Sequence[DataItem]): annotations to validate
     '''
     print("Number of Items: ", len(annotations))
 
@@ -370,13 +420,20 @@ def show_dataset_info(annotations: Sequence[DataItem]):
         print(f" -> Ch{ch}: mean {im_means[ch]:.2f} ± {im_stdevs[ch]:.2f} stdev")
 
 
-def validate_annotations(annotations: Sequence[DataItem]):
+def validate_annotations(annotations: Sequence[DataItem]) -> bool:
     ''' Validate annotations
 
     Checks performed:
      - The file path exists on the file system
+
+    Parameters:
+    annotations (Sequence[DataItem]): annotations to validate
+
+    Returns:
+    bool, True if all validation checks pass, otherwise raises exception
     '''
     for annot in annotations:
         if not os.path.isfile(annot['file_name']):
             raise FileNotFoundError(annot['file_name'])
+    return True
 

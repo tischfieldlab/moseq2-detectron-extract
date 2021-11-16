@@ -49,7 +49,6 @@ def extract_session(session: Session, config: dict):
         'metadata': session.load_metadata(),
         'parameters': deepcopy(config)
     }
-    
     write_yaml(status_filename, status_dict)
 
 
@@ -110,8 +109,6 @@ def extract_session(session: Session, config: dict):
         t.start()
     progress.start()
 
-
-
     for i, (frame_idxs, raw_frames) in enumerate(session.iterate(config['chunk_size'], config['chunk_overlap'])):
         offset = config['chunk_overlap'] if i > 0 else 0
         raw_frames = prep_raw_frames(raw_frames, bground_im=bground_im, roi=roi, vmin=config['min_height'], vmax=config['max_height'])
@@ -131,3 +128,5 @@ def extract_session(session: Session, config: dict):
     write_yaml(status_filename, status_dict)
 
     tqdm.tqdm.write(f'Finished processing {session.nframes} frames in {time.time() - overall_time} seconds')
+
+    return status_filename

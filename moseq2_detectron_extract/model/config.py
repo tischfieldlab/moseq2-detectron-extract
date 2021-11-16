@@ -1,7 +1,6 @@
 from detectron2 import model_zoo
 from detectron2.config import CfgNode, get_cfg
 from detectron2.data.catalog import DatasetCatalog, MetadataCatalog
-from detectron2.projects.point_rend import add_pointrend_config
 from moseq2_detectron_extract.io.annot import get_dataset_statistics
 
 
@@ -17,25 +16,25 @@ def get_base_config() -> CfgNode:
     # USE Keypoint RCNN
     cfg.merge_from_file(model_zoo.get_config_file("COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x.yaml"))
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x.yaml")
+    cfg.MODEL.KEYPOINT_ON = True
 
-    # USE MASK RCNN
-    #cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
-    #cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
-
+    # Turn on mask detection
     cfg.MODEL.MASK_ON = True
 
+    # We only have one class
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
-    
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
+
+    # faster, and good enough for this toy dataset (default: 512)
+    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256
 
     cfg.MODEL.ROI_BOX_HEAD.SMOOTH_L1_BETA = 0.5
 
-    cfg.MODEL.KEYPOINT_ON = True
     cfg.MODEL.RPN.POST_NMS_TOPK_TRAIN = 1500
 
-
+    # 4 workers for the data loader
     cfg.DATALOADER.NUM_WORKERS = 4
 
+    # Some information about the input images
     cfg.INPUT.FORMAT = "L"
     cfg.INPUT.MIN_SIZE_TRAIN = (240,)
     cfg.INPUT.MAX_SIZE_TRAIN = 250
@@ -44,6 +43,7 @@ def get_base_config() -> CfgNode:
     cfg.INPUT.RANDOM_FLIP = "none"
 
 
+    #some configuration for the solver
     cfg.SOLVER.IMS_PER_BATCH = 8
     cfg.SOLVER.BASE_LR = 0.0025  # pick a good LR
     cfg.SOLVER.CHECKPOINT_PERIOD = 5000
@@ -58,7 +58,6 @@ def get_base_config() -> CfgNode:
     cfg.OUTPUT_DIR = './models/output_4'
     cfg.VIS_PERIOD = 100
     cfg.CUDNN_BENCHMARK = True
-    #cfg.MODEL.WEIGHTS = None
 
     cfg.TEST.DETECTIONS_PER_IMAGE = 1
     cfg.TEST.EVAL_PERIOD = 1000

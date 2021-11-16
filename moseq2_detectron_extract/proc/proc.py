@@ -1,6 +1,9 @@
+from typing import Tuple
+
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
 import scipy
 import tqdm
 from bottleneck import move_median
@@ -8,7 +11,7 @@ from moseq2_detectron_extract.proc.keypoints import rotate_points_batch
 from moseq2_detectron_extract.proc.roi import apply_roi
 
 
-def overlay_video(video1, video2):
+def overlay_video(video1: np.ndarray, video2: np.ndarray) -> np.ndarray:
     channels = video1.shape[-1]
     nframes, rows1, cols1 = video1.shape[:3]
     _, rows2, cols2 = video2.shape[:3]
@@ -18,7 +21,7 @@ def overlay_video(video1, video2):
     return output_movie
 
 
-def colorize_video(frames, vmin=0, vmax=100, cmap='jet'):
+def colorize_video(frames: np.ndarray, vmin: float=0, vmax: float=100, cmap: str='jet'):
     use_cmap = plt.get_cmap(cmap)
 
     disp_img = frames.copy().astype('float32')
@@ -30,7 +33,7 @@ def colorize_video(frames, vmin=0, vmax=100, cmap='jet'):
     return disp_img
 
 
-def prep_raw_frames(frames, bground_im=None, roi=None, vmin=None, vmax=None, dtype='uint8'):
+def prep_raw_frames(frames: np.ndarray, bground_im: np.ndarray=None, roi: np.ndarray=None, vmin: float=None, vmax: float=None, dtype: npt.DTypeLike='uint8'):
     ''' Prepare raw `frames` by:
             1) subtracting background based on `bground_im`
             2) applying a region of interest (crop and mask according to `roi`)
@@ -54,7 +57,7 @@ def prep_raw_frames(frames, bground_im=None, roi=None, vmin=None, vmax=None, dty
     return frames.astype(dtype)
 
 
-def scale_raw_frames(frames, vmin, vmax, dtype='uint8'):
+def scale_raw_frames(frames: np.ndarray, vmin: float, vmax: float, dtype: npt.DTypeLike='uint8'):
     ''' Linear scale `frames` to the range afforded by `dtype`
     '''
     if np.issubdtype(np.dtype(dtype), np.integer):
@@ -69,9 +72,9 @@ def scale_raw_frames(frames, vmin, vmax, dtype='uint8'):
     return ((frames - vmin) * ((dmax - dmin) / (vmax - vmin)) + dmin).astype(dtype)
 
 
-def get_frame_features(frames, frame_threshold=10, mask=np.array([]),
-                       mask_threshold=-30, use_cc=False, progress_bar=True):
-    """
+def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.ndarray=np.array([]),
+                       mask_threshold: float=-30, use_cc: bool=False, progress_bar: bool=True):
+    '''
     Use image moments to compute features of the largest object in the frame
 
     Args:
@@ -81,7 +84,7 @@ def get_frame_features(frames, frame_threshold=10, mask=np.array([]),
     Returns:
         features (dict list): dictionary with simple image features
 
-    """
+    '''
 
     features = []
     nframes = frames.shape[0]
@@ -130,7 +133,7 @@ def get_frame_features(frames, frame_threshold=10, mask=np.array([]),
     return features, mask
 
 
-def crop_and_rotate_frame(frame, center, angle, crop_size=(80, 80)):
+def crop_and_rotate_frame(frame: np.ndarray, center: Tuple[float, float], angle: float, crop_size: Tuple[int, int]=(80, 80)):
     if np.isnan(angle) or np.any(np.isnan(center)):
         return np.zeros_like(frame, shape=crop_size)
 
@@ -145,8 +148,8 @@ def crop_and_rotate_frame(frame, center, angle, crop_size=(80, 80)):
     return cv2.warpAffine(use_frame[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
 
 
-def crop_and_rotate_frames(frames, features, crop_size=(80, 80),
-                           progress_bar=True):
+def crop_and_rotate_frames(frames: np.ndarray, features: dict, crop_size: Tuple[int, int]=(80, 80),
+                           progress_bar: bool=True):
 
     nframes = frames.shape[0]
     cropped_frames = np.zeros((nframes, crop_size[0], crop_size[1]), frames.dtype)
@@ -237,12 +240,12 @@ def hampel_filter(data, span, sigma=3):
     return data
 
 
-def clean_frames(frames, prefilter_space=(3,), prefilter_time=None,
+def clean_frames(frames: np.ndarray, prefilter_space=(3,), prefilter_time=None,
                  strel_tail=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)),
                  iters_tail=None, frame_dtype='uint8',
                  strel_min=cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)),
                  iters_min=None, progress_bar=True):
-    """
+    '''
     Simple filtering, median filter and morphological opening
 
     Args:
@@ -253,7 +256,7 @@ def clean_frames(frames, prefilter_space=(3,), prefilter_time=None,
     Returns:
         filtered_frames (3d np array): frame x r x c
 
-    """
+    '''
     # seeing enormous speed gains w/ opencv
     filtered_frames = frames.copy().astype(frame_dtype)
 
@@ -279,8 +282,8 @@ def clean_frames(frames, prefilter_space=(3,), prefilter_time=None,
     return filtered_frames
 
 
-def im_moment_features(IM):
-    """
+def im_moment_features(IM: np.ndarray) -> dict:
+    '''
     Use the method of moments and centralized moments to get image properties
 
     Args:
@@ -290,7 +293,7 @@ def im_moment_features(IM):
         Features (dictionary): returns a dictionary with orientation,
         centroid, and ellipse axis length
 
-    """
+    '''
 
     tmp = cv2.moments(IM)
     num = 2*tmp['mu11']
@@ -316,14 +319,14 @@ def im_moment_features(IM):
 
 
 def get_largest_cc(frames, progress_bar=False):
-    """Returns largest connected component blob in image
+    '''Returns largest connected component blob in image
     Args:
         frame (3d numpy array): frames x r x c, uncropped mouse
         progress_bar (bool): display progress bar
 
     Returns:
         flips (3d bool array):  frames x r x c, true where blob was found
-    """
+    '''
     foreground_obj = np.zeros((frames.shape), 'bool')
 
     for i in tqdm.tqdm(range(frames.shape[0]), disable=not progress_bar, desc='CC'):
@@ -348,7 +351,7 @@ def broadcasting_app(a, L, S ):  # Window len = L, Stride len/stepsize = S
     return a[S*np.arange(nrows)[:,None] + np.arange(L)]
 
 
-def filter_angles(angles, window=3):
+def filter_angles(angles: np.ndarray, window: int=3) -> np.ndarray:
     out = np.copy(angles)
     windows = move_median(angles, window=window, min_count=1)
     diff = out - windows
@@ -360,7 +363,7 @@ def filter_angles(angles, window=3):
     return out
 
 
-def iterative_filter_angles(data, max_iters=1000):
+def iterative_filter_angles(data: np.ndarray, max_iters: int=1000) -> Tuple[np.ndarray, np.ndarray]:
     last = np.copy(data)
     iterations = 0
     while True:

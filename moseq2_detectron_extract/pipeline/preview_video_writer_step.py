@@ -1,13 +1,11 @@
 
 import os
-from typing import List, Union
 
 import numpy as np
 from moseq2_detectron_extract.io.video import PreviewVideoWriter
 from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
 from moseq2_detectron_extract.proc.proc import colorize_video, overlay_video
-from moseq2_detectron_extract.viz import draw_instances_fast
-from torch.multiprocessing import Queue
+from moseq2_detectron_extract.viz import draw_instances_fast, scale_depth_frames
 
 
 class PreviewVideoWriterStep(PipelineStep):
@@ -32,5 +30,5 @@ class PreviewVideoWriterStep(PipelineStep):
             out_video[i,:,:,:] = draw_instances_fast(raw_frames[i,:,:,None].copy(), frame_instances, scale=scale, keypoint_names=self.config['keypoint_names'], keypoint_connection_rules=self.config['keypoint_connection_rules'])
             self.update_progress()
 
-        out_video_combined = overlay_video(out_video, colorize_video(data['depth_frames'] * data['mask_frames'], vmax=255))
+        out_video_combined = overlay_video(out_video, colorize_video(scale_depth_frames(data['depth_frames'] * data['mask_frames'], scale=1.5)))
         self.video_pipe.write_frames(data['frame_idxs'], out_video_combined)
