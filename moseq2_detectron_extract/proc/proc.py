@@ -11,15 +11,6 @@ from moseq2_detectron_extract.proc.keypoints import rotate_points_batch
 from moseq2_detectron_extract.proc.roi import apply_roi
 
 
-def overlay_video(video1: np.ndarray, video2: np.ndarray) -> np.ndarray:
-    channels = video1.shape[-1]
-    nframes, rows1, cols1 = video1.shape[:3]
-    _, rows2, cols2 = video2.shape[:3]
-    output_movie = np.zeros((nframes, (rows1 + rows2), (cols1 + cols2), channels), 'uint16')
-    output_movie[:, :rows2, :cols2, :] = video2
-    output_movie[:, rows2:, cols2:, :] = video1
-    return output_movie
-
 def stack_videos(videos: Iterable[np.ndarray], orientation: Literal['horizontal', 'vertical', 'diagional']) -> np.ndarray:
     ''' Stack videos according to orientation to create one big video
 
@@ -30,10 +21,11 @@ def stack_videos(videos: Iterable[np.ndarray], orientation: Literal['horizontal'
     Retruns:
     stacked composite video
     '''
+    dtype = reduce_dtypes(videos)
     nframes = reduce_axis_size(videos, 0)
-    channels = reduce_axis_size(videos, -1)
-    heights = [v.shape[0] for v in videos]
-    widths = [v.shape[1] for v in videos]
+    channels = reduce_axis_size(videos, 3)
+    heights = [v.shape[1] for v in videos]
+    widths = [v.shape[2] for v in videos]
 
     if orientation == 'horizontal':
         height = max(heights)
@@ -47,7 +39,7 @@ def stack_videos(videos: Iterable[np.ndarray], orientation: Literal['horizontal'
     else:
         raise ValueError(f'Unknown orientation "{orientation}". Expected one of ["horizontal", "vertical"].')
 
-    output_movie = np.zeros((nframes, height, width, channels), 'uint16')
+    output_movie = np.zeros((nframes, height, width, channels), dtype)
     for i, video in enumerate(videos):
         if orientation == 'horizontal':
             offset = sum([w for wi, w in enumerate(widths) if wi < i])
@@ -79,9 +71,29 @@ def reduce_axis_size(data: Iterable[np.ndarray], axis: int) -> int:
 
     sizes = set([d.shape[axis] for d in data])
     if len(sizes) == 1:
-        return int(sizes[0])
+        return int(sizes.pop())
     else:
-        raise ValueError(f'Arrays should be equal sized on axis{axis}')
+        raise ValueError(f'Arrays should be equal sized on axis{axis}!')
+
+
+def reduce_dtypes(data: Iterable[np.ndarray]) -> npt.DTypeLike:
+    ''' Reduce an iterable of numpy.ndarrays to a dtype
+    Will raise an exception if no items are passed or the all arrays do not share a dtype
+
+    Parameters:
+    data (Iterable[np.ndarray]): Arrays to inspect
+
+    Returns:
+    npt.DTypeLike - the shared dtype of all arrays in `data`
+    '''
+    if len(data) <= 0:
+        raise ValueError('Need a list with at least one array!')
+
+    dtypes = set([d.dtype for d in data])
+    if len(dtypes) == 1:
+        return dtypes.pop()
+    else:
+        raise ValueError(f'Arrays should have same dtype!')
 
 
 def colorize_video(frames: np.ndarray, vmin: float=0, vmax: float=100, cmap: str='jet') -> np.ndarray:
@@ -104,7 +116,7 @@ def colorize_video(frames: np.ndarray, vmin: float=0, vmax: float=100, cmap: str
     disp_img[disp_img > 1] = 1
     disp_img = use_cmap(disp_img)[:,:,:,:3]*255
 
-    return disp_img
+    return disp_img.astype('uint8')
 
 
 def prep_raw_frames(frames: np.ndarray, bground_im: np.ndarray=None, roi: np.ndarray=None, vmin: float=None, vmax: float=None, dtype: npt.DTypeLike='uint8'):
@@ -545,7 +557,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     angles[incl] = np.unwrap(angles[incl] * 2) / 2
     angles = -np.rad2deg(angles)
 
-    #rotate keypoints to reflect angles
+    # Rotate keypoints to reflect angles
     rotated_keypoints = rotate_points_batch(np.copy(allosteric_keypoints), features['centroid'], angles)
 
     # Strategy:

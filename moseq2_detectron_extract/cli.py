@@ -40,7 +40,8 @@ from moseq2_detectron_extract.proc.kmeans import select_frames_kmeans
 from moseq2_detectron_extract.proc.proc import (colorize_video,
                                                 crop_and_rotate_frame,
                                                 instances_to_features,
-                                                overlay_video, prep_raw_frames, scale_raw_frames)
+                                                prep_raw_frames,
+                                                scale_raw_frames, stack_videos)
 from moseq2_detectron_extract.proc.roi import apply_roi
 from moseq2_detectron_extract.proc.scalars import compute_scalars
 from moseq2_detectron_extract.quality import find_outliers_h5
@@ -446,7 +447,7 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
 
 
         start = time.time()
-        out_video_combined = overlay_video(out_video, colorize_video(cropped_frames, vmax=255))
+        out_video_combined = stack_videos([out_video, colorize_video(cropped_frames, vmax=255)], orientation='diagional')
         video_pipe.write_frames(frame_idxs, out_video_combined)
         times['write_video'].append(time.time() - start)
 

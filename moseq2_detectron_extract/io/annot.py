@@ -48,7 +48,9 @@ default_keypoint_names = [
     'TailBase',
     'TailTip'
 ]
-default_keypoint_connection_rules = [
+
+KeypointConnections = Sequence[Tuple[str, str, Tuple[int, int, int]]]
+default_keypoint_connection_rules: KeypointConnections = [
         ('Nose', 'Left Ear', (166, 206, 227)),
         ('Nose', 'Right Ear', (31,  120, 180)),
         ('Neck', 'Left Ear', (166, 206, 227)),

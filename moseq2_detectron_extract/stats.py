@@ -28,7 +28,6 @@ def is_outlier(points, thresh=3.5):
     modified_z_score = 0.6745 * diff / med_abs_deviation
 
     return modified_z_score > thresh
-#end is_outlier()
 
 
 def exclude_outliers(data, threshold=3.5):
@@ -44,7 +43,6 @@ def exclude_outliers(data, threshold=3.5):
     array: `data`, excluding outliers
     '''
     return data[(~is_outlier(data, threshold))]
-#end exclude_outliers()
 
 
 def max_exclude_outliers(data, threshold=3.5):
@@ -60,7 +58,6 @@ def max_exclude_outliers(data, threshold=3.5):
     float: max value in `data`, excluding outliers
     '''
     return exclude_outliers(data, threshold).max()
-#end max_exclude_outliers()
 
 
 def min_exclude_outliers(data, threshold=3.5):
@@ -76,4 +73,3 @@ def min_exclude_outliers(data, threshold=3.5):
     float: min value in `data`, excluding outliers
     '''
     return exclude_outliers(data, threshold).min()
-#end min_exclude_outliers()

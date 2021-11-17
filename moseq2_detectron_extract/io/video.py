@@ -333,7 +333,7 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
 
     font = cv2.FONT_HERSHEY_SIMPLEX
     white = (255, 255, 255)
-    txt_pos = (5, frames.shape[2] - 40)
+    txt_pos = (5, frames.shape[1] - 40)
 
     if not np.mod(frames.shape[1], 2) == 0:
         frames = np.pad(frames, ((0, 0), (0, 1), (0, 0)), 'constant', constant_values=0)
@@ -384,7 +384,7 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
             disp_img[disp_img < 0] = 0
             disp_img[disp_img > 1] = 1
             disp_img = np.delete(use_cmap(disp_img), 3, 2)*255
-        
+
         if frame_range is not None:
             cv2.putText(disp_img, str(frame_range[i]), txt_pos, font, 1, white, 2, cv2.LINE_AA)
         pipe.stdin.write(disp_img.astype('uint8').tostring())

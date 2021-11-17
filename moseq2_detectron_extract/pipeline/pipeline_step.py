@@ -36,6 +36,10 @@ class PipelineStep(Process):
         else:
             print(message)
 
+    def flush_progress(self):
+        if self.progress is not None:
+            self.progress.put({'flush': True})
+
     def set_outputs(self, data):
         for q in self.out_queue:
             q.put(data)
@@ -57,6 +61,7 @@ class PipelineStep(Process):
                     self.write_message(msg)
 
                 self.set_outputs(out)
+                self.flush_progress()
             self.finalize()
         except Exception as e:
             print(e)

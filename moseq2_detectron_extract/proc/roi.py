@@ -131,9 +131,7 @@ def plane_fit3(points):
     return plane
 
 
-def plane_ransac(depth_image, depth_range=(650, 750), iters=1000,
-                 noise_tolerance=30, in_ratio=.1, progress_bar=True,
-                 mask=None):
+def plane_ransac(depth_image, depth_range=(650, 750), iters=1000, noise_tolerance=30, in_ratio=0.1, progress_bar=True, mask=None):
     ''' Naive RANSAC implementation for plane fitting
 
     Parameters:
@@ -251,6 +249,25 @@ def get_bbox(roi: np.ndarray) -> Union[np.array, None]:
         return None
     else:
         return np.array([[y.min(), x.min()], [y.max(), x.max()]])
+
+
+def get_roi_contour(roi: np.ndarray, crop: bool=True) -> np.ndarray:
+    ''' Get a contour describing the boundry of the roi.
+
+    Parameters:
+    roi (np.ndarray): region of interest mask
+    crop (bool): if True, crop to the bounding box of the roi before finding contours
+
+    Returns:
+    contours, np.ndarray describing contour points
+    '''
+    if crop:
+        bbox = get_bbox(roi)
+        mask = roi[bbox[0, 0]:bbox[1, 0], bbox[0, 1]:bbox[1, 1]]
+    else:
+        mask = np.copy(roi)
+    contours, hierarchy = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    return contours
 
 
 def get_bground_im(frames: np.ndarray) -> np.ndarray:

@@ -50,7 +50,6 @@ class Session(object):
 
         self.depth_metadata = get_movie_info(self.depth_file, tar_object=self.tar)
         self.rgb_metadata = get_movie_info(self.rgb_file, tar_object=self.tar)
-    #end init_session()
 
 
     def __trim_frames(self, frame_trim: Tuple[int, int]):
@@ -68,7 +67,6 @@ class Session(object):
             self.last_frame_idx = self.nframes
 
         self.nframes = self.last_frame_idx - self.first_frame_idx
-    #end trim_frames()
 
 
     @property
@@ -92,7 +90,6 @@ class Session(object):
         else:
             metadata_path = os.path.join(self.dirname, 'metadata.json')
         return load_metadata(metadata_path)
-    #end load_metadata()
 
 
     def load_timestamps(self, stream: Stream) -> np.ndarray:
@@ -139,7 +136,6 @@ class Session(object):
         timestamps *= correction_factor
 
         return timestamps
-    #end load_timestamps()
 
 
     def find_roi(self, bg_roi_dilate: Tuple[int, int]=(10,10), bg_roi_shape='ellipse', bg_roi_index: int=0, bg_roi_weights=(1, .1, 1),
@@ -203,7 +199,6 @@ class Session(object):
             print('Detected true depth: {}'.format(true_depth))
 
         return first_frame, bground_im, roi, true_depth
-    #end find_roi()
 
 
     def iterate(self, chunk_size: int=1000, chunk_overlap: int=0, streams: Iterable[Stream]=(Stream.Depth,)):
@@ -245,7 +240,7 @@ class Session(object):
 
     def __repr__(self) -> str:
         return '{}("{}", frame_trim=({}, {}))'.format(self.__class__.__name__, self.session_path, *self.frame_trim)
-#end class Session
+
 
 
 class SessionFramesIterator(object):

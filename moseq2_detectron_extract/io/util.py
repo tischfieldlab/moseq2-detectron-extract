@@ -123,7 +123,6 @@ def ensure_dir(path: str) -> str:
             if exception.errno != errno.EEXIST:
                 raise
     return path
-#end ensure_dir()
 
 
 def dict_to_h5(h5: h5py.File, data: dict, root: str='/', annotations: dict=None) -> None:

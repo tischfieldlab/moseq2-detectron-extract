@@ -40,7 +40,7 @@ def extract_session(session: Session, config: dict):
     status_filename = os.path.join(output_dir, 'results_{:02d}.yaml'.format(config['bg_roi_index']))
     if check_completion_status(status_filename):
         print('WARNING: Sessions appears to already be extracted, so skipping!')
-        return
+        return status_filename
 
     status_dict = {
         'complete': False,
@@ -88,7 +88,7 @@ def extract_session(session: Session, config: dict):
     frame_crop_thread = FrameCropStep(config=config, progress=frame_crop_pbar, in_queue=extract_features_out, out_queue=frame_crop_out)
 
     preview_vid_pbar = progress.add(desc='Preview Video')
-    preview_vid_thread = PreviewVideoWriterStep(config=config, progress=preview_vid_pbar, in_queue=frame_crop_out[0], out_queue=None)
+    preview_vid_thread = PreviewVideoWriterStep(roi=roi, config=config, progress=preview_vid_pbar, in_queue=frame_crop_out[0], out_queue=None)
 
     keypoint_writer_pbar = None #progress.add(desc='Writing Keypoints')
     keypoint_writer_thread = KeypointWriterStep(config=config, progress=keypoint_writer_pbar, in_queue=frame_crop_out[1], out_queue=None)

@@ -1,11 +1,11 @@
 from typing import Dict, List, Literal, Tuple, Union
+
 import h5py
 import numpy as np
 from bottleneck import move_median
 from moseq2_detectron_extract.io.annot import default_keypoint_names
 from moseq2_detectron_extract.proc.util import convert_pxs_to_mm
 from moseq2_detectron_extract.stats import is_outlier
-
 
 
 def rotate_points(points: np.ndarray, center: Tuple[float, float]=(0, 0), angle: float=0) -> np.ndarray:
@@ -156,7 +156,7 @@ def keypoints_to_dict(keypoints: np.ndarray, frames: np.ndarray, centers: np.nda
 
 
 def load_keypoint_data_from_h5(h5: h5py.File, keypoints: List[str]=None, coord_system: Literal['reference', 'rotated']='reference',
-                               units: Literal['px','mm']='px'):
+    units: Literal['px','mm']='px', root: str='/keypoints'):
     ''' Load keypoint data from a result h5 files.
 
     Parameters:
@@ -171,13 +171,48 @@ def load_keypoint_data_from_h5(h5: h5py.File, keypoints: List[str]=None, coord_s
     if keypoints is None:
         keypoints = default_keypoint_names
 
-    keys = [f'/keypoints/{coord_system}/{kp}' for kp in keypoints]
+    if root is None or root == '':
+        root = ''
+    elif not root.endswith('/'):
+        root = root + '/'
+
+    keys = [f'{root}{coord_system}/{kp}' for kp in keypoints]
     data = np.ndarray((h5['frames'].shape[0], len(keys), 3), dtype=float)
     for kpi, kp in enumerate(keys):
         data[:, kpi, 0] = h5[f'{kp}_x_{units}'][()]
         data[:, kpi, 1] = h5[f'{kp}_y_{units}'][()]
         data[:, kpi, 2] = h5[f'{kp}_score'][()]
     return data
+
+
+def load_keypoint_data_from_dict(data: Dict[str, np.ndarray], keypoints: List[str]=None, coord_system: Literal['reference', 'rotated']='reference',
+    units: Literal['px','mm']='px', root: str='/keypoints'):
+    ''' Load keypoint data from a result h5 files.
+
+    Parameters:
+    h5 (h5py.File): h5 file create as a result of the extraction function
+    keypoints (Optional[List[str]]): keypoint names to load. If none, will use default keypoint names
+    coord_system (Literal['reference', 'rotated']): Coordinate system to use
+    units (Literal['px','mm']): units of measurement to use
+
+    Returns:
+    numpy.ndarray of shape (nframes, nkeypoints, 3 [x, y, s])
+    '''
+    if keypoints is None:
+        keypoints = default_keypoint_names
+
+    if root is None or root == '':
+        root = ''
+    elif not root.endswith('/'):
+        root = root + '/'
+
+    keys = [f'{root}{coord_system}/{kp}' for kp in keypoints]
+    kp_data = np.empty((data[f'{keys[0]}_x_{units}'].shape[0], len(keys), 3), dtype=float)
+    for kpi, kp in enumerate(keys):
+        kp_data[:, kpi, 0] = data[f'{kp}_x_{units}']
+        kp_data[:, kpi, 1] = data[f'{kp}_y_{units}']
+        kp_data[:, kpi, 2] = data[f'{kp}_score']
+    return kp_data
 
 
 def find_outliers_jumping(data: np.ndarray, window: int=4, thresh: float=10):

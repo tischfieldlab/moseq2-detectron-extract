@@ -19,7 +19,6 @@ class ResultH5WriterStep(PipelineStep):
         self.roi = roi
         self.bground_im = bground_im
         self.first_frame = first_frame
-        self.config = config
         self.status_dict = status_dict
 
     def initialize(self):
