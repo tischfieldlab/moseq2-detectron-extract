@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 from copy import deepcopy
+from datetime import timedelta
 from threading import Thread
 from typing import List, Union
 
@@ -127,6 +128,8 @@ def extract_session(session: Session, config: dict):
     status_dict['complete'] = True
     write_yaml(status_filename, status_dict)
 
-    tqdm.tqdm.write(f'Finished processing {session.nframes} frames in {time.time() - overall_time} seconds')
+    extract_duration = (time.time() - overall_time)
+    extract_fps = session.nframes / extract_duration
+    tqdm.tqdm.write(f'Finished processing {session.nframes} frames in {timedelta(seconds=extract_duration)} (approx. {extract_fps:.2f} fps overall)')
 
     return status_filename
