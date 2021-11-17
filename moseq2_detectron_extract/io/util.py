@@ -172,7 +172,13 @@ def dict_to_h5(h5: h5py.File, data: dict, root: str='/', annotations: dict=None)
 class Tee(object):
     ''' Pipes stdout/stderr to a file and stdout/stderr
     '''
-    def __init__(self, name, mode='w'):
+    def __init__(self, name: str, mode: str='w'):
+        ''' Initialize this Tee object
+        
+        Parameters:
+        name (str): path to the output file
+        mode (str): mode for opening the file
+        '''
         self.name = name
         self.mode = mode
         self.file = None

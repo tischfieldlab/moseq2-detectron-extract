@@ -76,8 +76,7 @@ class Session(object):
         ''' Tells if this session is compressed (True) or not (False)
 
         Returns:
-        True if this session is compressed
-        False if this session is not compressed
+        True if this session is compressed; False if this session is not compressed
         '''
         return self.tar is not None
 

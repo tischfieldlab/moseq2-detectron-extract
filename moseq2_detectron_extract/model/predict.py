@@ -1,4 +1,5 @@
 from contextlib import ExitStack
+from typing import Any
 
 import numpy as np
 import torch
@@ -10,7 +11,7 @@ from torch.tensor import Tensor
 
 
 class Predictor:
-    def __init__(self, model, is_torchscript=False):
+    def __init__(self, model: Any, is_torchscript: bool=False):
         '''
 
         Model should already be in eval mode!

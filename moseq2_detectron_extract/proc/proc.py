@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Dict, Iterable, List, Literal, Tuple
 
 import cv2
 import matplotlib.pyplot as plt
@@ -20,8 +20,82 @@ def overlay_video(video1: np.ndarray, video2: np.ndarray) -> np.ndarray:
     output_movie[:, rows2:, cols2:, :] = video1
     return output_movie
 
+def stack_videos(videos: Iterable[np.ndarray], orientation: Literal['horizontal', 'vertical', 'diagional']) -> np.ndarray:
+    ''' Stack videos according to orientation to create one big video
 
-def colorize_video(frames: np.ndarray, vmin: float=0, vmax: float=100, cmap: str='jet'):
+    Parameters:
+    videos (Iterable[np.ndarray]): Iterable of videos to stack of shape (nframes, height, width, channels). All videos must match dimentions in axis 0 and axis 3
+    orientation (Literal['horizontal', 'vertical', 'diagional']): orientation of stacking.
+
+    Retruns:
+    stacked composite video
+    '''
+    nframes = reduce_axis_size(videos, 0)
+    channels = reduce_axis_size(videos, -1)
+    heights = [v.shape[0] for v in videos]
+    widths = [v.shape[1] for v in videos]
+
+    if orientation == 'horizontal':
+        height = max(heights)
+        width = sum(widths)
+    elif orientation == 'vertical':
+        height = sum(heights)
+        width = max(widths)
+    elif orientation == 'diagional':
+        height = sum(heights)
+        width = sum(widths)
+    else:
+        raise ValueError(f'Unknown orientation "{orientation}". Expected one of ["horizontal", "vertical"].')
+
+    output_movie = np.zeros((nframes, height, width, channels), 'uint16')
+    for i, video in enumerate(videos):
+        if orientation == 'horizontal':
+            offset = sum([w for wi, w in enumerate(widths) if wi < i])
+            output_movie[:, :heights[i], offset:offset+widths[i], :] = video
+        elif orientation == 'vertical':
+            offset = sum([h for hi, h in enumerate(heights) if hi < i])
+            output_movie[:, offset:offset+heights[i], :widths[i], :] = video
+        elif orientation == 'diagional':
+            offsetw = sum([w for wi, w in enumerate(widths) if wi < i])
+            offseth = sum([h for hi, h in enumerate(heights) if hi < i])
+            output_movie[:, offseth:offseth+heights[i], offsetw:offsetw+widths[i], :] = video
+
+    return output_movie
+
+
+def reduce_axis_size(data: Iterable[np.ndarray], axis: int) -> int:
+    ''' Reduce an iterable of numpy.ndarrays to a single scalar for a given axis
+    Will raise an exception if no items are passed or the arrays are not the same size on the given axis
+
+    Parameters:
+    data (Iterable[np.ndarray]): Arrays to inspect
+    axis (int): axis to be inspected
+
+    Returns:
+    int - the shared shape of `axis` in all arrays in `data`
+    '''
+    if len(data) <= 0:
+        raise ValueError('Need a list with at least one array!')
+
+    sizes = set([d.shape[axis] for d in data])
+    if len(sizes) == 1:
+        return int(sizes[0])
+    else:
+        raise ValueError(f'Arrays should be equal sized on axis{axis}')
+
+
+def colorize_video(frames: np.ndarray, vmin: float=0, vmax: float=100, cmap: str='jet') -> np.ndarray:
+    ''' Colorize single channel video data
+
+    Parameters:
+    frames (np.ndarray): frames to be colorized, assumed shape (nframes, height, width)
+    vmin (float): minimum data value corresponding to cmap min
+    vmax (float): maximum data value corresponding to cmap max
+    cmap (str): colormap to use for converting to color
+
+    Returns:
+    np.ndarray containing colorized frames of shape (nframe, height, width, 3)
+    '''
     use_cmap = plt.get_cmap(cmap)
 
     disp_img = frames.copy().astype('float32')
@@ -57,8 +131,17 @@ def prep_raw_frames(frames: np.ndarray, bground_im: np.ndarray=None, roi: np.nda
     return frames.astype(dtype)
 
 
-def scale_raw_frames(frames: np.ndarray, vmin: float, vmax: float, dtype: npt.DTypeLike='uint8'):
+def scale_raw_frames(frames: np.ndarray, vmin: float, vmax: float, dtype: npt.DTypeLike='uint8') -> np.ndarray:
     ''' Linear scale `frames` to the range afforded by `dtype`
+
+    Parameters:
+    frames (np.ndarray): data to intensity scale
+    vmin (float): data minimum value
+    vmax (float): data maximum value
+    dtype (npt.DTypeLike): Data type to return as
+
+    Returns:
+    np.ndarray contatining intensity scaled frames data
     '''
     if np.issubdtype(np.dtype(dtype), np.integer):
         info = np.iinfo(dtype)
@@ -72,18 +155,23 @@ def scale_raw_frames(frames: np.ndarray, vmin: float, vmax: float, dtype: npt.DT
     return ((frames - vmin) * ((dmax - dmin) / (vmax - vmin)) + dmin).astype(dtype)
 
 
-def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.ndarray=np.array([]),
-                       mask_threshold: float=-30, use_cc: bool=False, progress_bar: bool=True):
-    '''
-    Use image moments to compute features of the largest object in the frame
+def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.ndarray=np.array([]), mask_threshold: float=-30,
+    use_cc: bool=False, progress_bar: bool=True) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
+    ''' Use image moments to compute features of the largest object in the frame
 
-    Args:
-        frames (3d np array)
-        frame_threshold (int): threshold in mm separating floor from mouse
+    Parameters:
+    frames (np.ndarray): frames of shape (nframes, height, width)
+    frame_threshold (float): threshold in mm separating floor from mouse
+    mask (np.ndarray): mask to consider in feature extraction
+    mask_threshold (float): masking threshold to use for connected components detection
+    use_cc (bool): True to use connected components to augment masks
+    progress_bar (bool): True to show a progress bar for the operation
 
     Returns:
-        features (dict list): dictionary with simple image features
+    features, masks (Tuple[Dict[str, np.ndarray], np.ndarray]):
 
+    Features is a dictionary with simple image features
+    Masks are image masks of shape (nframes, height, width)
     '''
 
     features = []
@@ -244,18 +332,16 @@ def clean_frames(frames: np.ndarray, prefilter_space=(3,), prefilter_time=None,
                  strel_tail=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)),
                  iters_tail=None, frame_dtype='uint8',
                  strel_min=cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)),
-                 iters_min=None, progress_bar=True):
-    '''
-    Simple filtering, median filter and morphological opening
+                 iters_min=None, progress_bar=True) -> np.ndarray:
+    ''' Simple filtering, median filter and morphological opening
 
-    Args:
-        frames (3d np array): frames x r x c
-        strel (opencv structuring element): strel for morph opening
-        iters_tail (int): number of iterations to run opening
+    Parameters:
+    frames (3d np array): frames x r x c
+    strel (opencv structuring element): strel for morph opening
+    iters_tail (int): number of iterations to run opening
 
     Returns:
-        filtered_frames (3d np array): frame x r x c
-
+    filtered_frames (3d np array): frame x r x c
     '''
     # seeing enormous speed gains w/ opencv
     filtered_frames = frames.copy().astype(frame_dtype)
@@ -283,16 +369,14 @@ def clean_frames(frames: np.ndarray, prefilter_space=(3,), prefilter_time=None,
 
 
 def im_moment_features(IM: np.ndarray) -> dict:
-    '''
-    Use the method of moments and centralized moments to get image properties
+    ''' Use the method of moments and centralized moments to get image properties
 
-    Args:
-        IM (2d numpy array): depth image
+    Parameters:
+    IM (2d numpy array): depth image
 
     Returns:
-        Features (dictionary): returns a dictionary with orientation,
-        centroid, and ellipse axis length
-
+    Features (dictionary): returns a dictionary with orientation,
+    centroid, and ellipse axis length
     '''
 
     tmp = cv2.moments(IM)
@@ -319,13 +403,13 @@ def im_moment_features(IM: np.ndarray) -> dict:
 
 
 def get_largest_cc(frames, progress_bar=False):
-    '''Returns largest connected component blob in image
-    Args:
-        frame (3d numpy array): frames x r x c, uncropped mouse
-        progress_bar (bool): display progress bar
+    ''' Returns largest connected component blob in image
+    Parameters:
+    frame (3d numpy array): frames x r x c, uncropped mouse
+    progress_bar (bool): display progress bar
 
     Returns:
-        flips (3d bool array):  frames x r x c, true where blob was found
+    flips (3d bool array):  frames x r x c, true where blob was found
     '''
     foreground_obj = np.zeros((frames.shape), 'bool')
 
@@ -351,12 +435,27 @@ def broadcasting_app(a, L, S ):  # Window len = L, Stride len/stepsize = S
     return a[S*np.arange(nrows)[:,None] + np.arange(L)]
 
 
-def filter_angles(angles: np.ndarray, window: int=3) -> np.ndarray:
+def filter_angles(angles: np.ndarray, window: int=3, tolerance: float=60) -> np.ndarray:
+    ''' Correct angle measurements that are approximatly 180 degrees off
+
+    We slide a moving median of size `window` across angles and compute the deviation from the window
+    median. If the absolute difference between the window median and the real value is approximatly
+    180 degrees (180 - tolerance < a < 180 + tolerance), we consider it flipped and add 180 degrees
+    to the value (correctly signed).
+
+    Parameters:
+    angles (np.ndarray): angles to inspect, of shape (nframes,)
+    window (int): window size to use when inspecting angles
+    tolerance (float): tolerance of the angle deviance relative to 180 degrees
+
+    Returns:
+    np.ndarray containing corrected angle values
+    '''
     out = np.copy(angles)
     windows = move_median(angles, window=window, min_count=1)
     diff = out - windows
     absdiff = np.abs(diff)
-    flips = ((absdiff>120) & (absdiff<240))
+    flips = ((absdiff>(180-tolerance)) & (absdiff<(180+tolerance)))
     signs = np.sign(diff[flips])
     out[flips] = out[flips] + (-180 * signs)
     #print(np.count_nonzero(flips))
@@ -364,6 +463,15 @@ def filter_angles(angles: np.ndarray, window: int=3) -> np.ndarray:
 
 
 def iterative_filter_angles(data: np.ndarray, max_iters: int=1000) -> Tuple[np.ndarray, np.ndarray]:
+    ''' Iteratively filter angles until filtering stabilizes or `max_iters` is reached
+
+    Parameters:
+    angles (np.ndarray): angles to inspect, of shape (nframes,)
+    max_iters (int): maximum number of iterations allowed
+
+    Returns:
+    (angles, flips) - angles are corrected angles. flips is bool np.ndarray with True values indicating a flipped index
+    '''
     last = np.copy(data)
     iterations = 0
     while True:
@@ -382,7 +490,20 @@ def iterative_filter_angles(data: np.ndarray, max_iters: int=1000) -> Tuple[np.n
     return curr, flips
 
 
-def mask_and_keypoints_from_model_output(model_outputs):
+def mask_and_keypoints_from_model_output(model_outputs: List[dict]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ''' Convert Detectron2 model output to arrays of data
+
+    https://detectron2.readthedocs.io/en/latest/tutorials/models.html#model-output-format
+
+    Parameters:
+    model_outputs (List[dict]): model outputs to parse
+
+    Returns:
+    Tuple of (masks, keypoints, num_instances).
+    masks - array of shape (nframes, 1, height, width)
+    keypoints - array of shape (nframes, 1, nkeypoints, 3 [x, y, s])
+    num_instances - array of shape (nframes,)
+    '''
     # initialize output arrays
     first = model_outputs[0]["instances"]
     masks = np.empty((len(model_outputs), 1, *first.pred_masks.shape[1:]), dtype='uint8')
@@ -399,7 +520,16 @@ def mask_and_keypoints_from_model_output(model_outputs):
     return masks, keypoints, num_instances
 
 
-def instances_to_features(model_outputs, raw_frames):
+def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
+    ''' Detect additional features and perform feature postprocessing
+
+    Parameters:
+    model_outputs (List[dict]): Model output data in Detectron2 output format
+    raw_frames (np.ndarray): raw depth frames of shape (nframes, height, width)
+
+    Returns:
+    Dict[str, Any] - dict containing features and cleaned data
+    '''
     front_keypoints = [0, 1, 2, 3]
     rear_keypoints = [4, 5, 6]
 

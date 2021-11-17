@@ -6,7 +6,7 @@ import tempfile
 from copy import Error
 from itertools import groupby
 from operator import itemgetter
-from typing import List, Tuple
+from typing import Iterable, List, Tuple, TypedDict, Union
 
 import cv2
 import matplotlib.pyplot as plt
@@ -15,14 +15,23 @@ import numpy.typing as npt
 import tqdm
 
 
-def get_raw_info(filename: str, bit_depth: int=16, frame_dims: Tuple[int, int]=(512, 424)):
-    '''
-    Gets info from a raw data file with specified frame dimensions and bit depth
+class RawVideoInfo(TypedDict):
+    bytes: int
+    nframes: int
+    dims: Tuple[int, int]
+    bytes_per_frame: int
 
-    Args:
-        filename (string): name of raw data file
-        bit_depth (int): bits per pixel (default: 16)
-        frame_dims (tuple): wxh or hxw of each frame
+
+def get_raw_info(filename: str, bit_depth: int=16, frame_dims: Tuple[int, int]=(512, 424)) -> RawVideoInfo:
+    ''' Get info from a raw data file with specified frame dimensions and bit depth
+
+    Parameters:
+    filename (string): name of raw data file
+    bit_depth (int): bits per pixel (default: 16)
+    frame_dims (tuple): wxh or hxw of each frame
+
+    Returns:
+    RawVideoInfo, dict containg information about the raw data file
     '''
 
     bytes_per_frame = (frame_dims[0] * frame_dims[1] * bit_depth) / 8
@@ -43,30 +52,38 @@ def get_raw_info(filename: str, bit_depth: int=16, frame_dims: Tuple[int, int]=(
         }
     return file_info
 
-
-def read_frames_raw(filename: str, frames=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16, dtype: npt.DTypeLike="<i2", tar_object: tarfile.TarInfo=None):
+FramesSelection = Union[int, Iterable[int]]
+def read_frames_raw(filename: str, frames: FramesSelection=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16,
+    dtype: npt.DTypeLike="<i2", tar_object: tarfile.TarInfo=None) -> np.ndarray:
     '''
     Reads in data from raw binary file
 
     Args:
         filename (string): name of raw data file
-        frames (list or range): frames to extract
-        frame_dims (tuple): wxh of frames in pixels
+        frames (Union[int, Iterable[int]]): frame indicies to read
+        frame_dims (tuple): (width, height) of frames in pixels
         bit_depth (int): bits per pixel (default: 16)
         tar_object (tarfile.TarFile): TarFile object, used for loading data directly from tgz
 
     Returns:
-        frames (numpy ndarray): frames x h x w
+        a numpy.ndarray of frames with shape (nframes, height, width)
     '''
 
     vid_info = get_raw_info(filename, frame_dims=frame_dims, bit_depth=bit_depth)
 
-    if type(frames) is int:
+    if isinstance(frames, int):
+        # single frame index, we will just return that one frame
         frames = [frames]
-    elif not frames or (type(frames) is range) and len(frames) == 0:
+    elif isinstance(frames, Iterable):
+        # an iterable of indicies, ensure they are all ints
+        frames = [int(i) for i in frames]
+
+    # sanity check on `frames`, and allow passing of None
+    if frames is None or len(frames) == 0:
         frames = list(range(0, vid_info['nframes']))
 
-
+    # Build blocks of consecutive frames we can read as one batch.
+    # Accounts for possible non-monotonically increasing indicies, and random access cases
     blocks = []
     for start, nframes in collapse_consecutive_values(sorted(frames)):
         blocks.append({
@@ -103,10 +120,10 @@ def collapse_consecutive_values(a: np.ndarray) -> List[Tuple[float, int]]:
     > [(0,4), (10,4), (21, 3)]
 
     Parameters:
-    a (array): array of labels to collapse
+    a (np.ndarray): array of labels to collapse
 
     Returns
-    array of tuple: each tuple contains (label, run_count)
+    List[Tuple[float, int]]: each tuple contains (seed, run_count)
     '''
     grouped_instances = []
     for _, g in groupby(enumerate(a), lambda ix : ix[0] - ix[1]):
@@ -116,13 +133,26 @@ def collapse_consecutive_values(a: np.ndarray) -> List[Tuple[float, int]]:
 #end collapse_adjacent_values()
 
 
+class FFProbeInfo(TypedDict):
+    file: str
+    codec: str
+    pixel_format: str
+    dims: Tuple[int, int]
+    fps: float
+    nframes: int
+
+
 # https://gist.github.com/hiwonjoon/035a1ead72a767add4b87afe03d0dd7b
-def get_video_info(filename: str, tar_object: tarfile.TarInfo=None):
+def get_video_info(filename: str, tar_object: tarfile.TarInfo=None) -> FFProbeInfo:
     '''
     Get dimensions of data compressed using ffv1, along with duration via ffmpeg
 
-    Args:
-        filename (string): name of file
+    Parameters:
+    filename (str): name of file
+    tar_object (tarfile.TarInfo|None): tarfile to read from. None if filename is not compressed
+
+    Returns:
+    FFProbeInfo - dict containing information about video `filename`
     '''
     is_stream = isinstance(filename, tarfile.TarInfo)
     if is_stream:
