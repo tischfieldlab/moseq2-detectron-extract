@@ -7,7 +7,6 @@ from detectron2.checkpoint.detection_checkpoint import DetectionCheckpointer
 from detectron2.config.config import CfgNode
 from detectron2.modeling.meta_arch.build import build_model
 from moseq2_detectron_extract.model.util import outputs_to_instances
-from torch.tensor import Tensor
 
 
 class Predictor:
@@ -67,7 +66,7 @@ class Predictor:
             image = original_image[i]
             height, width = (torch.tensor(x) for x in image.shape[:2])
             #image = self.aug.get_transform(original_image).apply_image(original_image)
-            if isinstance(image, Tensor):
+            if isinstance(image, torch.Tensor):
                 pass
             elif isinstance(image, np.ndarray):
                 image = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
