@@ -14,6 +14,7 @@ import h5py
 import numpy as np
 import pandas as pd
 import tqdm
+from click_option_group import optgroup
 from detectron2.data.catalog import MetadataCatalog
 from detectron2.utils.env import seed_all_rng
 
@@ -47,7 +48,8 @@ from moseq2_detectron_extract.proc.scalars import compute_scalars
 from moseq2_detectron_extract.quality import find_outliers_h5
 from moseq2_detectron_extract.viz import draw_instances_fast
 
-warnings.filterwarnings("ignore", category=UserWarning, module='torch', lineno=575)
+warnings.filterwarnings("ignore", category=UserWarning, module='torch', lineno=575) # disable UserWarning: floor_divide is deprecated 
+warnings.filterwarnings("ignore", category=UserWarning, module='torch', lineno=1102) # disable UserWarning: floor_divide is deprecated 
 
 orig_init = click.core.Option.__init__
 def new_init(self, *args, **kwargs):
@@ -201,16 +203,17 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
 @click.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
 @click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
 @click.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk. Useful for cable tracking')
-@click.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
-@click.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
-@click.option('--bg-roi-index', default=0, type=int, help='Index of which background mask(s) to use')
-@click.option('--bg-roi-weights', default=(1, .1, 1), type=(float, float, float), help='Feature weighting (area, extent, dist) of the background mask')
-@click.option('--bg-roi-depth-range', default=(650, 750), type=(float, float), help='Range to search for floor of arena (in mm)')
-@click.option('--bg-roi-gradient-filter', default=False, type=bool, help='Exclude walls with gradient filtering')
-@click.option('--bg-roi-gradient-threshold', default=3000, type=float, help='Gradient must be < this to include points')
-@click.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
-@click.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
-@click.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
+@optgroup.group('Background Detection', help='These options deal with background detection')
+@optgroup.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
+@optgroup.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
+@optgroup.option('--bg-roi-index', default=0, type=int, help='Index of which background mask(s) to use')
+@optgroup.option('--bg-roi-weights', default=(1, .1, 1), type=(float, float, float), help='Feature weighting (area, extent, dist) of the background mask')
+@optgroup.option('--bg-roi-depth-range', default=(650, 750), type=(float, float), help='Range to search for floor of arena (in mm)')
+@optgroup.option('--bg-roi-gradient-filter', default=False, type=bool, help='Exclude walls with gradient filtering')
+@optgroup.option('--bg-roi-gradient-threshold', default=3000, type=float, help='Gradient must be < this to include points')
+@optgroup.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
+@optgroup.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
+@optgroup.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
 @click.option('--frame-dtype', default='uint8', type=click.Choice(['uint8', 'uint16']), help='Data type for processed frames')
 @click.option('--output-dir', default=None, help='Output directory to save the results h5 file')
 @click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')

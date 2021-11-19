@@ -38,7 +38,8 @@ setup(
         'albumentations',
         'FyeldGenerator',
         'bottleneck',
-        'statsmodels'
+        'statsmodels',
+        'click-option-group'
     ],
     extras_require={
         'dev': [
