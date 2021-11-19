@@ -6,7 +6,7 @@ from typing import Iterable, Sequence, Tuple, Union
 import numpy as np
 import tqdm
 from moseq2_detectron_extract.io.image import read_tiff_image, write_image
-from moseq2_detectron_extract.io.util import (gen_batch_sequence,
+from moseq2_detectron_extract.io.util import (ProgressFileObject, gen_batch_sequence,
                                               load_metadata, load_timestamps)
 from moseq2_detectron_extract.io.video import get_movie_info, load_movie_data
 from moseq2_detectron_extract.proc.roi import get_bground_im_file, get_roi
@@ -30,17 +30,24 @@ class Session(object):
         self.dirname = os.path.dirname(input_file)
 
         if input_file.endswith('.tar.gz') or input_file.endswith('.tgz'):
-            with tqdm.tqdm(total=1, leave=False, desc='Scanning tarball {} (this will take a minute)'.format(input_file)) as pbar:
-                #compute NEW psuedo-dirname now, `input_file` gets overwritten below with depth.dat tarinfo...
-                self.dirname = os.path.join(self.dirname, os.path.basename(input_file).replace('.tar.gz', '').replace('.tgz', ''))
+            tqdm_args = {
+                'disable': False,
+                'desc': 'Scanning {}'.format(os.path.basename(input_file)),
+                'leave': False
+            }
+            #compute NEW psuedo-dirname now, `input_file` gets overwritten below with depth.dat tarinfo...
+            self.dirname = os.path.join(self.dirname, os.path.basename(input_file).replace('.tar.gz', '').replace('.tgz', ''))
 
-                self.tar = tarfile.open(input_file, 'r:gz')
-                self.tar_members = self.tar.getmembers()
-                self.tar_names = [_.name for _ in self.tar_members]
-                self.depth_file = self.tar_members[self.tar_names.index('depth.dat')]
-                self.rgb_file = self.tar_members[self.tar_names.index('rgb.mp4')]
-                self.session_id = os.path.basename(input_file).split('.')[0]
-                pbar.update(1)
+            pfo = ProgressFileObject(input_file, tqdm_kwargs=tqdm_args)
+            self.tar = tarfile.open(fileobj=pfo, mode='r:*')
+            self.tar_members = self.tar.getmembers()
+            self.tar_names = [_.name for _ in self.tar_members]
+            self.depth_file = self.tar_members[self.tar_names.index('depth.dat')]
+            self.rgb_file = self.tar_members[self.tar_names.index('rgb.mp4')]
+            self.session_id = os.path.basename(input_file).split('.')[0]
+
+            pfo.detach_progress().close()
+
         else:
             self.tar = None
             self.tar_members = None
@@ -148,7 +155,7 @@ class Session(object):
             bground_im = read_tiff_image(os.path.join(cache_dir, 'bground.tiff'), scale=True)
         else:
             if verbose:
-                print('Getting background...')
+                print('Computing background...')
             bground_im = get_bground_im_file(self.depth_file, tar_object=self.tar)
 
             if cache_dir and not use_plane_bground:
@@ -168,7 +175,7 @@ class Session(object):
             roi = read_tiff_image(os.path.join(cache_dir, roi_filename), scale=True) > 0
         else:
             if verbose:
-                print('Getting roi...')
+                print('Computing roi...')
             rois, plane, _, _, _, _ = get_roi(bground_im,
                                             strel_dilate=strel_dilate,
                                             weights=bg_roi_weights,
