@@ -2,7 +2,7 @@
 
 ## Create an Anaconda Virtual Environment
 ```
-conda create -n moseq-detectron python=3.6
+conda create -n moseq-detectron python=3.8
 conda activate moseq-detectron
 ```
 ## Install PyTorch ≥ 1.7
