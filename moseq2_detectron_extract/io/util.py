@@ -1,4 +1,5 @@
 import errno
+import io
 import json
 import os
 import sys
@@ -8,6 +9,7 @@ import click
 import h5py
 import numpy as np
 import ruamel.yaml as yaml
+import tqdm
 
 
 def gen_batch_sequence(nframes: int, chunk_size: int, overlap: int, offset: int=0):
@@ -233,3 +235,48 @@ def click_param_annot(click_cmd: click.Command) -> Dict[str, str]:
         if isinstance(p, click.Option):
             annotations[p.human_readable_name] = p.help
     return annotations
+
+
+
+class ProgressFileObject(io.FileIO):
+    """ Class used to provide provide file read progress updates """
+    def __init__(self, path, progress=None, tqdm_kwargs=None, *args, **kwargs):
+        """ Construct an instance of ProgressFileObject
+
+        Parameters:
+        path (string): Path of the file to open
+        progress (tqdm instance): An (optional) instance of tqdm. If None, one is constructed for you
+        *args: additional arguments passed to io.FileIO
+        **kwargs: additional kwargs passed to io.FileIO
+
+        """
+        if tqdm_kwargs is None:
+            tqdm_kwargs = {}
+
+        self._total_size = os.path.getsize(path)
+        if progress is not None:
+            assert(isinstance(progress, (tqdm.tqdm,)))
+            self.progress = progress
+            self.is_progress_external = True
+        else:
+            self.progress = tqdm.tqdm(total=self._total_size, unit='bytes', unit_scale=True, **tqdm_kwargs)
+            self.is_progress_external = False
+
+        super().__init__(path, *args, **kwargs)
+
+    def detach_progress(self):
+        p = self.progress
+        self.progress = None
+        self.is_progress_external = False
+        return p
+
+    def read(self, size):
+        if self.progress:
+            self.progress.update(size)
+        return super().read(size)
+
+    def close(self):
+        if self.progress and not self.is_progress_external:
+            self.progress.close()
+        return super().close()
+#end class ProgressFileObject
