@@ -163,8 +163,7 @@ def plane_ransac(depth_image, depth_range=(650, 750), iters=1000, noise_toleranc
 
     npoints = np.sum(use_points)
 
-    for i in tqdm.tqdm(range(iters),
-                       disable=not progress_bar, desc='Finding plane'):
+    for i in tqdm.tqdm(range(iters), disable=not progress_bar, leave=False, desc='Finding plane'):
 
         sel = coords[np.random.choice(coords.shape[0], 3, replace=True), :]
         tmp_plane = plane_fit3(sel)
