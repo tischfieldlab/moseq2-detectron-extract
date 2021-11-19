@@ -237,6 +237,7 @@ def find_outliers_jumping(data: np.ndarray, window: int=4, thresh: float=10):
 
     '''
     data = np.copy(data[:,:,:2]) # drop scores
+    window = min(window, data.shape[0])
     windows = move_median(data, window=window, min_count=1, axis=0)
     diff = (data - windows) ** 2
     dist = np.sqrt(np.sum(diff, axis=2))
