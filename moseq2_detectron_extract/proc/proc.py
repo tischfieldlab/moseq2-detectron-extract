@@ -369,13 +369,11 @@ def clean_frames(frames: np.ndarray, prefilter_space=(3,), prefilter_time=None,
                 filtered_frames[i, ...] = cv2.medianBlur(filtered_frames[i, ...], prefilter_space[j])
 
         if iters_tail is not None and iters_tail > 0:
-            filtered_frames[i, ...] = cv2.morphologyEx(
-                filtered_frames[i, ...], cv2.MORPH_OPEN, strel_tail, iters_tail)
+            filtered_frames[i, ...] = cv2.morphologyEx(filtered_frames[i, ...], cv2.MORPH_OPEN, strel_tail, iters_tail)
 
-    if prefilter_time is not None and np.all(np.array(prefilter_time) > 0):
+    if prefilter_time is not None and np.all(np.array(prefilter_time) > 0) and np.all(np.array(prefilter_time) <= filtered_frames.shape[0]):
         for j in range(len(prefilter_time)):
-            filtered_frames = scipy.signal.medfilt(
-                filtered_frames, [prefilter_time[j], 1, 1])
+            filtered_frames = scipy.signal.medfilt(filtered_frames, [prefilter_time[j], 1, 1])
 
     return filtered_frames
 
@@ -464,6 +462,7 @@ def filter_angles(angles: np.ndarray, window: int=3, tolerance: float=60) -> np.
     np.ndarray containing corrected angle values
     '''
     out = np.copy(angles)
+    window = min(window, out.shape[0])
     windows = move_median(angles, window=window, min_count=1)
     diff = out - windows
     absdiff = np.abs(diff)
