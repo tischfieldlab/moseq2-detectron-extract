@@ -8,7 +8,7 @@ conda activate moseq-detectron
 ## Install PyTorch ≥ 1.7
 Install using https://pytorch.org/ to insure you get the correct versions. Something along the lines of:
 ```
-conda install pytorch torchvision torchaudio cudatoolkit=11.1 -c pytorch -c conda-forge
+conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 ```
 
 ## Install Detectron2
