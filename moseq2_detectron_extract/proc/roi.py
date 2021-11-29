@@ -3,7 +3,7 @@ from typing import Union
 import cv2
 import numpy as np
 import scipy
-import skimage
+import skimage.measure
 import tqdm
 from moseq2_detectron_extract.io.video import (get_raw_info, get_video_info,
                                                read_frames, read_frames_raw)
