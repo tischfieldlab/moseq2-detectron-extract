@@ -198,11 +198,13 @@ def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.n
     features = {
         'centroid': np.empty((nframes, 2)),
         'orientation': np.empty((nframes,)),
-        'axis_length': np.empty((nframes, 2))
+        'axis_length': np.empty((nframes, 2)),
     }
 
     for k, v in features.items():
         features[k][:] = np.nan
+
+    features['contour'] = []
 
     for i in tqdm.tqdm(range(nframes), disable=not progress_bar, desc='Computing moments'):
 
@@ -229,6 +231,7 @@ def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.n
 
         for key, value in im_moment_features(cnts[mouse_cnt]).items():
             features[key][i] = value
+        features['contour'].append(cnts[mouse_cnt])
 
     return features, mask
 
@@ -547,8 +550,8 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     # frames x instances x keypoints x 3
     d2_masks, allosteric_keypoints, num_instances = mask_and_keypoints_from_model_output(model_outputs)
 
-    cleaned_frames = clean_frames(raw_frames, progress_bar=False, iters_tail=3, prefilter_time=(3,))
-    features, masks = get_frame_features(cleaned_frames, progress_bar=False, mask=d2_masks[:, 0, :, :], use_cc=True)
+    cleaned_frames = clean_frames(raw_frames, progress_bar=False, iters_tail=3)
+    features, masks = get_frame_features(cleaned_frames, progress_bar=False, mask=d2_masks[:, 0, :, :], use_cc=True, frame_threshold=3)
 
     angles = features['orientation']
     lengths = np.max(features['axis_length'], axis=1)
