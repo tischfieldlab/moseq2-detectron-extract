@@ -215,7 +215,7 @@ def load_keypoint_data_from_dict(data: Dict[str, np.ndarray], keypoints: List[st
     return kp_data
 
 
-def find_outliers_jumping(data: np.ndarray, window: int=4, thresh: float=10):
+def find_outliers_jumping(data: np.ndarray, window: int=4, thresh: float=10) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     ''' Find outlier frames in data based on deviation from expected position
 
     Basic alogrithm:
@@ -230,8 +230,8 @@ def find_outliers_jumping(data: np.ndarray, window: int=4, thresh: float=10):
     `thresh` (float): modified z-score to use as threshold for calling outliers
 
     Returns:
-    A tuple containing (`indicies`, `distances`, `outliers`), where:
-    `indicies` - 1D numpy array of frame indicies called as outliers
+    A tuple containing (`indices`, `distances`, `outliers`), where:
+    `indices` - 1D numpy array of frame indices called as outliers
     `distances` - a (nframes, nkeypoints) sized dataframe containing keypoint distances to modelled position
     `outliers` - a (nframes, nkeypoints) sized boolean numpy array containing outliers calls for each keypoint and frame
 
@@ -248,3 +248,15 @@ def find_outliers_jumping(data: np.ndarray, window: int=4, thresh: float=10):
     ind = np.where(outliers.any(axis=1))[0]
 
     return ind, dist, outliers
+
+
+def find_nan_keypoints(data: np.ndarray) -> np.ndarray:
+    ''' Find frames with any keypoints having NAN values
+
+    Parameters:
+    data (np.ndarray): a numpy.ndarray with shape like (nframes, nkeypoints, 3 [x, y, s])
+
+    Returns:
+    np.ndarray containing indicies where any keypoints have NAN values
+    '''
+    return np.isnan(data).any(axis=(1,2)).nonzero()[0]
