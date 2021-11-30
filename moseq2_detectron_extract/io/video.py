@@ -60,7 +60,7 @@ def read_frames_raw(filename: str, frames: FramesSelection=None, frame_dims: Tup
 
     Args:
         filename (string): name of raw data file
-        frames (Union[int, Iterable[int]]): frame indicies to read
+        frames (Union[int, Iterable[int]]): frame indices to read
         frame_dims (tuple): (width, height) of frames in pixels
         bit_depth (int): bits per pixel (default: 16)
         tar_object (tarfile.TarFile): TarFile object, used for loading data directly from tgz
@@ -75,7 +75,7 @@ def read_frames_raw(filename: str, frames: FramesSelection=None, frame_dims: Tup
         # single frame index, we will just return that one frame
         frames = [frames]
     elif isinstance(frames, Iterable):
-        # an iterable of indicies, ensure they are all ints
+        # an iterable of indices, ensure they are all ints
         frames = [int(i) for i in frames]
 
     # sanity check on `frames`, and allow passing of None
@@ -83,7 +83,7 @@ def read_frames_raw(filename: str, frames: FramesSelection=None, frame_dims: Tup
         frames = list(range(0, vid_info['nframes']))
 
     # Build blocks of consecutive frames we can read as one batch.
-    # Accounts for possible non-monotonically increasing indicies, and random access cases
+    # Accounts for possible non-monotonically increasing indices, and random access cases
     blocks = []
     for start, nframes in collapse_consecutive_values(sorted(frames)):
         blocks.append({
