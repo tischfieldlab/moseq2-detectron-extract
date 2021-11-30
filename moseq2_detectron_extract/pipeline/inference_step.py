@@ -2,6 +2,7 @@
 
 import os
 from functools import partial
+import warnings
 
 from moseq2_detectron_extract.io.annot import (default_keypoint_names,
                                                register_dataset_metadata)
@@ -16,6 +17,8 @@ from moseq2_detectron_extract.proc.proc import scale_raw_frames
 class InferenceStep(PipelineStep):
 
     def initialize(self):
+        warnings.filterwarnings("ignore", category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
+
         self.scale = partial(scale_raw_frames, vmin=self.config['min_height'], vmax=self.config['max_height'])
 
         self.write_message('Loading model....')
