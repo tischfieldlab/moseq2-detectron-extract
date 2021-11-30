@@ -149,33 +149,47 @@ class Session(object):
                  bg_roi_depth_range: Tuple[int, int]=(650, 750), bg_roi_gradient_filter: bool=False, bg_roi_gradient_threshold: int=3000,
                  bg_roi_gradient_kernel: int=7, bg_roi_fill_holes: bool=True, use_plane_bground: bool=False, verbose: bool=False, cache_dir: Union[None, str]=None):
 
-        if cache_dir and os.path.exists(os.path.join(cache_dir, 'bground.tiff')):
+        if cache_dir is None:
+            use_cache = False
+            cache_dir = ''
+        else:
+            use_cache = True
+
+        # Grab the first frame of the video and write it out to a file, but only if we have a place to save it
+        ff_filename = os.path.join(cache_dir, 'first_frame.tiff')
+        if use_cache and os.path.exists(ff_filename):
+            first_frame = read_tiff_image(ff_filename, scale=True)
+        else:
+            first_frame = load_movie_data(self.depth_file, 0, tar_object=self.tar)
+            if use_cache:
+                write_image(ff_filename, first_frame[0], scale=True, scale_factor=bg_roi_depth_range)
+
+
+        # compute the background, or load one from the cache
+        bg_filename = os.path.join(cache_dir, 'bground.tiff')
+        if use_cache and os.path.exists(bg_filename):
             if verbose:
                 print('Loading background...')
-            bground_im = read_tiff_image(os.path.join(cache_dir, 'bground.tiff'), scale=True)
+            bground_im = read_tiff_image(bg_filename, scale=True)
         else:
             if verbose:
                 print('Computing background...')
             bground_im = get_bground_im_file(self.depth_file, tar_object=self.tar)
 
-            if cache_dir and not use_plane_bground:
-                write_image(os.path.join(cache_dir, 'bground.tiff'), bground_im, scale=True)
+            if use_cache and not use_plane_bground:
+                write_image(bg_filename, bground_im, scale=True)
 
-        if cache_dir:
-            first_frame = load_movie_data(self.depth_file, 0, tar_object=self.tar)
-            write_image(os.path.join(cache_dir, 'first_frame.tiff'), first_frame[0], scale=True, scale_factor=bg_roi_depth_range)
 
-        strel_dilate = select_strel(bg_roi_shape, bg_roi_dilate)
-
-        roi_filename = 'roi_{:02d}.tiff'.format(bg_roi_index)
-
-        if cache_dir and os.path.exists(os.path.join(cache_dir, roi_filename)):
+        # compute the region of interest, or load one from the cache
+        roi_filename = os.path.join(cache_dir, 'roi_{:02d}.tiff'.format(bg_roi_index))
+        if use_cache and os.path.exists(roi_filename):
             if verbose:
                 print('Loading ROI...')
-            roi = read_tiff_image(os.path.join(cache_dir, roi_filename), scale=True) > 0
+            roi = read_tiff_image(roi_filename, scale=True) > 0
         else:
             if verbose:
                 print('Computing roi...')
+            strel_dilate = select_strel(bg_roi_shape, bg_roi_dilate)
             rois, plane, _, _, _, _ = get_roi(bground_im,
                                             strel_dilate=strel_dilate,
                                             weights=bg_roi_weights,
@@ -193,13 +207,13 @@ class Session(object):
                 coords = np.vstack((xx.ravel(), yy.ravel()))
                 plane_im = (np.dot(coords.T, plane[:2]) + plane[3]) / -plane[2]
                 plane_im = plane_im.reshape(bground_im.shape)
-                if cache_dir:
-                    write_image(os.path.join(cache_dir, 'bground.tiff'), plane_im, scale=True)
+                if use_cache:
+                    write_image(bg_filename, plane_im, scale=True)
                 bground_im = plane_im
 
             roi = rois[bg_roi_index]
-            if cache_dir:
-                write_image(os.path.join(cache_dir, roi_filename), roi, scale=True, dtype='uint8')
+            if use_cache:
+                write_image(roi_filename, roi, scale=True, dtype='uint8')
 
         true_depth = np.median(bground_im[roi > 0])
         if verbose:
@@ -234,7 +248,7 @@ class Session(object):
         ''' Fetch specific frames, given by `frame_idxs`, returning `chunck_size` frames on each iteration.
 
             Parameters:
-                frame_idxs (Sequence[int]): Frame indicies that should be fetched
+                frame_idxs (Sequence[int]): Frame indices that should be fetched
                 chunk_size (int): Number of frames to return on each iteration
                 streams (Iterable[Stream]): Streams from which to return data
         '''
@@ -274,7 +288,7 @@ class SessionFramesIterator(object):
 
 
     def generate_samples(self):
-        ''' Generate the sequence of batches of frames indicies
+        ''' Generate the sequence of batches of frames indices
 
         Default is to linear read. Override this if you want to change behaviour
 
@@ -314,7 +328,7 @@ class SessionFramesIterator(object):
 
 
 class SessionFramesSampler(SessionFramesIterator):
-    ''' Iterator which randomly samples `num_frames` indicies
+    ''' Iterator which randomly samples `num_frames` indices
     '''
     def __init__(self, session: Session, num_samples: int, chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
         self.num_samples = int(num_samples)
@@ -332,7 +346,7 @@ class SessionFramesSampler(SessionFramesIterator):
 
 
 class SessionFramesIndexer(SessionFramesIterator):
-    ''' Iterator which iterates from a fixed sequence of indicies
+    ''' Iterator which iterates from a fixed sequence of indices
     '''
     def __init__(self, session: Session, frame_idxs: Sequence[int], chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
         self.frame_idxs = frame_idxs
