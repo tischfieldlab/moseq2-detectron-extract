@@ -14,7 +14,7 @@ class SharedMemoryDict(collections.UserDict):
             super().__setitem__(key, SharedMemoryDict(item))
         elif isinstance(item, np.ndarray):
             tensor = torch.from_numpy(item)
-            tensor.share_memory_()
+            #tensor.share_memory_()
             return super().__setitem__(key, tensor)
         else:
             return super().__setitem__(key, item)
