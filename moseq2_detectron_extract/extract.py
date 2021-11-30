@@ -1,5 +1,6 @@
 import os
 import time
+import traceback
 import uuid
 from copy import deepcopy
 from datetime import timedelta
@@ -11,7 +12,6 @@ from torch.multiprocessing import Process, Queue, SimpleQueue
 
 from moseq2_detectron_extract.io.annot import (
     default_keypoint_connection_rules, default_keypoint_names)
-from moseq2_detectron_extract.io.memory import SharedMemoryDict
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import write_yaml
 from moseq2_detectron_extract.pipeline import (ExtractFeaturesStep,
@@ -40,7 +40,7 @@ def extract_session(session: Session, config: dict):
 
     status_filename = os.path.join(output_dir, 'results_{:02d}.yaml'.format(config['bg_roi_index']))
     if check_completion_status(status_filename):
-        print('WARNING: Sessions appears to already be extracted, so skipping!')
+        print('WARNING: Session appears to already be extracted, so skipping!')
         return status_filename
 
     status_dict = {
@@ -58,7 +58,7 @@ def extract_session(session: Session, config: dict):
         bg_roi_index=config['bg_roi_index'], bg_roi_weights=config['bg_roi_weights'], bg_roi_depth_range=config['bg_roi_depth_range'],
         bg_roi_gradient_filter=config['bg_roi_gradient_filter'], bg_roi_gradient_threshold=config['bg_roi_gradient_threshold'],
         bg_roi_gradient_kernel=config['bg_roi_gradient_kernel'], bg_roi_fill_holes=config['bg_roi_fill_holes'],
-        use_plane_bground=config['use_plane_bground'], cache_dir=output_dir)
+        use_plane_bground=config['use_plane_bground'], cache_dir=output_dir, verbose=True)
     print(f'Found true depth: {true_depth}')
     config.update({
         'nframes': session.nframes,
@@ -71,7 +71,7 @@ def extract_session(session: Session, config: dict):
     progress = ProcessProgress()
     reader_pbar = progress.add(desc='Processing batches', total=session.nframes)
 
-    inference_in: Queue = Queue(maxsize=1)
+    inference_in: Queue = SimpleQueue()
     inference_out: Queue = SimpleQueue()
     inference_pbar = progress.add(desc='Inferring')
     inference_thread = InferenceStep(config=config, progress=inference_pbar, in_queue=inference_in, out_queue=inference_out)
@@ -105,24 +105,30 @@ def extract_session(session: Session, config: dict):
         keypoint_writer_thread,
         result_writer_thread,
     ]
-    # start the threads
-    for t in all_threads:
-        t.start()
-    progress.start()
 
-    for i, (frame_idxs, raw_frames) in enumerate(session.iterate(config['chunk_size'], config['chunk_overlap'])):
-        offset = config['chunk_overlap'] if i > 0 else 0
-        raw_frames = prep_raw_frames(raw_frames, bground_im=bground_im, roi=roi, vmin=config['min_height'], vmax=config['max_height'])
-        shm = { 'batch': i, 'chunk': raw_frames, 'frame_idxs': frame_idxs, 'offset': offset }
-        inference_in.put(SharedMemoryDict(shm))
-        reader_pbar.put({'update': raw_frames.shape[0]})
-    inference_in.put(None) # signal we are done
+    try:
+        # start the threads
+        for t in all_threads:
+            t.start()
+        progress.start()
 
-    # join the threads
-    for t in all_threads:
-        t.join()
-    progress.shutdown()
-    progress.join()
+        for i, (frame_idxs, raw_frames) in enumerate(session.iterate(config['chunk_size'], config['chunk_overlap'])):
+            offset = config['chunk_overlap'] if i > 0 else 0
+            raw_frames = prep_raw_frames(raw_frames, bground_im=bground_im, roi=roi, vmin=config['min_height'], vmax=config['max_height'])
+            shm = { 'batch': i, 'chunk': raw_frames, 'frame_idxs': frame_idxs, 'offset': offset }
+            while not inference_in.empty():
+                time.sleep(0.1)
+            inference_in.put(shm)
+            reader_pbar.put({'update': raw_frames.shape[0]})
+        inference_in.put(None) # signal we are done
+
+        # join the threads
+        for t in all_threads:
+            t.join()
+        progress.shutdown()
+        progress.join()
+    except:
+        tqdm.tqdm.write(traceback.format_exc())
 
     # mark status as complete and flush to filesystem
     status_dict['complete'] = True
