@@ -59,7 +59,7 @@ def extract_session(session: Session, config: dict):
         bg_roi_gradient_filter=config['bg_roi_gradient_filter'], bg_roi_gradient_threshold=config['bg_roi_gradient_threshold'],
         bg_roi_gradient_kernel=config['bg_roi_gradient_kernel'], bg_roi_fill_holes=config['bg_roi_fill_holes'],
         use_plane_bground=config['use_plane_bground'], cache_dir=output_dir, verbose=True)
-    print(f'Found true depth: {true_depth}')
+    print()
     config.update({
         'nframes': session.nframes,
         'true_depth': true_depth,
