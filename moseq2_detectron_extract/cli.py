@@ -48,8 +48,7 @@ from moseq2_detectron_extract.proc.scalars import compute_scalars
 from moseq2_detectron_extract.quality import find_outliers_h5
 from moseq2_detectron_extract.viz import draw_instances_fast
 
-warnings.filterwarnings("ignore", category=UserWarning, module='torch', lineno=575) # disable UserWarning: floor_divide is deprecated 
-warnings.filterwarnings("ignore", category=UserWarning, module='torch', lineno=1102) # disable UserWarning: floor_divide is deprecated 
+warnings.filterwarnings("ignore", category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
 
 orig_init = click.core.Option.__init__
 def new_init(self, *args, **kwargs):
@@ -246,8 +245,7 @@ def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_siz
         print("Searching for outlier frames....")
         result_filename = os.path.splitext(status_filename)[0] + '.h5'
         kpt_names = [kp for kp in default_keypoint_names if kp != 'TailTip']
-        outliers = find_outliers_h5(result_filename, keypoint_names=kpt_names)
-        print(f"Found {len(outliers)} putative outlier frames out of {session.nframes} extracted frames ({len(outliers)/session.nframes:.2%})")
+        find_outliers_h5(result_filename, keypoint_names=kpt_names)
 
 
 
@@ -472,8 +470,8 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
 @cli.command(name='generate-dataset', help='Generate images from a dataset')
 @click.argument('input_file', nargs=-1, type=click.Path(exists=True))
 @click.option('--num-samples', default=100, type=int, help='Total number of samples to draw')
-@click.option('--indices', default=None, type=str, help='Indicies to pick when --sample-method=list. A comma separated list of indicies.')
-@click.option('--sample-method', default='uniform', type=click.Choice(['random', 'uniform', 'kmeans', 'list']), help='Method to sample the data. Random chooses a random sample of frames. Uniform will produce a temporally uniform sample. Kmeans performs clustering on downsampled frames. List interprets --indices as a comma separated list of indicies to extract.')
+@click.option('--indices', default=None, type=str, help='A comma separated list of indices, or path to a file containing one index per line. When --sample-method=list, the indicies to directly pick. When --sample-method=random or --sample-method=kmeans, limit selection to this set of indicies. Otherwise unused.')
+@click.option('--sample-method', default='uniform', type=click.Choice(['random', 'uniform', 'kmeans', 'list']), help='Method to sample the data. Random chooses a random sample of frames. Uniform will produce a temporally uniform sample. Kmeans performs clustering on downsampled frames. List interprets --indices as a comma separated list of indices to extract.')
 @click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
 @click.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk. Useful for cable tracking')
 @click.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
@@ -494,6 +492,14 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
 def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
             bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, output_dir, min_height, max_height, 
             stream, output_label_studio):
+
+    if indices is not None:
+        if os.path.exists(indices):
+            with open(indices, mode='r') as ind_file:
+                indices = sorted([int(l) for l in ind_file.readlines()])
+            del ind_file
+        else:
+            indices = sorted([int(i) for i in indices.split(',')])
 
     num_samples_per_file = int(np.ceil(num_samples / len(input_file)))
     parameters = deepcopy(locals())
@@ -531,18 +537,21 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
             }, sf, indent='\t')
 
         if sample_method == 'random':
-            iterator = session.sample(num_samples_per_file, chunk_size=chunk_size, streams=stream)
+            if indices is not None:
+                seq = np.random.choice(indices, num_samples_per_file, replace=False)
+                iterator = session.index(seq, chunk_size=chunk_size, streams=stream)
+            else:
+                iterator = session.sample(num_samples_per_file, chunk_size=chunk_size, streams=stream)
 
         elif sample_method == 'uniform':
             step = session.nframes // num_samples_per_file
             iterator = session.index(np.arange(step, session.nframes, step), chunk_size=chunk_size, streams=stream)
 
         elif sample_method == 'kmeans':
-            kmeans_selected_frames = select_frames_kmeans(session, num_samples_per_file, chunk_size=chunk_size, min_height=min_height, max_height=max_height)
+            kmeans_selected_frames = select_frames_kmeans(session, num_samples_per_file, indices=indices, chunk_size=chunk_size, min_height=min_height, max_height=max_height)
             iterator = session.index(kmeans_selected_frames, chunk_size=chunk_size, streams=stream)
 
         elif sample_method == 'list':
-            indices = sorted([int(i) for i in indices.split(',')])
             iterator = session.index(indices, chunk_size=chunk_size, streams=stream)
 
         else:
@@ -558,7 +567,7 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
                     'data': {
                         'images': []
                     },
-                    'meta_info': {
+                    'meta': {
                         'frame_idx': int(fidx),
                         'session_id': session.session_id,
                         'true_depth': true_depth,
@@ -667,11 +676,13 @@ def dataset_info(model_dir, annot_file, replace_data_path, min_height, max_heigh
 
 @cli.command(name='find-outliers', help='find putative outlier frames')
 @click.argument('result_h5', required=True, nargs=-1, type=click.Path(exists=True))
-def find_outliers(result_h5):
+@click.option('--window', default=6, type=int, help='sliding window size for jumping algorithm')
+@click.option('--threshold', default=10, type=float, help='threshold for jumping algorithm')
+def find_outliers(result_h5, window, threshold):
     kpt_names = [kp for kp in default_keypoint_names if kp != 'TailTip']
 
     for h5_path in result_h5:
-        find_outliers_h5(h5_path, keypoint_names=kpt_names)
+        find_outliers_h5(h5_path, keypoint_names=kpt_names, jump_win=window, jump_thresh=threshold)
 
 
 
