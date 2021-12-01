@@ -2,11 +2,12 @@ import atexit
 import cProfile
 import datetime
 import json
+import logging
 import os
 import time
 import uuid
 import warnings
-from copy import Error, deepcopy
+from copy import deepcopy
 from pstats import Stats
 
 import click
@@ -58,13 +59,13 @@ def new_init(self, *args, **kwargs):
 click.core.Option.__init__ = new_init
 
 def enable_profiling():
-    print("Enabling profiling...")
+    logging.info("Enabling profiling...")
     pr = cProfile.Profile()
     pr.enable()
 
     def exit():
         pr.disable()
-        print("Profiling completed")
+        logging.info("Profiling completed")
         with open('profiling_stats.txt', 'w') as stream:
             stats = Stats(pr, stream=stream)
             stats.strip_dirs()
@@ -90,18 +91,18 @@ def cli():
 @click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min_height, max_height):
-    print()
+    logging.info("")
     if resume:
-        print("Resuming Model Training from: {}".format(model_dir))
+        logging.info("Resuming Model Training from: {}".format(model_dir))
         cfg = load_config(os.path.join(model_dir, "config.yaml"))
 
         if config is not None:
-            print("WARNING: Ignoring --config because you opted to resume training from a previous checkpoint!")
+            logging.warning("WARNING: Ignoring --config because you opted to resume training from a previous checkpoint!")
     else:
         cfg = get_base_config()
 
         if config is not None:
-            print("Attempting to load your extra --config and merge with the base configuration")
+            logging.info("Attempting to load your extra --config and merge with the base configuration")
             cfg.merge_from_file(config)
 
         if auto_cd:
@@ -110,13 +111,13 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
             cfg.OUTPUT_DIR = model_dir
 
         if os.path.exists(os.path.join(cfg.OUTPUT_DIR, "config.yaml")):
-            print("Hmmm... it looks like there is already a model located here.... ({})".format(cfg.OUTPUT_DIR))
-            print("If you wish to resume training, please use the --resume flag")
-            print("Otherwise please change the `model_dir` argument to another location, or utilize the --auto-cd option")
-            print("Exiting...")
+            logging.info("Hmmm... it looks like there is already a model located here.... ({})".format(cfg.OUTPUT_DIR))
+            logging.info("If you wish to resume training, please use the --resume flag")
+            logging.info("Otherwise please change the `model_dir` argument to another location, or utilize the --auto-cd option")
+            logging.info("Exiting...")
             return
 
-        print("Model output: {}".format(cfg.OUTPUT_DIR))
+        logging.info("Model output: {}".format(cfg.OUTPUT_DIR))
 
     ensure_dir(cfg.OUTPUT_DIR)
     tee = Tee(os.path.join(cfg.OUTPUT_DIR, 'train.log'), mode='a')
@@ -134,7 +135,7 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
     for search, replace in replace_data_path:
         replace_data_path_in_annotations(annotations, search, replace)
     validate_annotations(annotations)
-    print('Dataset information:')
+    logging.info('Dataset information:')
     show_dataset_info(annotations)
     register_datasets(annotations, default_keypoint_names)
 
@@ -144,7 +145,7 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
         with open(os.path.join(cfg.OUTPUT_DIR, "config.yaml"), 'w') as f:
             f.write(cfg.dump())
 
-    print(cfg)
+    logging.info(cfg)
 
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=resume)
@@ -160,12 +161,12 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 @click.option("--profile", is_flag=True)
 def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, profile):
-    print("") # Empty line to give some breething room
+    logging.info("") # Empty line to give some breething room
 
     if profile:
         enable_profiling()
 
-    print('Loading model configuration....')
+    logging.info('Loading model configuration....')
     register_dataset_metadata("moseq_train", default_keypoint_names)
     cfg = get_base_config()
     with open(os.path.join(model_dir, 'config.yaml'), 'r') as cfg_file:
@@ -175,7 +176,7 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
     cfg.TEST.DETECTIONS_PER_IMAGE = 1
 
 
-    print('Loading annotations....')
+    logging.info('Loading annotations....')
     intensity_scale = (max_height/255)
     annotations = []
     for anot_f in annot_file:
@@ -186,7 +187,7 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
         replace_data_path_in_annotations(annotations, search, replace)
     validate_annotations(annotations)
 
-    print('Dataset information:')
+    logging.info('Dataset information:')
     show_dataset_info(annotations)
     register_datasets(annotations, default_keypoint_names, split=False)
 
@@ -241,8 +242,8 @@ def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_siz
     status_filename = extract_session(session=session, config=config_data)
 
     if report_outliers:
-        print("")
-        print("Searching for outlier frames....")
+        logging.info("")
+        logging.info("Searching for outlier frames....")
         result_filename = os.path.splitext(status_filename)[0] + '.h5'
         kpt_names = [kp for kp in default_keypoint_names if kp != 'TailTip']
         find_outliers_h5(result_filename, keypoint_names=kpt_names)
@@ -277,7 +278,7 @@ def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_siz
 def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
           bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir,
           min_height, max_height, fps, crop_size, profile):
-    print("") # Empty line to give some breething room
+    logging.info("") # Empty line to give some breething room
 
     if profile:
         enable_profiling()
@@ -314,26 +315,26 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
     if not os.path.exists(info_dir):
         os.makedirs(info_dir)
 
-    print('Loading model....')
+    logging.info('Loading model....')
     register_dataset_metadata("moseq_train", default_keypoint_names)
     cfg = get_base_config()
     with open(os.path.join(model_dir, 'config.yaml'), 'r') as cfg_file:
         cfg = cfg.load_cfg(cfg_file)
     if checkpoint == 'last':
-        print(' -> Using last model checkpoint....')
+        logging.info(' -> Using last model checkpoint....')
         cfg.MODEL.WEIGHTS = get_last_checkpoint(model_dir)
     else:
-        print(f' -> Using model checkpoint at iteration {checkpoint}....')
+        logging.info(f' -> Using model checkpoint at iteration {checkpoint}....')
         cfg.MODEL.WEIGHTS = get_specific_checkpoint(model_dir, checkpoint)
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
     cfg.TEST.DETECTIONS_PER_IMAGE = 1
     predictor = Predictor(cfg)
 
-    print('Processing: {}'.format(input_file))
+    logging.info('Processing: {}'.format(input_file))
     # Find image background and ROI
     first_frame, bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
             bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, cache_dir=info_dir)
-    print(f'Found true depth: {true_depth}')
+    logging.info(f'Found true depth: {true_depth}')
     config_data.update({
         'true_depth': true_depth,
     })
@@ -459,10 +460,10 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
     result_h5.close()
     video_pipe.close()
 
-    print('Processing Times:')
+    logging.info('Processing Times:')
     for k, v in times.items():
-        print(f'{k}: {np.sum(v)}')
-    print(f'Total: {np.sum(list(times.values()))}')
+        logging.info(f'{k}: {np.sum(v)}')
+    logging.info(f'Total: {np.sum(list(times.values()))}')
 
 
 
@@ -517,7 +518,7 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
     output_info = []
     for in_file in tqdm.tqdm(input_file, desc='Datasets'):
         #load session
-        #print('Processing: {}'.format(in_file))
+        #logging.info('Processing: {}'.format(in_file))
         session = Session(in_file)
 
         session_info_dir = ensure_dir(os.path.join(info_dir, session.session_id))
@@ -596,13 +597,13 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
 
         output_info.extend(list(session_data.values()))
 
-    print('Wrote dataset to "{}" '.format(output_dir))
+    logging.info('Wrote dataset to "{}" '.format(output_dir))
 
     if output_label_studio:
         ls_task_dest = os.path.join(output_dir, 'tasks.json')
         with open(ls_task_dest, 'w') as f:
             json.dump(output_info, f, indent='\t')
-        print('Wrote label-studio tasks to "{}" '.format(ls_task_dest))
+        logging.info('Wrote label-studio tasks to "{}" '.format(ls_task_dest))
 
 # end generate_dataset()
 
@@ -614,7 +615,7 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 def dataset_info(annot_file, replace_data_path, min_height, max_height):
 
-    print('Loading annotations....')
+    logging.info('Loading annotations....')
     intensity_scale = (max_height/255)
     annotations = []
     for anot_f in annot_file:
@@ -625,7 +626,7 @@ def dataset_info(annot_file, replace_data_path, min_height, max_height):
         replace_data_path_in_annotations(annotations, search, replace)
     validate_annotations(annotations)
 
-    print('Dataset information:')
+    logging.info('Dataset information:')
     show_dataset_info(annotations)
 
 
@@ -640,24 +641,24 @@ def dataset_info(annot_file, replace_data_path, min_height, max_height):
 @click.option('--evaluate', is_flag=True, help='Run COCO evaluation metrics on supplied annotations.')
 def dataset_info(model_dir, annot_file, replace_data_path, min_height, max_height, checkpoint, evaluate):
 
-    print('Loading model....')
+    logging.info('Loading model....')
     register_dataset_metadata("moseq_train", default_keypoint_names)
     cfg = get_base_config()
     with open(os.path.join(model_dir, 'config.yaml'), 'r') as cfg_file:
         cfg = cfg.load_cfg(cfg_file)
 
     if checkpoint == 'last':
-        print(' -> Using last model checkpoint....')
+        logging.info(' -> Using last model checkpoint....')
         cfg.MODEL.WEIGHTS = get_last_checkpoint(model_dir)
     else:
-        print(f' -> Using model checkpoint at iteration {checkpoint}....')
+        logging.info(f' -> Using model checkpoint at iteration {checkpoint}....')
         cfg.MODEL.WEIGHTS = get_specific_checkpoint(model_dir, checkpoint)
 
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
     cfg.TEST.DETECTIONS_PER_IMAGE = 1
 
 
-    print('Loading annotations....')
+    logging.info('Loading annotations....')
     intensity_scale = (max_height/255)
     annotations = []
     for anot_f in annot_file:
@@ -669,7 +670,7 @@ def dataset_info(model_dir, annot_file, replace_data_path, min_height, max_heigh
     validate_annotations(annotations)
     register_datasets(annotations, default_keypoint_names)
 
-    print('Exporting model....')
+    logging.info('Exporting model....')
     export_model(cfg, model_dir, run_eval=evaluate)
 
 

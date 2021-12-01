@@ -1,4 +1,5 @@
 import datetime
+import logging
 import os
 import subprocess
 import tarfile
@@ -179,7 +180,7 @@ def get_video_info(filename: str, tar_object: tarfile.TarInfo=None) -> FFProbeIn
         os.remove(f.name)
 
     if err:
-        print(err)
+        logging.error(err, stack_info=True)
     out = out.decode().split(os.linesep)
 
     return {

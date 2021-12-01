@@ -1,3 +1,4 @@
+import logging
 from queue import Empty
 from threading import Thread
 from typing import List
@@ -16,13 +17,21 @@ class ProcessProgress(Thread):
     def shutdown(self):
         self.done = True
 
-    def add(self, **kwargs):
+    def add(self, name='', **kwargs):
         q = Queue()
-        prog = { 'q': q }
+        prog = {
+            'name': name,
+            'q': q
+        }
         if not self.disabled:
             prog['tqdm'] = tqdm.tqdm(**kwargs)
         self.workers.append(prog)
         return q
+
+    def get_tqdm(self, name: str) -> tqdm.tqdm:
+        for w in self.workers:
+            if w['name'] == name:
+                return w['tqdm']
 
     def run(self) -> None:
         if self.disabled:
@@ -31,6 +40,7 @@ class ProcessProgress(Thread):
             for worker in self.workers:
                 try:
                     data = worker['q'].get_nowait()
+
                     if 'total' in data:
                         worker['tqdm'].reset(total=data['total'])
 
@@ -38,10 +48,12 @@ class ProcessProgress(Thread):
                         worker['tqdm'].update(data['update'])
 
                     if 'message' in data:
-                        tqdm.tqdm.write(data['message'])
-                    
+                        #tqdm.tqdm.write(data['message'])
+                        logging.info(data['message'])
+
                     if 'flush' in data:
                         worker['tqdm'].refresh()
+
                 except Empty:
                     pass
         for worker in self.workers:

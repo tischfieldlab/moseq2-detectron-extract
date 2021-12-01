@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import traceback
@@ -7,7 +8,7 @@ from datetime import timedelta
 from threading import Thread
 from typing import List, Union
 
-import tqdm
+from tqdm.contrib.logging import _TqdmLoggingHandler
 from torch.multiprocessing import Process, Queue, SimpleQueue
 
 from moseq2_detectron_extract.io.annot import (
@@ -24,6 +25,27 @@ from moseq2_detectron_extract.proc.proc import prep_raw_frames
 from moseq2_detectron_extract.proc.util import check_completion_status
 
 
+def setup_logging(log_filename):
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # attach file handler
+    file_handler = logging.FileHandler(log_filename)
+    file_handler.setLevel(logging.INFO)
+    logger.addHandler(file_handler)
+
+    # attach stream handler
+    stream_handler = _TqdmLoggingHandler()
+    stream_handler.setLevel(logging.INFO)
+    def filter_progress_records(record: logging.LogRecord):
+        if hasattr(record, 'nostream') and record.nostream:
+            return False
+        else:
+            return True
+    stream_handler.addFilter(filter_progress_records)
+    logger.addHandler(stream_handler)
+
+
 def extract_session(session: Session, config: dict):
 
     overall_time = time.time()
@@ -38,9 +60,11 @@ def extract_session(session: Session, config: dict):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
+    setup_logging(os.path.join(output_dir, 'results_{:02d}.log'.format(config['bg_roi_index'])))
+
     status_filename = os.path.join(output_dir, 'results_{:02d}.yaml'.format(config['bg_roi_index']))
     if check_completion_status(status_filename):
-        print('WARNING: Session appears to already be extracted, so skipping!')
+        logging.warning('WARNING: Session appears to already be extracted, so skipping!')
         return status_filename
 
     status_dict = {
@@ -59,7 +83,7 @@ def extract_session(session: Session, config: dict):
         bg_roi_gradient_filter=config['bg_roi_gradient_filter'], bg_roi_gradient_threshold=config['bg_roi_gradient_threshold'],
         bg_roi_gradient_kernel=config['bg_roi_gradient_kernel'], bg_roi_fill_holes=config['bg_roi_fill_holes'],
         use_plane_bground=config['use_plane_bground'], cache_dir=output_dir, verbose=True)
-    print()
+    logging.info("")
     config.update({
         'nframes': session.nframes,
         'true_depth': true_depth,
@@ -69,7 +93,7 @@ def extract_session(session: Session, config: dict):
 
 
     progress = ProcessProgress()
-    reader_pbar = progress.add(desc='Processing batches', total=session.nframes)
+    reader_pbar = progress.add(name='producer', desc='Processing batches', total=session.nframes)
 
     inference_in: Queue = SimpleQueue()
     inference_out: Queue = SimpleQueue()
@@ -120,6 +144,8 @@ def extract_session(session: Session, config: dict):
                 time.sleep(0.1)
             inference_in.put(shm)
             reader_pbar.put({'update': raw_frames.shape[0]})
+            cp = progress.get_tqdm('producer').format_dict
+            logging.info(f'Processed {(cp["n"] or 0)} / {cp["total"]} frames in {timedelta(seconds=cp["elapsed"])}', extra={'nostream': True})
         inference_in.put(None) # signal we are done
 
         # join the threads
@@ -128,7 +154,7 @@ def extract_session(session: Session, config: dict):
         progress.shutdown()
         progress.join()
     except:
-        tqdm.tqdm.write(traceback.format_exc())
+        logging.error('Error during extraction', exc_info=True)
 
     # mark status as complete and flush to filesystem
     status_dict['complete'] = True
@@ -136,6 +162,6 @@ def extract_session(session: Session, config: dict):
 
     extract_duration = (time.time() - overall_time)
     extract_fps = session.nframes / extract_duration
-    tqdm.tqdm.write(f'Finished processing {session.nframes} frames in {timedelta(seconds=extract_duration)} (approx. {extract_fps:.2f} fps overall)')
+    logging.info(f'Finished processing {session.nframes} frames in {timedelta(seconds=extract_duration)} (approx. {extract_fps:.2f} fps overall)')
 
     return status_filename

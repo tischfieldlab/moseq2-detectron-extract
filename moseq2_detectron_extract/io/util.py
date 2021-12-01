@@ -1,6 +1,7 @@
 import errno
 import io
 import json
+import logging
 import os
 import sys
 from typing import Dict
@@ -159,9 +160,9 @@ def dict_to_h5(h5: h5py.File, data: dict, root: str='/', annotations: dict=None)
             else:
                 raise ValueError('Cannot save {} type to key {}'.format(type(item), dest))
         except Exception as e:
-            print(e)
+            logging.error(e, exc_info=True)
             if key != 'inputs':
-                print('h5py could not encode key:', key)
+                logging.error(f'h5py could not encode key: "{key}"')
 
         if key in annotations:
             if annotations[key] is None:

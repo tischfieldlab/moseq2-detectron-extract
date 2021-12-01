@@ -148,8 +148,8 @@ def get_dataset_bbox_range(dset: Sequence[DataItem]):
         box = d['annotations'][0]['bbox']
         widths.append(box[2] - box[0])
         heights.append(box[3] - box[1])
-    #print("Width: {:.2f}/{:.2f}/{:.2f}".format(np.min(widths), np.mean(widths), np.max(widths)))
-    #print("Height: {:.2f}/{:.2f}/{:.2f}".format(np.min(heights), np.mean(heights), np.max(heights)))
+    #logging.info("Width: {:.2f}/{:.2f}/{:.2f}".format(np.min(widths), np.mean(widths), np.max(widths)))
+    #logging.info("Height: {:.2f}/{:.2f}/{:.2f}".format(np.min(heights), np.mean(heights), np.max(heights)))
 
     return {
         'width': {
@@ -254,7 +254,7 @@ def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_forma
     Sequence[DataItem] annotations
     '''
     if keypoint_names is None:
-        print("WARNING: Ignoring any keypoint information because `keypoint_names` is None.")
+        logging.info("WARNING: Ignoring any keypoint information because `keypoint_names` is None.")
 
 
     with open(annot_file, 'r') as fp:
@@ -331,7 +331,7 @@ def sort_keypoints(keypoint_order: List[str], keypoints: dict):
             k = keypoints[kp]
             annot_keypoints.extend([k['x'], k['y'], k['v']])
         else:
-            #print('missing keypoint {} in {}'.format(kp, entry['id']))
+            #logging.info('missing keypoint {} in {}'.format(kp, entry['id']))
             annot_keypoints.extend([0, 0, 0])
     return annot_keypoints
 
@@ -358,12 +358,12 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
 
         elif rslt['type'] == 'keypointlabels':
             if 'points' in rslt['value']:
-                #print('Skipping unexpected points in keypoint', rslt)
+                #logging.info('Skipping unexpected points in keypoint', rslt)
                 continue
             try:
                 kpts.update(get_keypoint_data(rslt))
             except:
-                print(rslt['value'])
+                logging.info(rslt['value'])
                 raise
 
     if keypoint_names is not None:
@@ -402,24 +402,24 @@ def show_dataset_info(annotations: Sequence[DataItem]) -> None:
     Parameters:
     annotations (Sequence[DataItem]): annotations to validate
     '''
-    print("Number of Items: ", len(annotations))
+    logging.info("Number of Items: ", len(annotations))
 
-    print("Image size range:")
+    logging.info("Image size range:")
     im_sizes = get_dataset_im_size_range(annotations)
-    print(f" -> Width: {im_sizes[0][0]} - {im_sizes[0][1]} px")
-    print(f" -> Height: {im_sizes[1][0]} - {im_sizes[1][1]} px")
+    logging.info(f" -> Width: {im_sizes[0][0]} - {im_sizes[0][1]} px")
+    logging.info(f" -> Height: {im_sizes[1][0]} - {im_sizes[1][1]} px")
 
-    print("Instance Bounding Box Sizes:")
+    logging.info("Instance Bounding Box Sizes:")
     bbox_sizes = get_dataset_bbox_range(annotations)
     bbox_ratios = get_dataset_bbox_aspect_ratios(annotations)
-    print(f" -> Width: {bbox_sizes['width']['min']:.2f} - {bbox_sizes['width']['max']:.2f}; mean {bbox_sizes['width']['mean']:.2f} ± {bbox_sizes['width']['stdev']:.2f} stdev")
-    print(f" -> Height: {bbox_sizes['height']['min']:.2f} - {bbox_sizes['height']['max']:.2f}; mean {bbox_sizes['height']['mean']:.2f} ± {bbox_sizes['height']['stdev']:.2f} stdev")
-    print(f" -> Ratio: {bbox_ratios['min']:.2f} - {bbox_ratios['max']:.2f}; mean {bbox_ratios['mean']:.2f} ± {bbox_ratios['stdev']:.2f} stdev")
+    logging.info(f" -> Width: {bbox_sizes['width']['min']:.2f} - {bbox_sizes['width']['max']:.2f}; mean {bbox_sizes['width']['mean']:.2f} ± {bbox_sizes['width']['stdev']:.2f} stdev")
+    logging.info(f" -> Height: {bbox_sizes['height']['min']:.2f} - {bbox_sizes['height']['max']:.2f}; mean {bbox_sizes['height']['mean']:.2f} ± {bbox_sizes['height']['stdev']:.2f} stdev")
+    logging.info(f" -> Ratio: {bbox_ratios['min']:.2f} - {bbox_ratios['max']:.2f}; mean {bbox_ratios['mean']:.2f} ± {bbox_ratios['stdev']:.2f} stdev")
 
-    print("Pixel Intensity Statistics:")
+    logging.info("Pixel Intensity Statistics:")
     im_means, im_stdevs = get_dataset_statistics(annotations)
     for ch in range(im_means.shape[0]):
-        print(f" -> Ch{ch}: mean {im_means[ch]:.2f} ± {im_stdevs[ch]:.2f} stdev")
+        logging.info(f" -> Ch{ch}: mean {im_means[ch]:.2f} ± {im_stdevs[ch]:.2f} stdev")
 
 
 def validate_annotations(annotations: Sequence[DataItem]) -> bool:

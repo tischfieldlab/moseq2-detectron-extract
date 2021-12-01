@@ -472,7 +472,6 @@ def filter_angles(angles: np.ndarray, window: int=3, tolerance: float=60) -> np.
     flips = ((absdiff>(180-tolerance)) & (absdiff<(180+tolerance)))
     signs = np.sign(diff[flips])
     out[flips] = out[flips] + (-180 * signs)
-    #print(np.count_nonzero(flips))
     return out
 
 
@@ -496,7 +495,7 @@ def iterative_filter_angles(data: np.ndarray, max_iters: int=1000) -> Tuple[np.n
         curr = filter_angles(last)
 
         if np.allclose(curr, last):
-            #print(f'Converged after {iterations} iterations')
+            # logging.debug(f'Converged after {iterations} iterations')
             break
         else:
             last = curr
