@@ -28,7 +28,7 @@ from moseq2_detectron_extract.io.image import write_image
 from moseq2_detectron_extract.io.result import (create_extract_h5,
                                                 write_extracted_chunk_to_h5)
 from moseq2_detectron_extract.io.session import Session, Stream
-from moseq2_detectron_extract.io.util import Tee, ensure_dir
+from moseq2_detectron_extract.io.util import Tee, ensure_dir, setup_logging
 from moseq2_detectron_extract.io.video import PreviewVideoWriter
 from moseq2_detectron_extract.model import Evaluator, Predictor, Trainer
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
@@ -474,7 +474,6 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
 @click.option('--indices', default=None, type=str, help='A comma separated list of indices, or path to a file containing one index per line. When --sample-method=list, the indicies to directly pick. When --sample-method=random or --sample-method=kmeans, limit selection to this set of indicies. Otherwise unused.')
 @click.option('--sample-method', default='uniform', type=click.Choice(['random', 'uniform', 'kmeans', 'list']), help='Method to sample the data. Random chooses a random sample of frames. Uniform will produce a temporally uniform sample. Kmeans performs clustering on downsampled frames. List interprets --indices as a comma separated list of indices to extract.')
 @click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
-@click.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk. Useful for cable tracking')
 @click.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
 @click.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
 @click.option('--bg-roi-index', default=0, type=int, help='Index of which background mask(s) to use')
@@ -490,9 +489,11 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 @click.option('--stream', default=['depth'], multiple=True, type=click.Choice(['depth', 'rgb']), help='Data type for processed frames')
 @click.option('--output-label-studio', is_flag=True, help='Output label-studio files')
-def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
-            bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, output_dir, min_height, max_height, 
+def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
+            bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, output_dir, min_height, max_height,
             stream, output_label_studio):
+
+    setup_logging()
 
     if indices is not None:
         if os.path.exists(indices):
@@ -601,6 +602,12 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
 
     if output_label_studio:
         ls_task_dest = os.path.join(output_dir, 'tasks.json')
+        if os.path.exists(ls_task_dest):
+            logging.warn('label-studio tasks file "{}" seems to already exist! Will append the new tasks to this existing file'.format(ls_task_dest))
+            with open(ls_task_dest, 'r') as f:
+                existing_tasks = json.load(f)
+                output_info = existing_tasks + output_info
+
         with open(ls_task_dest, 'w') as f:
             json.dump(output_info, f, indent='\t')
         logging.info('Wrote label-studio tasks to "{}" '.format(ls_task_dest))

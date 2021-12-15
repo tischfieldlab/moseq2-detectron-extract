@@ -8,13 +8,12 @@ from datetime import timedelta
 from threading import Thread
 from typing import List, Union
 
-from tqdm.contrib.logging import _TqdmLoggingHandler
 from torch.multiprocessing import Process, Queue, SimpleQueue
 
 from moseq2_detectron_extract.io.annot import (
     default_keypoint_connection_rules, default_keypoint_names)
 from moseq2_detectron_extract.io.session import Session
-from moseq2_detectron_extract.io.util import write_yaml
+from moseq2_detectron_extract.io.util import setup_logging, write_yaml
 from moseq2_detectron_extract.pipeline import (ExtractFeaturesStep,
                                                FrameCropStep, InferenceStep,
                                                KeypointWriterStep,
@@ -23,27 +22,6 @@ from moseq2_detectron_extract.pipeline import (ExtractFeaturesStep,
                                                ResultH5WriterStep)
 from moseq2_detectron_extract.proc.proc import prep_raw_frames
 from moseq2_detectron_extract.proc.util import check_completion_status
-
-
-def setup_logging(log_filename):
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-
-    # attach file handler
-    file_handler = logging.FileHandler(log_filename)
-    file_handler.setLevel(logging.INFO)
-    logger.addHandler(file_handler)
-
-    # attach stream handler
-    stream_handler = _TqdmLoggingHandler()
-    stream_handler.setLevel(logging.INFO)
-    def filter_progress_records(record: logging.LogRecord):
-        if hasattr(record, 'nostream') and record.nostream:
-            return False
-        else:
-            return True
-    stream_handler.addFilter(filter_progress_records)
-    logger.addHandler(stream_handler)
 
 
 def extract_session(session: Session, config: dict):
