@@ -1,15 +1,17 @@
 import errno
 import io
 import json
+import logging
 import os
 import sys
-from typing import Dict
+from typing import Dict, Optional
 
 import click
 import h5py
 import numpy as np
 import ruamel.yaml as yaml
 import tqdm
+from tqdm.contrib.logging import _TqdmLoggingHandler
 
 
 def gen_batch_sequence(nframes: int, chunk_size: int, overlap: int, offset: int=0):
@@ -159,9 +161,9 @@ def dict_to_h5(h5: h5py.File, data: dict, root: str='/', annotations: dict=None)
             else:
                 raise ValueError('Cannot save {} type to key {}'.format(type(item), dest))
         except Exception as e:
-            print(e)
+            logging.error(e, exc_info=True)
             if key != 'inputs':
-                print('h5py could not encode key:', key)
+                logging.error(f'h5py could not encode key: "{key}"')
 
         if key in annotations:
             if annotations[key] is None:
@@ -218,6 +220,27 @@ class Tee(object):
         '''
         self.file.flush()
 
+
+def setup_logging(log_filename: Optional[str]=None):
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # attach file handler
+    if log_filename is not None:
+        file_handler = logging.FileHandler(log_filename)
+        file_handler.setLevel(logging.INFO)
+        logger.addHandler(file_handler)
+
+    # attach stream handler
+    stream_handler = _TqdmLoggingHandler()
+    stream_handler.setLevel(logging.INFO)
+    def filter_progress_records(record: logging.LogRecord):
+        if hasattr(record, 'nostream') and record.nostream:
+            return False
+        else:
+            return True
+    stream_handler.addFilter(filter_progress_records)
+    logger.addHandler(stream_handler)
 
 
 def click_param_annot(click_cmd: click.Command) -> Dict[str, str]:

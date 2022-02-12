@@ -1,3 +1,4 @@
+import logging
 import multiprocessing as mp
 import traceback
 from typing import List, Union
@@ -34,7 +35,7 @@ class PipelineStep(Process):
         if self.progress is not None:
             self.progress.put({'message': message})
         else:
-            print(message)
+            logging.info(message)
 
     def flush_progress(self):
         if self.progress is not None:
@@ -64,7 +65,7 @@ class PipelineStep(Process):
                 self.flush_progress()
             self.finalize()
         except Exception as e:
-            print(e)
+            logging.error(exc_info=True)
             pass
 
     def initialize(self):

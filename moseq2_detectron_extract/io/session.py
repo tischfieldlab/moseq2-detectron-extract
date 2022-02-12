@@ -1,12 +1,13 @@
+import logging
 import os
 import tarfile
 from enum import Enum
 from typing import Iterable, Sequence, Tuple, Union
 
 import numpy as np
-import tqdm
 from moseq2_detectron_extract.io.image import read_tiff_image, write_image
-from moseq2_detectron_extract.io.util import (ProgressFileObject, gen_batch_sequence,
+from moseq2_detectron_extract.io.util import (ProgressFileObject,
+                                              gen_batch_sequence,
                                               load_metadata, load_timestamps)
 from moseq2_detectron_extract.io.video import get_movie_info, load_movie_data
 from moseq2_detectron_extract.proc.roi import get_bground_im_file, get_roi
@@ -169,11 +170,11 @@ class Session(object):
         bg_filename = os.path.join(cache_dir, 'bground.tiff')
         if use_cache and os.path.exists(bg_filename):
             if verbose:
-                print('Loading background...')
+                logging.info('Loading background...')
             bground_im = read_tiff_image(bg_filename, scale=True)
         else:
             if verbose:
-                print('Computing background...')
+                logging.info('Computing background...')
             bground_im = get_bground_im_file(self.depth_file, tar_object=self.tar)
 
             if use_cache and not use_plane_bground:
@@ -184,11 +185,11 @@ class Session(object):
         roi_filename = os.path.join(cache_dir, 'roi_{:02d}.tiff'.format(bg_roi_index))
         if use_cache and os.path.exists(roi_filename):
             if verbose:
-                print('Loading ROI...')
+                logging.info('Loading ROI...')
             roi = read_tiff_image(roi_filename, scale=True) > 0
         else:
             if verbose:
-                print('Computing roi...')
+                logging.info('Computing roi...')
             strel_dilate = select_strel(bg_roi_shape, bg_roi_dilate)
             rois, plane, _, _, _, _ = get_roi(bground_im,
                                             strel_dilate=strel_dilate,
@@ -202,7 +203,7 @@ class Session(object):
 
             if use_plane_bground:
                 if verbose:
-                    print('Using plane fit for background...')
+                    logging.info('Using plane fit for background...')
                 xx, yy = np.meshgrid(np.arange(bground_im.shape[1]), np.arange(bground_im.shape[0]))
                 coords = np.vstack((xx.ravel(), yy.ravel()))
                 plane_im = (np.dot(coords.T, plane[:2]) + plane[3]) / -plane[2]
@@ -217,7 +218,7 @@ class Session(object):
 
         true_depth = np.median(bground_im[roi > 0])
         if verbose:
-            print('Detected true depth: {}'.format(true_depth))
+            logging.info('Detected true depth: {}'.format(true_depth))
 
         return first_frame, bground_im, roi, true_depth
 
