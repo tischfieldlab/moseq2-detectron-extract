@@ -351,9 +351,14 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
     annot = {}
     kpts = {}
 
+    if len(entry[key]) > 1:
+        print('WARNING: Task {}: Multiple annotations found, only taking the first'.format(entry['id']))
+
     for rslt in entry[key][0]['result']:
 
         if rslt['type'] == 'polygonlabels':
+            if len(annot.keys()) > 0:
+                print('WARNING: Task {}: Polygon has already been parsed, replacing value'.format(entry['id']))
             annot.update(get_polygon_data(rslt, mask_format=mask_format))
 
         elif rslt['type'] == 'keypointlabels':
@@ -361,7 +366,11 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
                 #print('Skipping unexpected points in keypoint', rslt)
                 continue
             try:
-                kpts.update(get_keypoint_data(rslt))
+                kdata = get_keypoint_data(rslt)
+                kname = list(kdata.keys())[0]
+                if kname in kpts:
+                    print('WARNING: Task {}: Keypoint "{}" has already been parsed, replacing value'.format(entry['id'], kname))
+                kpts.update(kdata)
             except:
                 print(rslt['value'])
                 raise
