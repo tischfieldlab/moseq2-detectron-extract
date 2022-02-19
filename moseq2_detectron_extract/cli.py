@@ -621,12 +621,15 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
 @click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 def dataset_info(annot_file, replace_data_path, min_height, max_height):
+    setup_logging()
 
     logging.info('Loading annotations....')
     intensity_scale = (max_height/255)
     annotations = []
     for anot_f in annot_file:
+        logging.info('Reading annotation file "{}"'.format(anot_f))
         annot = read_annotations(anot_f, default_keypoint_names, mask_format='polygon', rescale=intensity_scale)
+        logging.info(' -> Read {} annotations'.format(len(annot)))
         annotations.extend(annot)
 
     for search, replace in replace_data_path:
