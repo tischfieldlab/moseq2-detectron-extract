@@ -255,8 +255,7 @@ def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_forma
     Sequence[DataItem] annotations
     '''
     if keypoint_names is None:
-        logging.info("WARNING: Ignoring any keypoint information because `keypoint_names` is None.")
-
+        logging.warn("WARNING: Ignoring any keypoint information because `keypoint_names` is None.")
 
     with open(annot_file, 'r') as fp:
         data = json.load(fp)
@@ -353,13 +352,13 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
     kpts = {}
 
     if len(entry[key]) > 1:
-        print('WARNING: Task {}: Multiple annotations found, only taking the first'.format(entry['id']))
+        logging.warn('WARNING: Task {}: Multiple annotations found, only taking the first'.format(entry['id']))
 
     for rslt in entry[key][0]['result']:
 
         if rslt['type'] == 'polygonlabels':
             if len(annot.keys()) > 0:
-                print('WARNING: Task {}: Polygon has already been parsed, replacing value'.format(entry['id']))
+                logging.warn('WARNING: Task {}: Polygon has already been parsed, replacing value'.format(entry['id']))
             annot.update(get_polygon_data(rslt, mask_format=mask_format))
 
         elif rslt['type'] == 'keypointlabels':
@@ -370,7 +369,7 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
                 kdata = get_keypoint_data(rslt)
                 kname = list(kdata.keys())[0]
                 if kname in kpts:
-                    print('WARNING: Task {}: Keypoint "{}" has already been parsed, replacing value'.format(entry['id'], kname))
+                    logging.warn('WARNING: Task {}: Keypoint "{}" has already been parsed, replacing value'.format(entry['id'], kname))
                 kpts.update(kdata)
             except:
                 logging.info(rslt['value'])
@@ -412,7 +411,7 @@ def show_dataset_info(annotations: Sequence[DataItem]) -> None:
     Parameters:
     annotations (Sequence[DataItem]): annotations to validate
     '''
-    logging.info("Number of Items: ", len(annotations))
+    logging.info("Number of Items: {}".format(len(annotations)))
 
     logging.info("Image size range:")
     im_sizes = get_dataset_im_size_range(annotations)
