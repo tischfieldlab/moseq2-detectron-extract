@@ -89,6 +89,7 @@ class RandomFieldNoiseAugmentation(Augmentation):
         self.weight = weight
         self.always_apply = always_apply
         self.p_application = p
+        self.eps = np.finfo(np.float64).eps
 
     def validate_range_arg(self, param_name: str, value):
         if isinstance(value, (tuple, list)):
@@ -110,7 +111,7 @@ class RandomFieldNoiseAugmentation(Augmentation):
     def Pkgen(self, n):
         # Helper that generates power-law power spectrum
         def Pk(k):
-            return np.power(k, -n)
+            return np.power(k + self.eps, -n)
         return Pk
 
     def distrib(self, shape, mu=0.0, scale=1.0):
