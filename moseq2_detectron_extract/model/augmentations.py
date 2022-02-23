@@ -1,8 +1,12 @@
+import inspect
+import pprint
 import random
 from functools import partial
 from typing import List, Tuple, Union
 
 import numpy as np
+from albumentations.core.transforms_interface import (BasicTransform,
+                                                      DualTransform)
 from detectron2.data.transforms import (Augmentation, BlendTransform,
                                         NoOpTransform, Transform)
 from FyeldGenerator import generate_field
@@ -22,6 +26,8 @@ class DoughnutNoiseAugmentation(Augmentation):
         always_apply (bool): True to always apply the transform
         p (float): probability of applying the transform.
         '''
+        super().__init__()
+        self._init(locals())
         self.mu = mu
         self.thickness = self.validate_range_arg('thickness', thickness)
         self.var_limit = self.validate_range_arg('var_limit', var_limit)
@@ -83,6 +89,8 @@ class RandomFieldNoiseAugmentation(Augmentation):
         always_apply (bool): True to always apply the transform
         p (float): probability of applying the transform.
         '''
+        super().__init__()
+        self._init(locals())
         self.mu = mu
         self.std_limit = self.validate_range_arg('std_limit', std_limit)
         self.power = self.validate_range_arg('power', power)
@@ -183,13 +191,46 @@ class Albumentations(Augmentation):
         cv2_imshow(image_transformed_1)
     '''
 
-    def __init__(self, augmentor):
+    def __init__(self, augmentor: BasicTransform):
         '''
         Args:
             augmentor (albumentations.BasicTransform):
         '''
-        super(Albumentations, self).__init__()
+        super().__init__()
         self._aug = augmentor
 
     def get_transform(self, img):
         return AlbumentationsTransform(self._aug, self._aug.get_params())
+
+    def __repr__(self):
+        """
+        Produce something like:
+        "MyAugmentation(field1={self.field1}, field2={self.field2})"
+        """
+        try:
+            sig = inspect.signature(self._aug.__init__)
+            outer_classname = type(self).__name__
+            classname = type(self._aug).__name__
+            argstr = []
+            for name, param in sig.parameters.items():
+                assert (
+                    param.kind != param.VAR_POSITIONAL and param.kind != param.VAR_KEYWORD
+                ), "The default __repr__ doesn't support *args or **kwargs"
+                assert hasattr(self._aug, name), (
+                    "Attribute {} not found! "
+                    "Default __repr__ only works if attributes match the constructor.".format(name)
+                )
+                attr = getattr(self._aug, name)
+                default = param.default
+                if default is attr:
+                    continue
+                attr_str = pprint.pformat(attr)
+                if "\n" in attr_str:
+                    # don't show it if pformat decides to use >1 lines
+                    attr_str = "..."
+                argstr.append("{}={}".format(name, attr_str))
+            return "{}({}({}))".format(outer_classname, classname, ", ".join(argstr))
+        except AssertionError:
+            return super().__repr__()
+
+    __str__ = __repr__
