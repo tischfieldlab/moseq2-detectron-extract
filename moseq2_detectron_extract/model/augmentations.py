@@ -66,7 +66,7 @@ class DoughnutNoiseAugmentation(Augmentation):
             im[donut] = random_state.normal(self.mu, sigma, size=np.count_nonzero(donut))
             if len(image.shape) == 3:
                 im = np.expand_dims(im, -1)
-            return BlendTransform(im, self.weight, 1-self.weight)
+            return BlendTransform(im, src_weight=1, dst_weight=1)
         else:
             return NoOpTransform()
 
@@ -142,7 +142,7 @@ class RandomFieldNoiseAugmentation(Augmentation):
             if len(image.shape) == 3:
                 field = np.expand_dims(field, -1)
 
-            return BlendTransform(src_image=field, src_weight=(1 - self.weight), dst_weight=self.weight)
+            return BlendTransform(src_image=field, src_weight=1, dst_weight=1)
         else:
             return NoOpTransform()
 
