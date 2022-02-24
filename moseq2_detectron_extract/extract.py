@@ -123,7 +123,9 @@ def extract_session(session: Session, config: dict):
             inference_in.put(shm)
             reader_pbar.put({'update': raw_frames.shape[0]})
             cp = progress.get_tqdm('producer').format_dict
-            logging.info(f'Processed {(cp["n"] or 0)} / {cp["total"]} frames in {timedelta(seconds=cp["elapsed"])}', extra={'nostream': True})
+            n_frames = (cp["n"] or 0)
+            t_frames = cp["total"]
+            logging.info(f'Processed {n_frames} / {t_frames} frames ({n_frames/t_frames:.2%}) in {timedelta(seconds=cp["elapsed"])}', extra={'nostream': True})
         inference_in.put(None) # signal we are done
 
         # join the threads
