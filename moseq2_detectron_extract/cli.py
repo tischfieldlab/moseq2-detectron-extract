@@ -28,7 +28,7 @@ from moseq2_detectron_extract.io.image import write_image
 from moseq2_detectron_extract.io.result import (create_extract_h5,
                                                 write_extracted_chunk_to_h5)
 from moseq2_detectron_extract.io.session import Session, Stream
-from moseq2_detectron_extract.io.util import Tee, ensure_dir, setup_logging
+from moseq2_detectron_extract.io.util import Tee, ensure_dir, setup_logging, warn_with_traceback
 from moseq2_detectron_extract.io.video import PreviewVideoWriter
 from moseq2_detectron_extract.model import Evaluator, Predictor, Trainer
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
@@ -50,6 +50,8 @@ from moseq2_detectron_extract.quality import find_outliers_h5
 from moseq2_detectron_extract.viz import draw_instances_fast
 
 warnings.filterwarnings("ignore", category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
+# warnings.showwarning = warn_with_traceback
+# np.seterr(all='raise')
 
 orig_init = click.core.Option.__init__
 def new_init(self, *args, **kwargs):

@@ -4,7 +4,9 @@ import json
 import logging
 import os
 import sys
+import traceback
 from typing import Dict, Optional
+import warnings
 
 import click
 import h5py
@@ -259,6 +261,12 @@ def click_param_annot(click_cmd: click.Command) -> Dict[str, str]:
             annotations[p.human_readable_name] = p.help
     return annotations
 
+
+def warn_with_traceback(message, category, filename, lineno, file=None, line=None):
+
+    log = file if hasattr(file, 'write') else sys.stderr
+    traceback.print_stack(file=log)
+    log.write(warnings.formatwarning(message, category, filename, lineno, line))
 
 
 class ProgressFileObject(io.FileIO):
