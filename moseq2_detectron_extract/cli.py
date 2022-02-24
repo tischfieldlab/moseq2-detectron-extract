@@ -127,11 +127,10 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
 
     seed_all_rng(None if cfg.SEED < 0 else cfg.SEED) # Seed the random number generators
 
-    intensity_scale = (max_height/255)
 
     annotations = []
     for anot_f in annot_file:
-        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, rescale=intensity_scale)
+        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT)
         annotations.extend(annot)
 
     for search, replace in replace_data_path:
@@ -179,10 +178,9 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
 
 
     logging.info('Loading annotations....')
-    intensity_scale = (max_height/255)
     annotations = []
     for anot_f in annot_file:
-        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, rescale=intensity_scale)
+        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT)
         annotations.extend(annot)
 
     for search, replace in replace_data_path:
@@ -626,11 +624,10 @@ def dataset_info(annot_file, replace_data_path, min_height, max_height):
     setup_logging()
 
     logging.info('Loading annotations....')
-    intensity_scale = (max_height/255)
     annotations = []
     for anot_f in annot_file:
         logging.info('Reading annotation file "{}"'.format(anot_f))
-        annot = read_annotations(anot_f, default_keypoint_names, mask_format='polygon', rescale=intensity_scale)
+        annot = read_annotations(anot_f, default_keypoint_names, mask_format='polygon')
         logging.info(' -> Read {} annotations'.format(len(annot)))
         annotations.extend(annot)
 
@@ -652,6 +649,7 @@ def dataset_info(annot_file, replace_data_path, min_height, max_height):
 @click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
 @click.option('--evaluate', is_flag=True, help='Run COCO evaluation metrics on supplied annotations.')
 def dataset_info(model_dir, annot_file, replace_data_path, min_height, max_height, checkpoint, evaluate):
+    setup_logging()
 
     logging.info('Loading model....')
     register_dataset_metadata("moseq_train", default_keypoint_names)
@@ -671,10 +669,9 @@ def dataset_info(model_dir, annot_file, replace_data_path, min_height, max_heigh
 
 
     logging.info('Loading annotations....')
-    intensity_scale = (max_height/255)
     annotations = []
     for anot_f in annot_file:
-        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT, rescale=intensity_scale)
+        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT)
         annotations.extend(annot)
 
     for search, replace in replace_data_path:
@@ -692,6 +689,7 @@ def dataset_info(model_dir, annot_file, replace_data_path, min_height, max_heigh
 @click.option('--window', default=6, type=int, help='sliding window size for jumping algorithm')
 @click.option('--threshold', default=10, type=float, help='threshold for jumping algorithm')
 def find_outliers(result_h5, window, threshold):
+    setup_logging()
     kpt_names = [kp for kp in default_keypoint_names if kp != 'TailTip']
 
     for h5_path in result_h5:
