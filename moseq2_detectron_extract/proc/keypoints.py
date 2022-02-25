@@ -50,10 +50,14 @@ def rotate_points_batch(points: np.ndarray, centers: np.ndarray, angles: Union[n
     '''
     # expects (frames x keypoints x 3 [x,, y, s])
     if isinstance(angles, (int, float)):
-        angles = [angles] * points.shape[0]
+        angles_array = np.array([angles] * points.shape[0])
+    elif isinstance(angles, np.ndarray):
+        angles_array = np.array(angles)
+    else:
+        raise TypeError('Expected angles to be of type numpy.ndarray or float, got {} instead!'.format(type(angles).__name__))
 
     for i in range(points.shape[0]):
-        points[i, 0] = rotate_points(points[i, 0], centers[i], angles[i])
+        points[i, 0] = rotate_points(points[i, 0], centers[i], angles_array[i])
     return points
 
 
@@ -177,7 +181,7 @@ def load_keypoint_data_from_h5(h5: h5py.File, keypoints: List[str]=None, coord_s
         root = root + '/'
 
     keys = [f'{root}{coord_system}/{kp}' for kp in keypoints]
-    data = np.ndarray((h5['frames'].shape[0], len(keys), 3), dtype=float)
+    data: np.ndarray = np.ndarray((h5['frames'].shape[0], len(keys), 3), dtype=float)
     for kpi, kp in enumerate(keys):
         data[:, kpi, 0] = h5[f'{kp}_x_{units}'][()]
         data[:, kpi, 1] = h5[f'{kp}_y_{units}'][()]
@@ -236,7 +240,7 @@ def find_outliers_jumping(data: np.ndarray, window: int=4, thresh: float=10) -> 
     `outliers` - a (nframes, nkeypoints) sized boolean numpy array containing outliers calls for each keypoint and frame
 
     '''
-    data = np.copy(data[:,:,:2]) # drop scores
+    data = np.copy(data[:,:data.shape[1]-1,:2]) # drop scores, ignore last keypoint (i.e. tail-tip)
     window = min(window, data.shape[0])
     windows = move_median(data, window=window, min_count=1, axis=0)
     diff = (data - windows) ** 2

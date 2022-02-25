@@ -7,7 +7,7 @@ import tempfile
 from copy import Error
 from itertools import groupby
 from operator import itemgetter
-from typing import Iterable, List, Tuple, TypedDict, Union
+from typing import Iterable, List, Tuple, TypeVar, TypedDict, Union
 
 import cv2
 import matplotlib.pyplot as plt
@@ -35,23 +35,22 @@ def get_raw_info(filename: str, bit_depth: int=16, frame_dims: Tuple[int, int]=(
     RawVideoInfo, dict containg information about the raw data file
     '''
 
-    bytes_per_frame = (frame_dims[0] * frame_dims[1] * bit_depth) / 8
+    bytes_per_frame = int((frame_dims[0] * frame_dims[1] * bit_depth) / 8)
 
-    if type(filename) is str:
-        file_info = {
+    if isinstance(filename, str):
+        return {
             'bytes': os.stat(filename).st_size,
             'nframes': int(os.stat(filename).st_size / bytes_per_frame),
             'dims': frame_dims,
             'bytes_per_frame': bytes_per_frame
         }
-    elif type(filename) is tarfile.TarInfo:
-        file_info = {
+    elif isinstance(filename, tarfile.TarInfo):
+        return {
             'bytes': filename.size,
             'nframes': int(filename.size / bytes_per_frame),
             'dims': frame_dims,
             'bytes_per_frame': bytes_per_frame
         }
-    return file_info
 
 FramesSelection = Union[int, Iterable[int]]
 def read_frames_raw(filename: str, frames: FramesSelection=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16,
@@ -96,7 +95,7 @@ def read_frames_raw(filename: str, frames: FramesSelection=None, frame_dims: Tup
         })
 
     out_buffer = np.empty((len(frames), frame_dims[1], frame_dims[0]), dtype=np.dtype(dtype))
-    if type(tar_object) is tarfile.TarFile:
+    if isinstance(tar_object, tarfile.TarFile):
         with tar_object.extractfile(filename) as f:
             for b in blocks:
                 f.seek(b['seek_point'])
@@ -112,8 +111,8 @@ def read_frames_raw(filename: str, frames: FramesSelection=None, frame_dims: Tup
 
     return out_buffer
 
-
-def collapse_consecutive_values(a: np.ndarray) -> List[Tuple[float, int]]:
+T = TypeVar('T', int, float)
+def collapse_consecutive_values(a: Iterable[T]) -> List[Tuple[T, int]]:
     ''' Collapses consecutive values in an array
 
     Example:

@@ -229,10 +229,12 @@ def apply_roi(frames: np.ndarray, roi: np.ndarray) -> np.ndarray:
         frames = frames * roi
 
     bbox = get_bbox(roi)
-    return frames[:, bbox[0, 0]:bbox[1, 0], bbox[0, 1]:bbox[1, 1]]
+    if bbox is not None:
+        frames = frames[:, bbox[0, 0]:bbox[1, 0], bbox[0, 1]:bbox[1, 1]]
+    return frames
 
 
-def get_bbox(roi: np.ndarray) -> Union[np.array, None]:
+def get_bbox(roi: np.ndarray) -> Union[np.ndarray, None]:
     ''' Given a binary mask, return an array with the x and y boundaries
 
     Parameters:
@@ -260,8 +262,8 @@ def get_roi_contour(roi: np.ndarray, crop: bool=True) -> np.ndarray:
     Returns:
     contours, np.ndarray describing contour points
     '''
-    if crop:
-        bbox = get_bbox(roi)
+    bbox = get_bbox(roi)
+    if crop and bbox is not None:
         mask = roi[bbox[0, 0]:bbox[1, 0], bbox[0, 1]:bbox[1, 1]]
     else:
         mask = np.copy(roi)

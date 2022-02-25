@@ -1,4 +1,4 @@
-from typing import Dict, Iterable, List, Literal, Tuple
+from typing import Dict, Iterable, List, Literal, Sequence, Tuple
 
 import cv2
 import matplotlib.pyplot as plt
@@ -11,7 +11,7 @@ from moseq2_detectron_extract.proc.keypoints import rotate_points_batch
 from moseq2_detectron_extract.proc.roi import apply_roi
 
 
-def stack_videos(videos: Iterable[np.ndarray], orientation: Literal['horizontal', 'vertical', 'diagional']) -> np.ndarray:
+def stack_videos(videos: Sequence[np.ndarray], orientation: Literal['horizontal', 'vertical', 'diagional']) -> np.ndarray:
     ''' Stack videos according to orientation to create one big video
 
     Parameters:
@@ -55,7 +55,7 @@ def stack_videos(videos: Iterable[np.ndarray], orientation: Literal['horizontal'
     return output_movie
 
 
-def reduce_axis_size(data: Iterable[np.ndarray], axis: int) -> int:
+def reduce_axis_size(data: Sequence[np.ndarray], axis: int) -> int:
     ''' Reduce an iterable of numpy.ndarrays to a single scalar for a given axis
     Will raise an exception if no items are passed or the arrays are not the same size on the given axis
 
@@ -76,7 +76,7 @@ def reduce_axis_size(data: Iterable[np.ndarray], axis: int) -> int:
         raise ValueError(f'Arrays should be equal sized on axis{axis}!')
 
 
-def reduce_dtypes(data: Iterable[np.ndarray]) -> npt.DTypeLike:
+def reduce_dtypes(data: Sequence[np.ndarray]) -> npt.DTypeLike:
     ''' Reduce an iterable of numpy.ndarrays to a dtype
     Will raise an exception if no items are passed or the all arrays do not share a dtype
 
@@ -129,7 +129,7 @@ def prep_raw_frames(frames: np.ndarray, bground_im: np.ndarray=None, roi: np.nda
             All operations are optional.
     '''
     if bground_im is not None:
-        frames = bground_im - frames
+        frames = (bground_im + 5) - frames
 
     if roi is not None:
         frames = apply_roi(frames, roi)
@@ -156,13 +156,11 @@ def scale_raw_frames(frames: np.ndarray, vmin: float, vmax: float, dtype: npt.DT
     np.ndarray contatining intensity scaled frames data
     '''
     if np.issubdtype(np.dtype(dtype), np.integer):
-        info = np.iinfo(dtype)
-        dmin = info.min
-        dmax = info.max
+        dmin = np.iinfo(dtype).min
+        dmax = np.iinfo(dtype).max
     else:
-        info = np.finfo(dtype)
-        dmin = info.min
-        dmax = info.max
+        dmin = np.finfo(dtype).min
+        dmax = np.finfo(dtype).max
 
     return ((frames - vmin) * ((dmax - dmin) / (vmax - vmin)) + dmin).astype(dtype)
 
@@ -186,7 +184,6 @@ def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.n
     Masks are image masks of shape (nframes, height, width)
     '''
 
-    features = []
     nframes = frames.shape[0]
 
     if type(mask) is np.ndarray and mask.size > 0:
@@ -195,7 +192,7 @@ def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.n
         has_mask = False
         mask = np.zeros((frames.shape), 'uint8')
 
-    features = {
+    features: dict = {
         'centroid': np.empty((nframes, 2)),
         'orientation': np.empty((nframes,)),
         'axis_length': np.empty((nframes, 2)),

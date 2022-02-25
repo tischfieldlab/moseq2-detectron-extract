@@ -2,7 +2,7 @@ import logging
 import os
 import tarfile
 from enum import Enum
-from typing import Iterable, Sequence, Tuple, Union
+from typing import IO, Iterable, List, Sequence, Tuple, Union
 
 import numpy as np
 from moseq2_detectron_extract.io.image import read_tiff_image, write_image
@@ -25,6 +25,12 @@ class Session(object):
         self.session_path = path
         self.__init_session(path)
         self.__trim_frames(frame_trim)
+
+        self.tar: Union[None, tarfile.TarFile]
+        self.tar_members: Union[None, List[tarfile.TarInfo]]
+        self.depth_file: Union[str, tarfile.TarInfo]
+        self.rgb_file: Union[str, tarfile.TarInfo]
+
 
 
     def __init_session(self, input_file: str):
@@ -93,7 +99,8 @@ class Session(object):
         Returns:
         dict, metadata for this session
         '''
-        if self.tar is not None:
+        metadata_path: Union[str, IO[bytes], None]
+        if self.tar is not None and self.tar_members is not None:
             metadata_path = self.tar.extractfile(self.tar_members[self.tar_names.index('metadata.json')])
         else:
             metadata_path = os.path.join(self.dirname, 'metadata.json')
@@ -109,7 +116,7 @@ class Session(object):
         Returns:
         np.ndarray, array of timestamps
         '''
-        timestamp_path = None
+        timestamp_path: Union[str, IO[bytes], None] = None
         correction_factor = 1.0
         ts_search = []
 
@@ -121,7 +128,7 @@ class Session(object):
         else:
             raise ValueError(f"unknown stream {stream}")
 
-        if self.tar is not None:
+        if self.tar is not None and self.tar_members is not None:
             for name, corr_factor in ts_search:
                 if name in self.tar_names:
                     timestamp_path = self.tar.extractfile(self.tar_members[self.tar_names.index(name)])
@@ -365,10 +372,10 @@ class SessionFramesIndexer(SessionFramesIterator):
 
 class TimestampMapper():
     def __init__(self) -> None:
-        self.timestamp_map = {}
+        self.timestamp_map: dict = {}
 
 
-    def add_timestamps(self, name: str, timestamps: np.array):
+    def add_timestamps(self, name: str, timestamps: np.ndarray):
         self.timestamp_map[name] = np.asarray(timestamps)
 
 
