@@ -129,7 +129,7 @@ def prep_raw_frames(frames: np.ndarray, bground_im: np.ndarray=None, roi: np.nda
             All operations are optional.
     '''
     if bground_im is not None:
-        frames = (bground_im + 5) - frames
+        frames = bground_im - frames
 
     if roi is not None:
         frames = apply_roi(frames, roi)
