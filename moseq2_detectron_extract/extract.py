@@ -11,7 +11,7 @@ from typing import List, Union
 from torch.multiprocessing import Process, Queue, SimpleQueue
 
 from moseq2_detectron_extract.io.annot import (
-    default_keypoint_connection_rules, default_keypoint_names)
+    default_keypoint_connection_rules, default_keypoint_names, default_keypoint_colors)
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import setup_logging, write_yaml
 from moseq2_detectron_extract.pipeline import (ExtractFeaturesStep,
@@ -67,6 +67,7 @@ def extract_session(session: Session, config: dict):
         'true_depth': true_depth,
         'keypoint_names': default_keypoint_names,
         'keypoint_connection_rules': default_keypoint_connection_rules,
+        'keypoint_colors': default_keypoint_colors
     })
 
 

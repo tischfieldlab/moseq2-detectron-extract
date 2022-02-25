@@ -50,6 +50,17 @@ default_keypoint_names = [
     'TailTip'
 ]
 
+default_keypoint_colors = [
+    (255, 255, 153), # Nose
+    (166, 206, 227), # Left Ear
+    ( 31, 120, 180), # Right Ear
+    (255, 255, 153), # Neck
+    (178, 223, 138), # Left Hip
+    ( 51, 160,  44), # Right Hip
+    (227,  26,  28), # TailBase
+    (251, 154, 153)  # TailTip
+]
+
 KeypointConnections = Sequence[Tuple[str, str, Tuple[int, int, int]]]
 default_keypoint_connection_rules: KeypointConnections = [
         ('Nose', 'Left Ear', (166, 206, 227)),
@@ -128,8 +139,6 @@ def get_dataset_bbox_aspect_ratios(dset: Sequence[DataItem]) -> Dict[str, float]
             aspect_ratios.append(ax2 / ax1)
         else:
             aspect_ratios.append(ax1 / ax2)
-
-    aspect_ratios = np.array(aspect_ratios)
 
     return {
         'min': np.min(aspect_ratios),
@@ -224,6 +233,7 @@ def register_dataset_metadata(name: str, keypoint_names: Iterable[str]) -> None:
     MetadataCatalog.get(name).keypoint_names = list(keypoint_names)
     MetadataCatalog.get(name).keypoint_flip_map = [] #[('Left Ear', 'Right Ear'), ('Left Hip', 'Right Hip')]
     MetadataCatalog.get(name).keypoint_connection_rules = default_keypoint_connection_rules
+    MetadataCatalog.get(name).keypoint_colors = default_keypoint_colors
 
 
 def poly_to_mask(poly: np.ndarray, out_shape: Tuple[int, int]) -> np.ndarray:

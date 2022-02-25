@@ -30,10 +30,10 @@ class PreviewVideoWriterStep(PipelineStep):
 
         self.scale = 2.0
         self.roi_contours = get_roi_contour(self.roi, crop=True)
-        self.draw_instances = partial(draw_instances_fast, roi_contour=self.roi_contours, scale=self.scale, keypoint_names=self.config['keypoint_names'], keypoint_connection_rules=self.config['keypoint_connection_rules'])
+        self.draw_instances = partial(draw_instances_fast, roi_contour=self.roi_contours, scale=self.scale, keypoint_names=self.config['keypoint_names'], keypoint_connection_rules=self.config['keypoint_connection_rules'], keypoint_colors=self.config['keypoint_colors'], thickness=1)
 
         self.load_rot_kpts = partial(load_keypoint_data_from_dict, keypoints=self.config['keypoint_names'], coord_system='rotated', units='px', root='')
-        self.draw_keypoints = partial(draw_keypoints, keypoint_names=self.config['keypoint_names'], keypoint_connection_rules=self.config['keypoint_connection_rules'])
+        self.draw_keypoints = partial(draw_keypoints, keypoint_names=self.config['keypoint_names'], keypoint_connection_rules=self.config['keypoint_connection_rules'], keypoint_colors=self.config['keypoint_colors'], scale=1.5, radius=3, thickness=1)
 
     def finalize(self):
         self.video_pipe.close()
@@ -57,7 +57,7 @@ class PreviewVideoWriterStep(PipelineStep):
             field_video[i,:,:,:] = self.draw_instances(self.iscale(raw_frames[i,:,:,None].copy()), frame_instances)
 
             rot_crop_keypoints_video[i,:,:,:] = draw_mask(rot_crop_keypoints_video[i,:,:,:], masks[i], alpha=0.7)
-            rot_crop_keypoints_video[i,:,:,:] = self.draw_keypoints(rot_crop_keypoints_video[i,:,:,:], keypoints[i], origin=rot_crop_keypoints_origin, scale=1.5)
+            rot_crop_keypoints_video[i,:,:,:] = self.draw_keypoints(rot_crop_keypoints_video[i,:,:,:], keypoints[i], origin=rot_crop_keypoints_origin)
             self.update_progress()
 
         cleaned_depth = colorize_video(scale_depth_frames(clean_frames * masks, scale=1.5))

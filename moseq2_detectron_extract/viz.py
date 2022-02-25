@@ -98,7 +98,8 @@ def scale_color_frames(frames: np.ndarray, scale: float=2.0) -> np.ndarray:
 
 
 def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names: Sequence[str],
-    keypoint_connection_rules: KeypointConnections, roi_contour: Iterable[np.ndarray]=None, scale: float=2.0) -> np.ndarray:
+    keypoint_connection_rules: KeypointConnections, keypoint_colors: Sequence[Tuple[int, int, int]],
+    roi_contour: Iterable[np.ndarray]=None, scale: float=2.0, radius: int=3, thickness: int=2) -> np.ndarray:
     ''' Draw `instances` on `frame`
 
     Parameters:
@@ -106,8 +107,11 @@ def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names:
     instances (Instances): Detectron2 instances
     keypoint_names (Sequence[str]): names of the keypoints to draw
     keypoint_connection_rules (KeypointConnections): rules describing how keypoints are connected
+    keypoint_colors (Sequence[Tuple[int, int, int]]): Colors to use for drawing keypoints, each a tuple of ints in the range 0-255 specifying color in RGB
     roi_contour (Iterable[np.ndarray]): Contours of the roi, found via `cv2.findContours()`
     scale (float): size scale factor to scale frame and instances by
+    radius (int): radius of the circles drawn for keypoints
+    thickness (int): thickness of the lines drawn for keypoint connections
 
     Returns:
     np.ndarray, frame with instances drawn
@@ -131,12 +135,12 @@ def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names:
 
         # keypoints
         kpts = instances.pred_keypoints[i, :, :].cpu().numpy()
-        im = draw_keypoints(im, kpts, keypoint_names, keypoint_connection_rules, scale=scale)
+        im = draw_keypoints(im, kpts, keypoint_names, keypoint_connection_rules, keypoint_colors, scale=scale, radius=radius, thickness=thickness)
 
     return im
 
 
-def draw_mask(im: np.ndarray, mask: np.ndarray, alpha: float=0.3, color: Tuple[int, int, int]=(255,0,0)) -> np.ndarray:
+def draw_mask(im: np.ndarray, mask: np.ndarray, alpha: float=0.3, color: Tuple[int, int, int]=(0,0,255)) -> np.ndarray:
     ''' Draw a mask on an image
 
     Parameters:
@@ -156,7 +160,7 @@ def draw_mask(im: np.ndarray, mask: np.ndarray, alpha: float=0.3, color: Tuple[i
 
 
 def draw_keypoints(im: np.ndarray, keypoints: np.ndarray, keypoint_names: Sequence[str], keypoint_connection_rules: KeypointConnections,
-    origin: Tuple[int, int]=(0,0), scale: float=1.0) -> np.ndarray:
+    keypoint_colors: Sequence[Tuple[int, int, int]], origin: Tuple[int, int]=(0,0), scale: float=1.0, radius: int=3, thickness: int=2) -> np.ndarray:
     ''' Draw keypoints on an image
 
     Parameters:
@@ -164,8 +168,11 @@ def draw_keypoints(im: np.ndarray, keypoints: np.ndarray, keypoint_names: Sequen
     keypoints (np.ndarray): Keypoints to draw
     keypoint_names (Sequence[str]): names of the keypoints to draw
     keypoint_connection_rules (KeypointConnections): rules describing how keypoints are connected
+    keypoint_colors (Sequence[Tuple[int, int, int]]): Colors to use for drawing keypoints, each a tuple of ints in the range 0-255 specifying color in RGB
     origin (Tuple[int, int]): origin of the coordinate system keypoints are in
     scale (float): size scale factor to scale keypoints by
+    radius (int): radius of the circles drawn for keypoints
+    thickness (int): thickness of the lines drawn for keypoint connections
 
     Returns:
     np.ndarray, image with keypoints drawn
@@ -178,13 +185,14 @@ def draw_keypoints(im: np.ndarray, keypoints: np.ndarray, keypoint_names: Sequen
         ki2 = keypoint_names.index(rule[1])
         x1, y1 = keypoints[ki1, :2].astype(int)
         x2, y2 = keypoints[ki2, :2].astype(int)
-        cv2.line(im, (x1 + origin[0], y1 + origin[1]), (x2 + origin[0], y2 + origin[1]), rule[2], 2, cv2.LINE_AA)
+        cv2.line(im, (x1 + origin[0], y1 + origin[1]), (x2 + origin[0], y2 + origin[1]), rule[2], thickness, cv2.LINE_AA)
 
     # draw keypoints
     for ki in range(keypoints.shape[0]):
         x = keypoints[ki, 0].astype(int) + origin[0]
         y = keypoints[ki, 1].astype(int) + origin[1]
-        im = cv2.circle(im, (x,y), 3, (0,0,255), -1, cv2.LINE_AA)
+        im = cv2.circle(im, (x,y), radius, keypoint_colors[ki], -1, cv2.LINE_AA)
+        im = cv2.circle(im, (x,y), radius, (0,0,0), 1, cv2.LINE_AA)
 
     return im
 
