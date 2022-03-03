@@ -540,8 +540,6 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     Returns:
     Dict[str, Any] - dict containing features and cleaned data
     '''
-    front_keypoints = [0, 1, 2, 3]
-    rear_keypoints = [4, 5, 6]
 
     # frames x instances x keypoints x 3
     d2_masks, allocentric_keypoints, num_instances = mask_and_keypoints_from_model_output(model_outputs)
@@ -558,6 +556,8 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     # Get and apply flips using keypoint information
     flips = flips_from_keypoints(allocentric_keypoints[:,0,...], features['centroid'], angles, lengths)
     angles[flips] += 180
+
+    # apply iterative filter on angle values
     angles, filter_flips = iterative_filter_angles(angles)
     features['orientation'] = np.array(angles)
     flips = np.logical_xor(flips, filter_flips)
@@ -570,3 +570,26 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
         'keypoints': allocentric_keypoints,
         'num_instances': num_instances
     }
+
+
+def flips_from_keypoints(keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray, length: float=80):
+    front_keypoints = [0, 1, 2, 3]
+    rear_keypoints = [4, 5, 6]
+
+    # Rotate keypoints to reflect angles
+    rotated_keypoints = rotate_points_batch(np.copy(keypoints), centroids, angles)
+
+    # Strategy:
+    # Compute the distance of each keypoint to the left and right edge of the bounding box
+    # The groups of front and rear keypoints vote on which edge they are closer to (left=-1; right=1)
+    # The votes are compared, and if indicate a flip is needed, add 180 degrees to the angle
+    extent_x_min = centroids[:, 0] - (length / 2)
+    extent_x_max = centroids[:, 0] + (length / 2)
+    rot_keypoint_scores = np.zeros(rotated_keypoints.shape[:-1], dtype=float)
+    left_dist = np.abs(extent_x_min[:, np.newaxis] - rotated_keypoints[:, :, 0])
+    right_dist = np.abs(extent_x_max[:, np.newaxis] - rotated_keypoints[:, :, 0])
+    rot_keypoint_scores = np.where(left_dist < right_dist, -1, 1)
+    front_votes = np.mean(rot_keypoint_scores[:, front_keypoints], axis=1)
+    rear_votes = np.mean(rot_keypoint_scores[:, rear_keypoints], axis=1)
+    flips = np.where(front_votes < rear_votes, True, False)
+    return flips
