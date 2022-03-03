@@ -22,8 +22,10 @@ def rotate_points(points: np.ndarray, center: Tuple[float, float]=(0, 0), angle:
     if points.shape[1] == 3:
         weights = points[:, 2]
         points = points[:, :2]
-    else:
+    elif points.shape[1] == 2:
         weights = None
+    else:
+        raise ValueError(f'Expected axis 1 of `points` to have length 2 or 3, but got {points.shape[1]}')
 
     angle = np.deg2rad(-angle)
     R = np.array([[np.cos(angle), -np.sin(angle)],
@@ -57,7 +59,7 @@ def rotate_points_batch(points: np.ndarray, centers: np.ndarray, angles: Union[n
         raise TypeError('Expected angles to be of type numpy.ndarray or float, got {} instead!'.format(type(angles).__name__))
 
     for i in range(points.shape[0]):
-        points[i, 0] = rotate_points(points[i, 0], centers[i], angles_array[i])
+        points[i] = rotate_points(points[i], centers[i], angles_array[i])
     return points
 
 
