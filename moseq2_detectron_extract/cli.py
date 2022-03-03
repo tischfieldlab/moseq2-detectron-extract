@@ -401,7 +401,7 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
             angle = features['features']['orientation'][i]
             centroid = features['features']['centroid'][i]
             flip = features['flips'][i]
-            allosteric_keypoints = features['allosteric_keypoints'][i, 0]
+            allocentric_keypoints = features['allocentric_keypoints'][i, 0]
             rotated_keypoints = features['rotated_keypoints'][i, 0]
             
             
@@ -417,7 +417,7 @@ def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size,
                 'Centroid_X': centroid[0],
                 'Centroid_Y': centroid[1],
                 'Angle': angle,
-                **keypoints_to_dict(keypoint_names, allosteric_keypoints),
+                **keypoints_to_dict(keypoint_names, allocentric_keypoints),
                 **keypoints_to_dict(keypoint_names, rotated_keypoints, prefix='rot_')
             })
             sub_times['write_keypoints'].append(time.time() - start)

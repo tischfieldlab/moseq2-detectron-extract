@@ -544,7 +544,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     rear_keypoints = [4, 5, 6]
 
     # frames x instances x keypoints x 3
-    d2_masks, allosteric_keypoints, num_instances = mask_and_keypoints_from_model_output(model_outputs)
+    d2_masks, allocentric_keypoints, num_instances = mask_and_keypoints_from_model_output(model_outputs)
 
     cleaned_frames = clean_frames(raw_frames, progress_bar=False, iters_tail=3)
     features, masks = get_frame_features(cleaned_frames, progress_bar=False, mask=d2_masks[:, 0, :, :], use_cc=True, frame_threshold=3)
@@ -555,22 +555,8 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     angles[incl] = np.unwrap(angles[incl] * 2) / 2
     angles = -np.rad2deg(angles)
 
-    # Rotate keypoints to reflect angles
-    rotated_keypoints = rotate_points_batch(np.copy(allosteric_keypoints), features['centroid'], angles)
-
-    # Strategy:
-    # Compute the distance of each keypoint to the left and right edge of the bounding box
-    # The groups of front and rear keypoints vote on which edge they are closer to (left=-1; right=1)
-    # The votes are compared, and if indicate a flip is needed, add 180 degrees to the angle
-    extent_x_min = features['centroid'][:, 0] - (lengths / 2)
-    extent_x_max = features['centroid'][:, 0] + (lengths / 2)
-    rot_keypoint_scores = np.zeros(rotated_keypoints.shape[:-1], dtype=float)
-    left_dist = np.abs(extent_x_min[:, np.newaxis] - rotated_keypoints[:, 0, :, 0])
-    right_dist = np.abs(extent_x_max[:, np.newaxis] - rotated_keypoints[:, 0, :, 0])
-    rot_keypoint_scores = np.where(left_dist < right_dist, -1, 1)
-    front_votes = np.mean(rot_keypoint_scores[:, front_keypoints], axis=1)
-    rear_votes = np.mean(rot_keypoint_scores[:, rear_keypoints], axis=1)
-    flips = np.where(front_votes < rear_votes, True, False)
+    # Get and apply flips using keypoint information
+    flips = flips_from_keypoints(allocentric_keypoints[:,0,...], features['centroid'], angles, lengths)
     angles[flips] += 180
     angles, filter_flips = iterative_filter_angles(angles)
     features['orientation'] = np.array(angles)
@@ -581,6 +567,6 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
         'masks': masks,
         'features': features,
         'flips': flips,
-        'keypoints': allosteric_keypoints,
+        'keypoints': allocentric_keypoints,
         'num_instances': num_instances
     }
