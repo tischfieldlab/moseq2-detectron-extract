@@ -8,6 +8,7 @@ import numpy as np
 from moseq2_detectron_extract.io.annot import default_keypoint_names
 from moseq2_detectron_extract.proc.keypoints import (
     find_nan_keypoints, find_outliers_jumping, load_keypoint_data_from_h5)
+from moseq2_detectron_extract.proc.proc import flips_from_keypoints
 
 
 def find_outliers_h5(result_h5: str, dest=None, keypoint_names: List[str]=None, jump_win:int=6, jump_thresh: float=10.0):
@@ -19,11 +20,19 @@ def find_outliers_h5(result_h5: str, dest=None, keypoint_names: List[str]=None, 
 
         logging.info('Searching for frames with NAN keypoints...')
         nan_keypoints = find_nan_keypoints(kpts)
-        logging.info(f'Found {len(nan_keypoints)} frames with NAN keypoints.\n')
+        logging.info(f' -> Found {len(nan_keypoints)} frames with NAN keypoints.\n')
 
         logging.info('Searching for frames with jumping algorithm...')
         ind, dist, outliers = find_outliers_jumping(kpts, window=jump_win, thresh=jump_thresh)
-        logging.info(f'Found {len(ind)} frames via jumping algorithm.\n')
+        logging.info(f' -> Found {len(ind)} frames via jumping algorithm.\n')
+
+        logging.info('Searching for frames with flip disagreements...')
+        centroids = np.column_stack((h5['/scalars/centroid_x_px'][()], h5['/scalars/centroid_y_px'][()]))
+        angles = h5['/scalars/angle'][()]
+        flips_mask = flips_from_keypoints(kpts, centroids, angles)
+        flips = np.nonzero(flips_mask)[0]
+        print(flips)
+        logging.info(f' -> Found {len(flips)} frames with flip disagreements.\n')
 
         final_indices = sorted(set(np.concatenate([nan_keypoints, ind])))
 
