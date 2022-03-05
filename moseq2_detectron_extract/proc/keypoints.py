@@ -117,45 +117,45 @@ def keypoints_to_dict(keypoints: np.ndarray, frames: np.ndarray, centers: np.nda
         keypoint_names = default_keypoint_names
 
     # Collect Z-height for each keypoint, and convert to mm
-    x_coords = np.clip(np.floor(keypoints[:, 0, :, 0]).astype(int), 0, frames.shape[2]-1)
-    y_coords = np.clip(np.floor(keypoints[:, 0, :, 1]).astype(int), 0, frames.shape[1]-1)
-    z_data = np.zeros((frames.shape[0], keypoints.shape[2]))
+    x_coords = np.clip(np.floor(keypoints[:, :, 0]).astype(int), 0, frames.shape[2]-1)
+    y_coords = np.clip(np.floor(keypoints[:, :, 1]).astype(int), 0, frames.shape[1]-1)
+    z_data = np.zeros((frames.shape[0], keypoints.shape[1]))
     ref_kpts_px = np.copy(keypoints)
     ref_kpts_mm = np.zeros_like(keypoints)
-    ref_kpts_mm[:, :, :, 2] = keypoints[:, :, :, 2] # copy over scores
-    for kpi in range(keypoints.shape[2]):
+    ref_kpts_mm[:, :, 2] = keypoints[:, :, 2] # copy over scores
+    for kpi in range(keypoints.shape[1]):
         # fetch z height
         z_data[:, kpi] = frames[np.arange(frames.shape[0]), y_coords[:, kpi], x_coords[:, kpi]]
 
         # convert coordinates from px to mm
-        ref_kpts_mm[:, 0, kpi, :2] = convert_pxs_to_mm(keypoints[:, 0, kpi, :2], true_depth=true_depth)
+        ref_kpts_mm[:, kpi, :2] = convert_pxs_to_mm(keypoints[:, kpi, :2], true_depth=true_depth)
 
     # Rotated keypoints in px, relative to centroid
-    rot_kpts_px = rotate_points_batch(np.copy(keypoints), centers=centers, angles=angles)
-    rot_kpts_px[:, 0, :, :2] -= np.expand_dims(centers, axis=1)
+    rot_kpts_px = rotate_points_batch(np.copy(keypoints[:, :, :]), centers=centers, angles=angles)
+    rot_kpts_px[:, :, :2] -= np.expand_dims(centers, axis=1)
 
     # Rotated keypoints in mm, relative to centroid
     centroid_mm = convert_pxs_to_mm(centers, true_depth=true_depth)
     rot_kpts_mm = rotate_points_batch(np.copy(ref_kpts_mm), centers=centroid_mm, angles=angles)
-    rot_kpts_mm[:, 0, :, :2] -= np.expand_dims(centroid_mm, axis=1)
+    rot_kpts_mm[:, :, :2] -= np.expand_dims(centroid_mm, axis=1)
 
     # Record keypoint positions in both coordinate systems and units of measure
     out = {}
     for kpi, kpn in enumerate(default_keypoint_names):
-        out[f'reference/{kpn}_x_px'] = ref_kpts_px[:, 0, kpi, 0]
-        out[f'reference/{kpn}_y_px'] = ref_kpts_px[:, 0, kpi, 1]
-        out[f'reference/{kpn}_score'] = ref_kpts_px[:, 0, kpi, 2]
+        out[f'reference/{kpn}_x_px'] = ref_kpts_px[:, kpi, 0]
+        out[f'reference/{kpn}_y_px'] = ref_kpts_px[:, kpi, 1]
+        out[f'reference/{kpn}_score'] = ref_kpts_px[:, kpi, 2]
 
-        out[f'reference/{kpn}_x_mm'] = ref_kpts_mm[:, 0, kpi, 0]
-        out[f'reference/{kpn}_y_mm'] = ref_kpts_mm[:, 0, kpi, 1]
+        out[f'reference/{kpn}_x_mm'] = ref_kpts_mm[:, kpi, 0]
+        out[f'reference/{kpn}_y_mm'] = ref_kpts_mm[:, kpi, 1]
         out[f'reference/{kpn}_z_mm'] = z_data[:, kpi]
 
-        out[f'rotated/{kpn}_x_px'] = rot_kpts_px[:, 0, kpi, 0]
-        out[f'rotated/{kpn}_y_px'] = rot_kpts_px[:, 0, kpi, 1]
-        out[f'rotated/{kpn}_score'] = rot_kpts_px[:, 0, kpi, 2]
+        out[f'rotated/{kpn}_x_px'] = rot_kpts_px[:, kpi, 0]
+        out[f'rotated/{kpn}_y_px'] = rot_kpts_px[:, kpi, 1]
+        out[f'rotated/{kpn}_score'] = rot_kpts_px[:, kpi, 2]
 
-        out[f'rotated/{kpn}_x_mm'] = rot_kpts_mm[:, 0, kpi, 0]
-        out[f'rotated/{kpn}_y_mm'] = rot_kpts_mm[:, 0, kpi, 1]
+        out[f'rotated/{kpn}_x_mm'] = rot_kpts_mm[:, kpi, 0]
+        out[f'rotated/{kpn}_y_mm'] = rot_kpts_mm[:, kpi, 1]
         out[f'rotated/{kpn}_z_mm'] = z_data[:, kpi]
 
     return out

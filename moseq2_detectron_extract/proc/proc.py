@@ -544,8 +544,8 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     # frames x instances x keypoints x 3
     d2_masks, allocentric_keypoints, num_instances = mask_and_keypoints_from_model_output(model_outputs)
 
-    cleaned_frames = clean_frames(raw_frames, progress_bar=False, iters_tail=3)
-    features, masks = get_frame_features(cleaned_frames, progress_bar=False, mask=d2_masks[:, 0, :, :], use_cc=True, frame_threshold=3)
+    cleaned_frames = clean_frames(raw_frames, iters_tail=3, progress_bar=False)
+    features, masks = get_frame_features(cleaned_frames, mask=d2_masks[:, 0, :, :], use_cc=True, frame_threshold=3, progress_bar=False)
 
     angles = features['orientation']
     lengths = np.max(features['axis_length'], axis=1)
@@ -567,7 +567,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
         'masks': masks,
         'features': features,
         'flips': flips,
-        'keypoints': allocentric_keypoints,
+        'keypoints': allocentric_keypoints[:,0,...],
         'num_instances': num_instances
     }
 
