@@ -5,14 +5,13 @@ from detectron2.config.config import CfgNode
 from detectron2.data import (build_detection_test_loader,
                              build_detection_train_loader)
 from detectron2.data.dataset_mapper import DatasetMapper
-from detectron2.data.transforms.augmentation_impl import (RandomBrightness,
-                                                          RandomContrast,
-                                                          RandomRotation)
+from detectron2.data.transforms import (FixedSizeCrop, RandomBrightness,
+                                        RandomContrast, RandomRotation)
 from detectron2.engine.defaults import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
 from moseq2_detectron_extract.io.util import ensure_dir
 from moseq2_detectron_extract.model.augmentations import (
-    Albumentations, RandomFieldNoiseAugmentation)
+    Albumentations, RandomFieldNoiseAugmentation, ScaleAugmentation)
 from moseq2_detectron_extract.model.hooks import LossEvalHook
 from moseq2_detectron_extract.model.mapper import MoseqDatasetMapper
 
@@ -28,6 +27,8 @@ class Trainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg: CfgNode):
         augs = [
+            ScaleAugmentation(0.5, 1.2, 250, 250),
+            FixedSizeCrop((250, 250), pad=True, pad_value=0),
             RandomRotation([0, 360], expand=True, sample_style='range'),
             RandomBrightness(0.8, 1.2),
             RandomContrast(0.8, 1.2),
