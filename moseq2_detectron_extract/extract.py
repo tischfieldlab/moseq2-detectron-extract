@@ -20,6 +20,15 @@ from moseq2_detectron_extract.proc.util import check_completion_status
 
 
 def extract_session(session: Session, config: dict):
+    ''' Primary entrypoint to extraction pipeline
+
+    Parameters:
+    session (Session): moseq session to extract
+    config (dict): extraction configuration
+
+    Returns:
+    str: path to status dictionary file
+    '''
 
     overall_time = time.time()
 
@@ -33,9 +42,9 @@ def extract_session(session: Session, config: dict):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    setup_logging(os.path.join(output_dir, 'results_{:02d}.log'.format(config['bg_roi_index'])))
+    setup_logging(os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.log"))
 
-    status_filename = os.path.join(output_dir, 'results_{:02d}.yaml'.format(config['bg_roi_index']))
+    status_filename = os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.yaml")
     if check_completion_status(status_filename):
         logging.warning('WARNING: Session appears to already be extracted, so skipping!')
         return status_filename
@@ -87,17 +96,18 @@ def extract_session(session: Session, config: dict):
                 time.sleep(0.1)
             pipeline.input.put(shm)
             reader_pbar.put({'update': raw_frames.shape[0]})
-            cp = pipeline.progress.get_tqdm('producer')
-            if cp is not None:
-                n_frames = (cp.format_dict["n"] or 0)
-                t_frames = cp.format_dict["total"]
-                s_elapsed = cp.format_dict["elapsed"]
-                logging.info(f'Processed {n_frames} / {t_frames} frames ({n_frames/t_frames:.2%}) in {timedelta(seconds=s_elapsed)}', extra={'nostream': True})
+            producer_progress = pipeline.progress.get_tqdm('producer')
+            if producer_progress is not None:
+                n_frames = (producer_progress.format_dict["n"] or 0)
+                t_frames = producer_progress.format_dict["total"]
+                s_elapsed = producer_progress.format_dict["elapsed"]
+                msg = f'Processed {n_frames} / {t_frames} frames ({n_frames/t_frames:.2%}) in {timedelta(seconds=s_elapsed)}'
+                logging.info(msg, extra={'nostream': True})
         pipeline.input.put(None) # signal we are done
 
         # join the threads
         pipeline.shutdown()
-    except:
+    except Exception: # pylint: disable=broad-except
         logging.error('Error during extraction', exc_info=True)
 
     # mark status as complete and flush to filesystem

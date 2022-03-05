@@ -1,7 +1,7 @@
 import ast
 import json
 from pathlib import Path
-from typing import Any, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -10,8 +10,8 @@ import tifffile
 from imageio import imwrite
 
 
-def write_image(filename: str, image: np.ndarray, scale: bool=True, scale_factor: Optional[Union[float, Tuple[float, float]]]=None, dtype: npt.DTypeLike='uint16',
-                metadata: Optional[dict]=None, compress: int=0) -> None:
+def write_image(filename: str, image: np.ndarray, scale: bool=True, scale_factor: Optional[Union[float, Tuple[float, float]]]=None,
+                dtype: npt.DTypeLike='uint16', metadata: Optional[dict]=None, compress: int=0) -> None:
     ''' Save image data, possibly with scale factor for easy display
 
     Parameters:

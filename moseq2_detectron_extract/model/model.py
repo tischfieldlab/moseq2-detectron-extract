@@ -36,11 +36,11 @@ class Trainer(DefaultTrainer):
             # DoughnutNoiseAugmentation(),
             RandomFieldNoiseAugmentation(mu=10, std_limit=(10.0, 20.0), power=(2.0, 3.0))
         ]
-        return build_detection_train_loader(cfg, mapper=MoseqDatasetMapper(cfg, is_train=True, augmentations=augs))
+        return build_detection_train_loader(cfg, mapper=MoseqDatasetMapper(is_train=True, augmentations=augs)) # pylint disable=too-many-function-args
 
     @classmethod
     def build_test_loader(cls, cfg: CfgNode, dataset_name: str):
-        return build_detection_test_loader(cfg, dataset_name, mapper=MoseqDatasetMapper(cfg, is_train=False, augmentations=[]))
+        return build_detection_test_loader(cfg, dataset_name, mapper=MoseqDatasetMapper(is_train=False, augmentations=[])) # pylint disable=too-many-function-args
 
     @classmethod
     def build_evaluator(cls, cfg: CfgNode, dataset_name: str, output_folder: str=None):

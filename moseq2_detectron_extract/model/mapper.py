@@ -9,6 +9,8 @@ from moseq2_detectron_extract.io.image import read_image
 
 
 class MoseqDatasetMapper(DatasetMapper):
+    ''' Custom dataset mapper for moseq data
+    '''
 
     def __call__(self, dataset_dict: dict):
         '''

@@ -8,6 +8,8 @@ from torch.multiprocessing import Queue
 
 
 class ProcessProgress(Thread):
+    ''' Class to track progress in multiprocessing workers
+    '''
     def __init__(self) -> None:
         super().__init__(name='progress', daemon=True)
         self.workers: List[dict] = []
@@ -15,27 +17,49 @@ class ProcessProgress(Thread):
         self.disabled = False
 
     def shutdown(self):
+        ''' Signal that this thread should shutdown
+        '''
         self.done = True
 
-    def add(self, name='', show=True, **kwargs):
-        q = Queue()
+    def add(self, name: str='', show: bool=True, **kwargs) -> Queue:
+        ''' Add a progress tracker
+
+        Parameters:
+        name (str): Name of this progress tracker, used as tqdm desc attribute
+        show (bool): If True, display progress using tqdm progress bars
+        **kwargs: additional arguments passed to tqdm constructor
+
+        Returns:
+        Queue - used to send messages for this progress
+        '''
+        queue = Queue()
         prog = {
             'name': name,
             'show': show,
-            'q': q
+            'q': queue
         }
         if not self.disabled and show:
             prog['tqdm'] = tqdm.tqdm(**kwargs)
         self.workers.append(prog)
-        return q
+        return queue
 
     def get_tqdm(self, name: str) -> Union[tqdm.tqdm, None]:
-        for w in self.workers:
-            if w['name'] == name:
-                return w['tqdm']
+        ''' Get the tqdm progress instance for a particular progress queue. If not shown, returns None
+
+        Parameters:
+        name (str): name of the progress queue to find
+
+        Returns:
+        tqdm.tqdm | None - if name is found and is shown, returns tqdm instance, otherwise None
+        '''
+        for worker in self.workers:
+            if worker['name'] == name:
+                return worker['tqdm']
         return None
 
     def run(self) -> None:
+        ''' Main loop for this thread
+        '''
         if self.disabled:
             return
         while not self.done:

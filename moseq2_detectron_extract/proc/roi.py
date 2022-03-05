@@ -39,7 +39,7 @@ def get_roi(depth_image,
         depth_image, noise_tolerance=noise_tolerance, mask=mask, **kwargs)
     dist_ims = dists.reshape(depth_image.shape)
 
-    if gradient_filter:
+    if gradient_filter and mask is not None:
         dist_ims[~mask] = np.inf
 
     bin_im = dist_ims < noise_tolerance
@@ -94,8 +94,8 @@ def get_roi(depth_image,
     if overlap_roi is not None:
         overlaps = np.zeros_like(areas)
 
-        for i in range(len(rois)):
-            overlaps[i] = np.sum(np.logical_and(overlap_roi, rois[i]))
+        for i, roi in enumerate(rois):
+            overlaps[i] = np.sum(np.logical_and(overlap_roi, roi))
 
         del_roi = np.argmax(overlaps)
         del rois[del_roi]
@@ -165,7 +165,7 @@ def plane_ransac(depth_image, depth_range=(650, 750), iters=1000, noise_toleranc
 
     npoints = np.sum(use_points)
 
-    for i in tqdm.tqdm(range(iters), disable=not progress_bar, leave=False, desc='Finding plane'):
+    for _ in tqdm.tqdm(range(iters), disable=not progress_bar, leave=False, desc='Finding plane'):
 
         sel = coords[np.random.choice(coords.shape[0], 3, replace=True), :]
         tmp_plane = plane_fit3(sel)
@@ -269,7 +269,7 @@ def get_roi_contour(roi: np.ndarray, crop: bool=True) -> np.ndarray:
         mask = roi[bbox[0, 0]:bbox[1, 0], bbox[0, 1]:bbox[1, 1]]
     else:
         mask = np.copy(roi)
-    contours, hierarchy = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     return contours
 
 
@@ -310,7 +310,7 @@ def get_bground_im_file(frames_file: Union[str, TarInfo], frame_stride: int=500,
             finfo = get_raw_info(frames_file)
         elif fname.endswith('avi'):
             finfo = get_video_info(frames_file)
-    except AttributeError as e:
+    except AttributeError:
         finfo = get_raw_info(frames_file)
 
     frame_idx = np.arange(0, finfo['nframes'], frame_stride)
@@ -322,7 +322,7 @@ def get_bground_im_file(frames_file: Union[str, TarInfo], frame_stride: int=500,
                 frs = read_frames_raw(frames_file, int(frame)).squeeze()
             elif fname.endswith('avi'):
                 frs = read_frames(frames_file, [int(frame)]).squeeze()
-        except AttributeError as e:
+        except AttributeError:
             frs = read_frames_raw(frames_file, int(frame), **kwargs).squeeze()
 
         frame_store[i, ...] = cv2.medianBlur(frs, med_scale)

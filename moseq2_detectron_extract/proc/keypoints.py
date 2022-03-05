@@ -45,7 +45,8 @@ def rotate_points_batch(points: np.ndarray, centers: np.ndarray, angles: Union[n
     Parameters:
     points (np.ndarray): array of shape (nframes, nkeypoints, 2|3 [x, y, s?]) to be rotated
     centers (np.ndarray): array of rotation centers of shape (nframes, 2 [x, y])
-    angles (Union[np.ndarray, float]): number of degrees to rotate the points. If a scalar, same angle is used for all frames. Otherwise should be np.ndarray of shape (nframes,)
+    angles (Union[np.ndarray, float]): number of degrees to rotate the points. If a scalar, same angle is used for all frames.
+        Otherwise should be np.ndarray of shape (nframes,)
 
     Returns:
     np.ndarray containing rotated points of same shape as `points`
@@ -56,7 +57,7 @@ def rotate_points_batch(points: np.ndarray, centers: np.ndarray, angles: Union[n
     elif isinstance(angles, np.ndarray):
         angles_array = np.array(angles)
     else:
-        raise TypeError('Expected angles to be of type numpy.ndarray or float, got {} instead!'.format(type(angles).__name__))
+        raise TypeError(f'Expected angles to be of type numpy.ndarray or float, got {type(angles).__name__} instead!')
 
     for i in range(points.shape[0]):
         points[i] = rotate_points(points[i], centers[i], angles_array[i])
@@ -161,8 +162,8 @@ def keypoints_to_dict(keypoints: np.ndarray, frames: np.ndarray, centers: np.nda
     return out
 
 
-def load_keypoint_data_from_h5(h5: h5py.File, keypoints: List[str]=None, coord_system: Literal['reference', 'rotated']='reference',
-    units: Literal['px','mm']='px', root: str='/keypoints'):
+def load_keypoint_data_from_h5(h5_file: h5py.File, keypoints: List[str]=None, coord_system: Literal['reference', 'rotated']='reference',
+                               units: Literal['px','mm']='px', root: str='/keypoints'):
     ''' Load keypoint data from a result h5 files.
 
     Parameters:
@@ -183,11 +184,11 @@ def load_keypoint_data_from_h5(h5: h5py.File, keypoints: List[str]=None, coord_s
         root = root + '/'
 
     keys = [f'{root}{coord_system}/{kp}' for kp in keypoints]
-    data: np.ndarray = np.ndarray((h5['frames'].shape[0], len(keys), 3), dtype=float)
+    data: np.ndarray = np.ndarray((h5_file['frames'].shape[0], len(keys), 3), dtype=float)
     for kpi, kp in enumerate(keys):
-        data[:, kpi, 0] = h5[f'{kp}_x_{units}'][()]
-        data[:, kpi, 1] = h5[f'{kp}_y_{units}'][()]
-        data[:, kpi, 2] = h5[f'{kp}_score'][()]
+        data[:, kpi, 0] = h5_file[f'{kp}_x_{units}'][()]
+        data[:, kpi, 1] = h5_file[f'{kp}_y_{units}'][()]
+        data[:, kpi, 2] = h5_file[f'{kp}_score'][()]
     return data
 
 

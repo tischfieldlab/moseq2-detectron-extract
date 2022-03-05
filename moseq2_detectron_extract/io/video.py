@@ -17,6 +17,8 @@ import tqdm
 
 
 class RawVideoInfo(TypedDict):
+    ''' Represents metadata about raw video data
+    '''
     bytes: int
     nframes: int
     dims: Tuple[int, int]
@@ -54,6 +56,8 @@ def get_raw_info(filename: Union[str, tarfile.TarInfo], bit_depth: int=16, frame
 
 FramesSelection = Union[int, Iterable[int]]
 class BlockInfo(TypedDict):
+    ''' Represents a contiguous block of data to be read
+    '''
     seek_point: int
     read_bytes: int
     read_points: int
@@ -103,25 +107,25 @@ def read_frames_raw(filename: Union[str, tarfile.TarInfo], frames: FramesSelecti
 
     out_buffer = np.empty((len(frames), frame_dims[1], frame_dims[0]), dtype=np.dtype(dtype))
     if isinstance(tar_object, tarfile.TarFile):
-        with tar_object.extractfile(filename) as f:
-            for b in blocks:
-                f.seek(b['seek_point'])
-                chunk = f.read(b['read_bytes'])
-                chunk = np.frombuffer(chunk, dtype=np.dtype(dtype)).reshape(b['dims'])
-                out_buffer[b['idxs'], ...] = chunk
+        with tar_object.extractfile(filename) as frames_file:
+            for blk in blocks:
+                frames_file.seek(blk['seek_point'])
+                chunk = frames_file.read(blk['read_bytes'])
+                chunk = np.frombuffer(chunk, dtype=np.dtype(dtype)).reshape(blk['dims'])
+                out_buffer[blk['idxs'], ...] = chunk
     elif isinstance(filename, str):
-        with open(filename, "rb") as f:
-            for b in blocks:
-                f.seek(b['seek_point'])
-                chunk = np.fromfile(file=f, dtype=np.dtype(dtype), count=b['read_points']).reshape(b['dims'])
-                out_buffer[b['idxs'], ...] = chunk
+        with open(filename, "rb") as frames_file:
+            for blk in blocks:
+                frames_file.seek(blk['seek_point'])
+                chunk = np.fromfile(file=frames_file, dtype=np.dtype(dtype), count=blk['read_points']).reshape(blk['dims'])
+                out_buffer[blk['idxs'], ...] = chunk
     else:
         raise ValueError('Could not read!')
 
     return out_buffer
 
 T = TypeVar('T', int, float)
-def collapse_consecutive_values(a: Iterable[T]) -> List[Tuple[T, int]]:
+def collapse_consecutive_values(values: Iterable[T]) -> List[Tuple[T, int]]:
     ''' Collapses consecutive values in an array
 
     Example:
@@ -135,14 +139,16 @@ def collapse_consecutive_values(a: Iterable[T]) -> List[Tuple[T, int]]:
     List[Tuple[float, int]]: each tuple contains (seed, run_count)
     '''
     grouped_instances = []
-    for _, g in groupby(enumerate(a), lambda ix : ix[0] - ix[1]):
-        local_group = list(map(itemgetter(1), g))
+    for _, group in groupby(enumerate(values), lambda ix : ix[0] - ix[1]):
+        local_group = list(map(itemgetter(1), group))
         grouped_instances.append((local_group[0], len(local_group)))
     return grouped_instances
 #end collapse_adjacent_values()
 
 
 class FFProbeInfo(TypedDict):
+    ''' Represents the results of an ffprobe call
+    '''
     file: str
     codec: str
     pixel_format: str
@@ -165,12 +171,12 @@ def get_video_info(filename: Union[str, tarfile.TarInfo], tar_object: tarfile.Ta
     '''
     if tar_object is not None and isinstance(filename, tarfile.TarInfo):
         is_stream = True
-        f = tempfile.NamedTemporaryFile(delete=False)
+        tmp_file = tempfile.NamedTemporaryFile(delete=False)
         efile = tar_object.extractfile(filename)
         if efile is not None:
-            f.write(efile.read())
-        f.close()
-        probe_filename = f.name
+            tmp_file.write(efile.read())
+        tmp_file.close()
+        probe_filename = tmp_file.name
     elif isinstance(filename, str):
         is_stream = False
         probe_filename = filename
@@ -193,7 +199,7 @@ def get_video_info(filename: Union[str, tarfile.TarInfo], tar_object: tarfile.Ta
     out, err = ffmpeg.communicate()
 
     if is_stream:
-        os.remove(f.name)
+        os.remove(tmp_file.name)
 
     if err:
         logging.error(err, stack_info=True)
@@ -222,9 +228,9 @@ def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
 
     frame_size_str: str
     if frame_size is None and isinstance(frames, np.ndarray):
-        frame_size_str = '{0:d}x{1:d}'.format(frames.shape[2], frames.shape[1])
+        frame_size_str = f'{frames.shape[2]:d}x{frames.shape[1]:d}'
     elif frame_size is None and isinstance(frames, tuple):
-        frame_size_str = '{0:d}x{1:d}'.format(frames[0], frames[1])
+        frame_size_str = f'{frames[0]:d}x{frames[1]:d}'
     else:
         frame_size_str = frame_size
 
@@ -265,7 +271,7 @@ def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
 
 def read_frames(filename: Union[str, tarfile.TarInfo], frames=range(0,), threads: int=6, fps: int=30,
                 pixel_format: str='gray16le', frame_size: Tuple[int, int]=None,
-                slices: int=24, slicecrc: int=1, get_cmd=False, tar_object=None, **_):
+                slices: int=24, slicecrc: int=1, tar_object=None, **_):
     '''
     Reads in frames from the .nut/.avi file using a pipe from ffmpeg.
 
@@ -284,10 +290,10 @@ def read_frames(filename: Union[str, tarfile.TarInfo], frames=range(0,), threads
     '''
     if isinstance(filename, tarfile.TarInfo):
         is_stream = True
-        f = tempfile.NamedTemporaryFile(delete=False)
-        f.write(tar_object.extractfile(filename).read())
-        f.close()
-        frames_filename = f.name
+        tmp_file = tempfile.NamedTemporaryFile(delete=False)
+        tmp_file.write(tar_object.extractfile(filename).read())
+        tmp_file.close()
+        frames_filename = tmp_file.name
     else:
         is_stream = False
         frames_filename = filename
@@ -317,7 +323,7 @@ def read_frames(filename: Union[str, tarfile.TarInfo], frames=range(0,), threads
             '-i', frames_filename,
             '-vframes', str(nframes),
             '-f', 'image2pipe',
-            '-s', '{:d}x{:d}'.format(frame_size[0], frame_size[1]),
+            '-s', f'{frame_size[0]:d}x{frame_size[1]:d}',
             '-pix_fmt', pixel_format,
             '-threads', str(threads),
             '-slices', str(slices),
@@ -329,14 +335,14 @@ def read_frames(filename: Union[str, tarfile.TarInfo], frames=range(0,), threads
         pipe = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
         out, err = pipe.communicate()
 
-        if(err):
+        if err:
             raise Error(err)
 
         idxs = [frames.index(start + i) for i in range(nframes)]
         out_video[idxs] = np.frombuffer(out, dtype=dtype).reshape((nframes, *out_shape[1:]))
 
     if is_stream:
-        os.remove(f.name)
+        os.remove(tmp_file.name)
 
     return out_video
 # simple command to pipe frames from an ffv1 file
@@ -365,10 +371,10 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
     if not np.mod(frames.shape[2], 2) == 0:
         frames = np.pad(frames, ((0, 0), (0, 0), (0, 1)), 'constant', constant_values=0)
 
-    if not frame_size and type(frames) is np.ndarray:
-        frame_size = '{0:d}x{1:d}'.format(frames.shape[2], frames.shape[1])
-    elif not frame_size and type(frames) is tuple:
-        frame_size = '{0:d}x{1:d}'.format(frames[0], frames[1])
+    if not frame_size and isinstance(frames, np.ndarray):
+        frame_size = f'{frames.shape[2]:d}x{frames.shape[1]:d}'
+    elif not frame_size and isinstance(frames, tuple):
+        frame_size = f'{frames[0]:d}x{frames[1]:d}'
 
     command = [
         'ffmpeg',
@@ -466,7 +472,7 @@ def load_movie_data(filename: Union[str, tarfile.TarInfo], frames=None, frame_di
     else:
         fname = filename.lower()
 
-    if type(frames) is int:
+    if isinstance(frames, int):
         frames = [frames]
 
     if fname.endswith('.dat'):
@@ -481,7 +487,8 @@ def load_movie_data(filename: Union[str, tarfile.TarInfo], frames=None, frame_di
     return frame_data
 
 
-def get_movie_info(filename: Union[str, tarfile.TarInfo], frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16, tar_object: tarfile.TarFile=None):
+def get_movie_info(filename: Union[str, tarfile.TarInfo], frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16,
+                   tar_object: tarfile.TarFile=None):
     '''
     Gets movie info
     '''
@@ -500,6 +507,8 @@ def get_movie_info(filename: Union[str, tarfile.TarInfo], frame_dims: Tuple[int,
 
 
 class PreviewVideoWriter():
+    ''' Encapsulate state needed for generating Preview Videos
+    '''
     def __init__(self, filename: str, fps: int=30, vmin: float=0, vmax: float=100, tqdm_opts: dict=None) -> None:
         self.filename = filename
         self.fps = fps
@@ -514,6 +523,12 @@ class PreviewVideoWriter():
             self.tqdm_opts.update(tqdm_opts)
 
     def write_frames(self, frame_idxs: np.ndarray, frames: np.ndarray):
+        ''' Write frames to the preview video
+
+        Parameters:
+        frame_idxs (np.ndarray): indicies of the frames being written
+        frames (np.ndarray): frames to render
+        '''
         self.video_pipe = write_frames_preview(
                 self.filename,
                 frames,
@@ -524,5 +539,7 @@ class PreviewVideoWriter():
                 tqdm_kwargs=self.tqdm_opts)
 
     def close(self):
+        ''' Close the video writer
+        '''
         if self.video_pipe:
             self.video_pipe.communicate()

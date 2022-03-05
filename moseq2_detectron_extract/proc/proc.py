@@ -1,4 +1,4 @@
-from typing import Dict, Iterable, List, Literal, Sequence, Tuple
+from typing import Dict, List, Literal, Sequence, Tuple
 
 import cv2
 import matplotlib.pyplot as plt
@@ -15,7 +15,8 @@ def stack_videos(videos: Sequence[np.ndarray], orientation: Literal['horizontal'
     ''' Stack videos according to orientation to create one big video
 
     Parameters:
-    videos (Iterable[np.ndarray]): Iterable of videos to stack of shape (nframes, height, width, channels). All videos must match dimentions in axis 0 and axis 3
+    videos (Iterable[np.ndarray]): Iterable of videos to stack of shape (nframes, height, width, channels).
+        All videos must match dimentions in axis 0 and axis 3
     orientation (Literal['horizontal', 'vertical', 'diagional']): orientation of stacking.
 
     Retruns:
@@ -93,7 +94,7 @@ def reduce_dtypes(data: Sequence[np.ndarray]) -> npt.DTypeLike:
     if len(dtypes) == 1:
         return dtypes.pop()
     else:
-        raise ValueError(f'Arrays should have same dtype!')
+        raise ValueError('Arrays should have same dtype!')
 
 
 def colorize_video(frames: np.ndarray, vmin: float=0, vmax: float=100, cmap: str='jet') -> np.ndarray:
@@ -119,7 +120,8 @@ def colorize_video(frames: np.ndarray, vmin: float=0, vmax: float=100, cmap: str
     return disp_img.astype('uint8')
 
 
-def prep_raw_frames(frames: np.ndarray, bground_im: np.ndarray=None, roi: np.ndarray=None, vmin: float=None, vmax: float=None, dtype: npt.DTypeLike='uint8'):
+def prep_raw_frames(frames: np.ndarray, bground_im: np.ndarray=None, roi: np.ndarray=None, vmin: float=None, vmax: float=None,
+                    dtype: npt.DTypeLike='uint8'):
     ''' Prepare raw `frames` by:
             1) subtracting background based on `bground_im`
             2) applying a region of interest (crop and mask according to `roi`)
@@ -186,7 +188,7 @@ def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.n
 
     nframes = frames.shape[0]
 
-    if type(mask) is np.ndarray and mask.size > 0:
+    if isinstance(mask, np.ndarray) and mask.size > 0:
         has_mask = True
     else:
         has_mask = False
@@ -198,7 +200,7 @@ def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.n
         'axis_length': np.empty((nframes, 2)),
     }
 
-    for k, v in features.items():
+    for k, _ in features.items():
         features[k][:] = np.nan
 
     features['contour'] = []
@@ -216,7 +218,7 @@ def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.n
         else:
             mask[i, ...] = frame_mask
 
-        cnts, hierarchy = cv2.findContours(
+        cnts, _ = cv2.findContours(
             frame_mask.astype('uint8'),
             cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         tmp = np.array([cv2.contourArea(x) for x in cnts])
@@ -233,7 +235,18 @@ def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.n
     return features, mask
 
 
-def crop_and_rotate_frame(frame: np.ndarray, center: Tuple[float, float], angle: float, crop_size: Tuple[int, int]=(80, 80)):
+def crop_and_rotate_frame(frame: np.ndarray, center: Tuple[float, float], angle: float, crop_size: Tuple[int, int]=(80, 80)) -> np.ndarray:
+    ''' Rotate a singe frame around `center` by `angle` degrees and crop to `crop_size` centered on `center`
+
+    Parameters:
+    frame (np.ndarray): Frame to crop and rotate, of shape (x, y)
+    center (Tuple[float, float]): center coordinates of operation, (x, y)
+    angle (float): angle by which to rotate, in degrees
+    crop_size (Tuple[int, int]): size of the output image, (x, y)
+
+    Returns:
+    np.ndarray: copped and rotated frames
+    '''
     if np.isnan(angle) or np.any(np.isnan(center)):
         return np.zeros_like(frame, shape=crop_size)
 
@@ -248,9 +261,19 @@ def crop_and_rotate_frame(frame: np.ndarray, center: Tuple[float, float], angle:
     return cv2.warpAffine(use_frame[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
 
 
-def crop_and_rotate_frames(frames: np.ndarray, features: dict, crop_size: Tuple[int, int]=(80, 80),
+def crop_and_rotate_frames(frames: np.ndarray, features: Dict[str, np.ndarray], crop_size: Tuple[int, int]=(80, 80),
                            progress_bar: bool=True):
+    ''' Rotate a `frames` and crop to `crop_size` given features (containing orientation and centroid keys)
 
+    Parameters:
+    frames (np.ndarray): Frames to crop and rotate, of shape (nframes, x, y)
+    features (Dict[str, np.ndarray]): dict of features, containing keys orientation and centroid
+    crop_size (Tuple[int, int]): size of the output image, (x, y)
+    progress_bar (bool): True to show a progress bar for the operation
+
+    Returns:
+    np.ndarray: copped and rotated frames
+    '''
     nframes = frames.shape[0]
     cropped_frames = np.zeros((nframes, crop_size[0], crop_size[1]), frames.dtype)
     win = (crop_size[0] // 2, crop_size[1] // 2 + 1)
@@ -286,6 +309,8 @@ def crop_and_rotate_frames(frames: np.ndarray, features: dict, crop_size: Tuple[
 
 def feature_hampel_filter(features, centroid_hampel_span=None, centroid_hampel_sig=3,
                           angle_hampel_span=None, angle_hampel_sig=3):
+    ''' Apply a hampel filter to features
+    '''
 
     if centroid_hampel_span is not None and centroid_hampel_span > 0:
         padded_centroids = np.pad(features['centroid'],
@@ -316,6 +341,8 @@ def feature_hampel_filter(features, centroid_hampel_span=None, centroid_hampel_s
 
 
 def hampel_filter(data, span, sigma=3):
+    ''' Apply a hampel filter
+    '''
     if len(data.shape) == 1:
         padded_data = np.pad(data, (span // 2, span // 2), 'constant', constant_values=np.nan)
         vws = broadcasting_app(padded_data, span, 1)
@@ -335,7 +362,7 @@ def hampel_filter(data, span, sigma=3):
             fill_idx = np.where(vals > med + sigma * mad)[0]
             data[fill_idx, i] = med[fill_idx]
     else:
-        raise ValueError("cannot accept data with {} dimentions!".format(len(data.shape)))
+        raise ValueError(f"cannot accept data with {len(data.shape)} dimentions!")
 
     return data
 
@@ -365,31 +392,31 @@ def clean_frames(frames: np.ndarray, prefilter_space=(3,), prefilter_time=None,
             filtered_frames[i, ...] = cv2.erode(filtered_frames[i, ...], strel_min, iters_min)
 
         if prefilter_space is not None and np.all(np.array(prefilter_space) > 0):
-            for j in range(len(prefilter_space)):
-                filtered_frames[i, ...] = cv2.medianBlur(filtered_frames[i, ...], prefilter_space[j])
+            for pfs in prefilter_space:
+                filtered_frames[i, ...] = cv2.medianBlur(filtered_frames[i, ...], pfs)
 
         if iters_tail is not None and iters_tail > 0:
             filtered_frames[i, ...] = cv2.morphologyEx(filtered_frames[i, ...], cv2.MORPH_OPEN, strel_tail, iters_tail)
 
     if prefilter_time is not None and np.all(np.array(prefilter_time) > 0) and np.all(np.array(prefilter_time) <= filtered_frames.shape[0]):
-        for j in range(len(prefilter_time)):
-            filtered_frames = scipy.signal.medfilt(filtered_frames, [prefilter_time[j], 1, 1])
+        for pft in prefilter_time:
+            filtered_frames = scipy.signal.medfilt(filtered_frames, [pft, 1, 1])
 
     return filtered_frames
 
 
-def im_moment_features(IM: np.ndarray) -> dict:
+def im_moment_features(image: np.ndarray) -> dict:
     ''' Use the method of moments and centralized moments to get image properties
 
     Parameters:
-    IM (2d numpy array): depth image
+    image (2d numpy array): depth image
 
     Returns:
     Features (dictionary): returns a dictionary with orientation,
     centroid, and ellipse axis length
     '''
 
-    tmp = cv2.moments(IM)
+    tmp = cv2.moments(image)
     num = 2*tmp['mu11']
     den = tmp['mu20']-tmp['mu02']
 
@@ -424,7 +451,7 @@ def get_largest_cc(frames, progress_bar=False):
     foreground_obj = np.zeros((frames.shape), 'bool')
 
     for i in tqdm.tqdm(range(frames.shape[0]), disable=not progress_bar, desc='CC'):
-        nb_components, output, stats, centroids =\
+        _, output, stats, _ =\
             cv2.connectedComponentsWithStats(frames[i, ...], connectivity=4)
         szs = stats[:, -1]
         foreground_obj[i, ...] = output == szs[1:].argmax()+1
@@ -432,15 +459,30 @@ def get_largest_cc(frames, progress_bar=False):
     return foreground_obj
 
 
-# from https://stackoverflow.com/questions/40084931/taking-subarrays-from-numpy-array-with-given-stride-stepsize/40085052#40085052
-# dang this is fast!
-def strided_app(a, L, S):  # Window len = L, Stride len/stepsize = S
+
+def strided_app(a, L, S):
+    '''Make a strided app
+    see: https://stackoverflow.com/questions/40084931/taking-subarrays-from-numpy-array-with-given-stride-stepsize/40085052#40085052
+    dang this is fast!
+
+    Parameters:
+    a: array
+    L: Window len
+    S: Stride len/stepsize
+    '''
     nrows = ((a.size-L)//S)+1
     n = a.strides[0]
     return np.lib.stride_tricks.as_strided(a, shape=(nrows, L), strides=(S*n, n))
 
 
-def broadcasting_app(a, L, S ):  # Window len = L, Stride len/stepsize = S
+def broadcasting_app(a, L, S ):
+    '''Make a broadcasting app
+
+    Parameters:
+    a: array
+    L: Window len
+    S: Stride len/stepsize
+    '''
     nrows = ((a.size-L)//S)+1
     return a[S*np.arange(nrows)[:,None] + np.arange(L)]
 
@@ -573,6 +615,14 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
 
 
 def flips_from_keypoints(keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray, length: float=80):
+    ''' Estimate flips given keypoints, centroids, angles, and lengths
+
+    Parameters:
+    keypoints (np.ndarray): keypoint data, of shape (nframes, nkeypoints, 3 [x, y, s])
+    centroids (np.ndarray): centroid data, of shape (nframes, 2 [x, y])
+    angles (np.ndarray): angle data, of shape (nframes,)
+    length (np.ndarray): length data, of shape (nframes,)
+    '''
     front_keypoints = [0, 1, 2, 3]
     rear_keypoints = [4, 5, 6]
 

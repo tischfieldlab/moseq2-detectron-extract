@@ -13,8 +13,11 @@ from moseq2_detectron_extract.model.util import (get_last_checkpoint,
 from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
 from moseq2_detectron_extract.proc.proc import scale_raw_frames
 
+# pylint: disable=attribute-defined-outside-init
 
 class InferenceStep(PipelineStep):
+    ''' Step to provide inference on frame data
+    '''
 
     def initialize(self):
         warnings.filterwarnings("ignore", category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
@@ -33,7 +36,7 @@ class InferenceStep(PipelineStep):
         else:
             cfg = get_base_config()
             checkpoint = self.config['checkpoint']
-            with open(os.path.join(self.config['model_dir'], 'config.yaml'), 'r') as cfg_file:
+            with open(os.path.join(self.config['model_dir'], 'config.yaml'), 'r', encoding='utf-8') as cfg_file:
                 cfg = cfg.load_cfg(cfg_file)
 
             if checkpoint == 'last':

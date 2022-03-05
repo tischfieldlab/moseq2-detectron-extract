@@ -1,8 +1,10 @@
 
+from abc import ABC
 import os
 from typing import Dict, List
 
 import torch
+from torch import Tensor, nn
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config.config import CfgNode
 from detectron2.evaluation import print_csv_format
@@ -13,16 +15,23 @@ from detectron2.structures import Boxes
 from detectron2.utils.env import TORCH_VERSION
 from detectron2.utils.file_io import PathManager
 from detectron2.utils.logger import setup_logger
+
 from moseq2_detectron_extract.model.eval import \
     inference_on_dataset_readonly_model
 from moseq2_detectron_extract.model.model import Trainer
-from torch import Tensor, nn
 
 
 def export_model(cfg: CfgNode, output: str, run_eval: bool=True):
+    ''' Export a model
+
+    Parameters:
+    cfg (CfgNode): model configuration
+    output (str): Destination directory for the model
+    run_eval (bool): if True, run evaluation metrics on model
+    '''
     logger = setup_logger()
 
-    torch._C._jit_set_bailout_depth(1) # type: ignore
+    torch._C._jit_set_bailout_depth(1) # type: ignore; pylint: disable=protected-access
 
     # cuda context is initialized before creating dataloader, so we don't fork anymore
     cfg.DATALOADER.NUM_WORKERS = 0
@@ -54,6 +63,12 @@ def export_model(cfg: CfgNode, output: str, run_eval: bool=True):
 
 
 def export_scripting(torch_model, output: str):
+    ''' Export a model via scripting
+
+    Parameters:
+    torch_model (): model to export
+    output (str): destination directory to save model
+    '''
     assert TORCH_VERSION >= (1, 8)
     fields = {
         "proposal_boxes": Boxes,
@@ -67,9 +82,10 @@ def export_scripting(torch_model, output: str):
     }
     #assert args.format == "torchscript", "Scripting only supports torchscript format."
 
-    class ScriptableAdapterBase(nn.Module):
-        # Use this adapter to workaround https://github.com/pytorch/pytorch/issues/46944
-        # by not retuning instances but dicts. Otherwise the exported model is not deployable
+    class ScriptableAdapterBase(nn.Module, ABC):
+        ''' Use this adapter to workaround https://github.com/pytorch/pytorch/issues/46944
+            by not retuning instances but dicts. Otherwise the exported model is not deployable
+        '''
         def __init__(self):
             super().__init__()
             self.model = torch_model
@@ -77,7 +93,11 @@ def export_scripting(torch_model, output: str):
 
     if isinstance(torch_model, GeneralizedRCNN):
         class GRCNNScriptableAdapter(ScriptableAdapterBase):
+            ''' Adapter for GeneralizedRCNN models
+            '''
             def forward(self, inputs: List[Dict[str, torch.Tensor]]) -> List[Dict[str, Tensor]]:
+                ''' Forward pass implementation
+                '''
                 instances = self.model.inference(inputs, do_postprocess=False)
                 return [i.get_fields() for i in instances]
 
@@ -85,14 +105,18 @@ def export_scripting(torch_model, output: str):
 
     else:
         class ScriptableAdapter(ScriptableAdapterBase):
+            ''' Adapter for non-GeneralizedRCNN models
+            '''
             def forward(self, inputs: List[Dict[str, torch.Tensor]]) -> List[Dict[str, Tensor]]:
+                ''' Forward pass implementation
+                '''
                 instances = self.model(inputs)
                 return [i.get_fields() for i in instances]
 
         ts_model = scripting_with_instances(ScriptableAdapter(), fields)
 
-    with PathManager.open(os.path.join(output, "model.ts"), "wb") as f:
-        torch.jit.save(ts_model, f)
+    with PathManager.open(os.path.join(output, "model.ts"), "wb") as model_file:
+        torch.jit.save(ts_model, model_file)
     dump_torchscript_IR(ts_model, output)
 
     # TODO inference in Python now missing postprocessing glue code

@@ -21,6 +21,8 @@ from moseq2_detectron_extract.model.util import outputs_to_instances
 
 
 class Evaluator:
+    ''' Performs evaluation of a model on a dataset
+    '''
     def __init__(self, cfg: CfgNode) -> None:
         self.cfg = cfg.clone()  # cfg can be modified by model
         self.model = build_model(self.cfg)
@@ -71,7 +73,7 @@ def inference_on_dataset_readonly_model(
     '''
     num_devices = get_world_size()
     logger = logging.getLogger(__name__)
-    logger.info("Start inference on {} batches".format(len(data_loader)))
+    logger.info(f'Start inference on {len(data_loader)} batches')
 
     total = len(data_loader)  # inference data loader must have a fixed length
     if evaluator is None:
@@ -144,18 +146,13 @@ def inference_on_dataset_readonly_model(
     # Measure the time only for this worker (before the synchronization barrier)
     total_time = time.perf_counter() - start_time
     total_time_str = str(datetime.timedelta(seconds=total_time))
+    rate = total_time / (total - num_warmup)
     # NOTE this format is parsed by grep
-    logger.info(
-        "Total inference time: {} ({:.6f} s / iter per device, on {} devices)".format(
-            total_time_str, total_time / (total - num_warmup), num_devices
-        )
-    )
+    logger.info(f"Total inference time: {total_time_str} ({rate:.6f} s / iter per device, on {num_devices} devices)")
+
     total_compute_time_str = str(datetime.timedelta(seconds=int(total_compute_time)))
-    logger.info(
-        "Total inference pure compute time: {} ({:.6f} s / iter per device, on {} devices)".format(
-            total_compute_time_str, total_compute_time / (total - num_warmup), num_devices
-        )
-    )
+    rate = total_compute_time / (total - num_warmup)
+    logger.info(f"Total inference pure compute time: {total_compute_time_str} ({rate:.6f} s / iter per device, on {num_devices} devices)")
 
     results = evaluator.evaluate()
     # An evaluator may return None when not in main process.

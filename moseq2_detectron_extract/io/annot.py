@@ -2,20 +2,22 @@ import json
 import logging
 import os
 import random
-from typing import (Callable, Dict, Iterable, List, MutableSequence, Optional,
-                    Sequence, Tuple, Union, cast)
+from typing import (Callable, Dict, Iterable, List, Literal, MutableSequence,
+                    Optional, Sequence, Tuple, TypedDict, Union, cast)
 
-import numpy as np
-import pycocotools
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
-from moseq2_detectron_extract.io.image import read_image
+import numpy as np
+import pycocotools
 from skimage.draw import polygon
 from tqdm import tqdm
-from typing_extensions import Literal, TypedDict
+
+from moseq2_detectron_extract.io.image import read_image
 
 
 class SegmAnnotation(TypedDict):
+    ''' Annotation data used for segmentation tasks
+    '''
     bbox: Sequence[float]
     bbox_mode: BoxMode
     category_id: int
@@ -23,20 +25,20 @@ class SegmAnnotation(TypedDict):
 
 
 class KptSegmAnnotation(SegmAnnotation):
+    ''' Annotation data used for koypoint detection tasks
+    '''
     keypoints: Sequence[float]
 
 
-class DataItemBase(TypedDict):
+class DataItem(TypedDict):
+    ''' DataItem containing data for detectron2 training
+    '''
     file_name: str
     width: int
     height: int
     image_id: str
     rescale_intensity: float
     annotations: Sequence[KptSegmAnnotation]
-
-
-class DataItem(DataItemBase, total=False):
-    rotate: int
 
 
 MaskFormat = Literal['polygon', 'bitmask']
@@ -80,7 +82,7 @@ default_keypoint_connection_rules: KeypointConnections = [
 
 def get_dataset_statistics(dset: Sequence[DataItem]):
     ''' Calculate mean a standard deviation of images over a dataset.
-    
+
     Parameters:
     dest (Sequence[DataItem]): annotations to compute statistics on
 
@@ -94,12 +96,12 @@ def get_dataset_statistics(dset: Sequence[DataItem]):
 
     for d in tqdm(dset, desc='Computing Pixel Statistics', leave=False):
         scale_factor = d["rescale_intensity"] if "rescale_intensity" in d else None
-        im = read_image(d["file_name"], scale_factor=scale_factor, dtype='uint8')[:, :, 0]
+        image = read_image(d["file_name"], scale_factor=scale_factor, dtype='uint8')[:, :, 0]
 
         _count += 1
         for c in range(nchannels):
-            _mean[c] += im.mean()
-            _stdev[c] += im.std()
+            _mean[c] += image.mean()
+            _stdev[c] += image.std()
 
     _mean = _mean / _count
     _stdev = _stdev / _count
@@ -181,8 +183,8 @@ def get_dataset_bbox_range(dset: Sequence[DataItem]):
         }
     }
 
-
-def split_test_train(annotations: MutableSequence[DataItem], split: float=0.90) -> Tuple[Callable[[], MutableSequence[DataItem]], Callable[[], MutableSequence[DataItem]]]:
+DatasetSplitter = Tuple[Callable[[], MutableSequence[DataItem]], Callable[[], MutableSequence[DataItem]]]
+def split_test_train(annotations: MutableSequence[DataItem], split: float=0.90) -> DatasetSplitter:
     ''' Split annotations into training and testing datasets according to `split` ratio
 
     Parameters:
@@ -216,9 +218,9 @@ def register_datasets(annotations: MutableSequence[DataItem], keypoint_names: It
     '''
     if split:
         split_annot = split_test_train(annotations)
-        for i, d in enumerate(['train', 'test']):
-            DatasetCatalog.register("moseq_{}".format(d), split_annot[i])
-            register_dataset_metadata("moseq_{}".format(d), keypoint_names)
+        for i, dset_type in enumerate(['train', 'test']):
+            DatasetCatalog.register(f"moseq_{dset_type}", split_annot[i])
+            register_dataset_metadata(f"moseq_{dset_type}", keypoint_names)
     else:
         DatasetCatalog.register("moseq_train", annotations)
         register_dataset_metadata("moseq_train", keypoint_names)
@@ -268,10 +270,10 @@ def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_forma
     Sequence[DataItem] annotations
     '''
     if keypoint_names is None:
-        logging.warn("WARNING: Ignoring any keypoint information because `keypoint_names` is None.")
+        logging.warning("WARNING: Ignoring any keypoint information because `keypoint_names` is None.")
 
-    with open(annot_file, 'r') as fp:
-        data = json.load(fp)
+    with open(annot_file, 'r', encoding='utf-8') as in_file:
+        data = json.load(in_file)
 
         completions = []
         for entry in data:
@@ -308,7 +310,7 @@ def get_polygon_data(entry: dict, mask_format: MaskFormat) -> SegmAnnotation:
         segmentation = pycocotools.mask.encode(np.asfortranarray(mask))[0]
 
     else:
-        raise RuntimeError("Got unsupported mask_format '{}'".format(mask_format))
+        raise RuntimeError(f"Got unsupported mask_format '{mask_format}'")
 
     return {
         'category_id': 0,
@@ -362,18 +364,29 @@ def get_image_path(entry: dict) -> str:
         raise KeyError('Could not locate image path from entry!')
 
 
-def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: MaskFormat='polygon', keypoint_names: Optional[List[str]]=None) -> DataItem:
+def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: MaskFormat='polygon',
+                              keypoint_names: Optional[List[str]]=None) -> DataItem:
+    ''' Fetch annotation data from a task entry
+    '''
     annot: dict = {}
     kpts = {}
+    original_width = None
+    original_height = None
+
 
     if len(entry[key]) > 1:
-        logging.warn('WARNING: Task {}: Multiple annotations found, only taking the first'.format(entry['id']))
+        logging.warning(f"WARNING: Task {entry['id']}: Multiple annotations found, only taking the first")
 
     for rslt in entry[key][0]['result']:
+        if 'original_width' in rslt and original_width is None:
+            original_width = rslt['original_width']
+
+        if 'original_height' in rslt and original_height is None:
+            original_height = rslt['original_height']
 
         if rslt['type'] == 'polygonlabels':
             if len(annot.keys()) > 0:
-                logging.warn('WARNING: Task {}: Polygon has already been parsed, replacing value'.format(entry['id']))
+                logging.warning(f"WARNING: Task {entry['id']}: Polygon has already been parsed, replacing value")
             annot.update(get_polygon_data(rslt, mask_format=mask_format))
 
         elif rslt['type'] == 'keypointlabels':
@@ -384,7 +397,7 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
                 kdata = get_keypoint_data(rslt)
                 kname = list(kdata.keys())[0]
                 if kname in kpts:
-                    logging.warn('WARNING: Task {}: Keypoint "{}" has already been parsed, replacing value'.format(entry['id'], kname))
+                    logging.warning(f"WARNING: Task {entry['id']}: Keypoint \"{kname}\" has already been parsed, replacing value")
                 kpts.update(kdata)
             except:
                 logging.info(rslt['value'])
@@ -395,8 +408,8 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
 
     return {
         'file_name': get_image_path(entry),
-        'width': rslt['original_width'],
-        'height': rslt['original_height'],
+        'width': original_width,
+        'height': original_height,
         'image_id': entry['id'],
         'annotations': [cast(KptSegmAnnotation, annot)],
         'rescale_intensity': 1,
@@ -427,7 +440,7 @@ def show_dataset_info(annotations: Sequence[DataItem]) -> None:
     Parameters:
     annotations (Sequence[DataItem]): annotations to validate
     '''
-    logging.info("Number of Items: {}".format(len(annotations)))
+    logging.info(f"Number of Items: {len(annotations)}")
 
     logging.info("Image size range:")
     im_sizes = get_dataset_im_size_range(annotations)
@@ -437,14 +450,17 @@ def show_dataset_info(annotations: Sequence[DataItem]) -> None:
     logging.info("Instance Bounding Box Sizes:")
     bbox_sizes = get_dataset_bbox_range(annotations)
     bbox_ratios = get_dataset_bbox_aspect_ratios(annotations)
-    logging.info(f" -> Width: {bbox_sizes['width']['min']:.2f} - {bbox_sizes['width']['max']:.2f}; mean {bbox_sizes['width']['mean']:.2f} ± {bbox_sizes['width']['stdev']:.2f} stdev")
-    logging.info(f" -> Height: {bbox_sizes['height']['min']:.2f} - {bbox_sizes['height']['max']:.2f}; mean {bbox_sizes['height']['mean']:.2f} ± {bbox_sizes['height']['stdev']:.2f} stdev")
-    logging.info(f" -> Ratio: {bbox_ratios['min']:.2f} - {bbox_ratios['max']:.2f}; mean {bbox_ratios['mean']:.2f} ± {bbox_ratios['stdev']:.2f} stdev")
+    logging.info(f" -> Width: {bbox_sizes['width']['min']:.2f} - {bbox_sizes['width']['max']:.2f}; "
+                 f"mean {bbox_sizes['width']['mean']:.2f} ± {bbox_sizes['width']['stdev']:.2f} stdev")
+    logging.info(f" -> Height: {bbox_sizes['height']['min']:.2f} - {bbox_sizes['height']['max']:.2f}; "
+                 f"mean {bbox_sizes['height']['mean']:.2f} ± {bbox_sizes['height']['stdev']:.2f} stdev")
+    logging.info(f" -> Ratio: {bbox_ratios['min']:.2f} - {bbox_ratios['max']:.2f}; "
+                 f"mean {bbox_ratios['mean']:.2f} ± {bbox_ratios['stdev']:.2f} stdev")
 
     logging.info("Pixel Intensity Statistics:")
     im_means, im_stdevs = get_dataset_statistics(annotations)
-    for ch in range(im_means.shape[0]):
-        logging.info(f" -> Ch{ch}: mean {im_means[ch]:.2f} ± {im_stdevs[ch]:.2f} stdev")
+    for channel in range(im_means.shape[0]):
+        logging.info(f" -> Ch{channel}: mean {im_means[channel]:.2f} ± {im_stdevs[channel]:.2f} stdev")
 
 
 def validate_annotations(annotations: Sequence[DataItem]) -> bool:
@@ -463,4 +479,3 @@ def validate_annotations(annotations: Sequence[DataItem]) -> bool:
         if not os.path.isfile(annot['file_name']):
             raise FileNotFoundError(annot['file_name'])
     return True
-

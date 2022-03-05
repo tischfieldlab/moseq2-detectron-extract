@@ -4,10 +4,9 @@ import json
 import logging
 import os
 import sys
-from tarfile import TarInfo
 import traceback
-from typing import IO, Dict, Optional, Union
 import warnings
+from typing import IO, Dict, Optional, Union
 
 import click
 import h5py
@@ -42,19 +41,19 @@ def load_timestamps(timestamp_file: Union[str, IO[bytes]], col: int=0) -> np.nda
     np.ndarray containing timestamp data.
     '''
 
-    ts = []
+    timestamps = []
     if isinstance(timestamp_file, str):
-        with open(timestamp_file, 'r') as f:
-            for line_str in f:
+        with open(timestamp_file, 'r', encoding='utf-8') as ts_file:
+            for line_str in ts_file:
                 cols = line_str.split()
-                ts.append(float(cols[col]))
-        return np.array(ts)
+                timestamps.append(float(cols[col]))
+        return np.array(timestamps)
     elif isinstance(timestamp_file, io.BufferedReader):
         # try iterating directly
         for line_bytes in timestamp_file:
             cols = line_bytes.decode().split()
-            ts.append(float(cols[col]))
-        return np.array(ts)
+            timestamps.append(float(cols[col]))
+        return np.array(timestamps)
     else:
         raise ValueError('Could not understand parameter timestamp_file!')
 
@@ -69,8 +68,8 @@ def load_metadata(metadata_file: Union[str, IO[bytes]]) -> dict:
     dict containing session metadata
     '''
     if isinstance(metadata_file, str):
-        with open(metadata_file, 'r') as f:
-            return json.load(f)
+        with open(metadata_file, 'r', encoding='utf-8') as md_file:
+            return json.load(md_file)
     elif isinstance(metadata_file, io.BufferedReader):
         return json.load(metadata_file)
     else:
@@ -87,9 +86,9 @@ def read_yaml(yaml_file: str) -> dict:
     Returns:
     return_dict (dict): dict of yaml contents
     '''
-    with open(yaml_file, 'r') as f:
+    with open(yaml_file, 'r', encoding='utf-8') as y_file:
         yml = yaml.YAML(typ='safe')
-        return yml.load(f)
+        return yml.load(y_file)
 
 
 def write_yaml(yaml_file: str, data: dict) -> None:
@@ -99,16 +98,15 @@ def write_yaml(yaml_file: str, data: dict) -> None:
     yaml_file (str): path to yaml file
     data (dict): dict of data to write to `yaml_file`
     '''
-    with open(yaml_file, 'w') as f:
+    with open(yaml_file, 'w', encoding='utf-8') as y_file:
         yml = yaml.YAML(typ='safe')
         yml.default_flow_style = False
-        yml.dump(data, f)
+        yml.dump(data, y_file)
 
 
 def ensure_dir(path: str) -> str:
-    ''' Ensures the path exists by creating the directories specified 
-    by path if they do not already exist.
-    
+    ''' Ensures the path exists by creating the directories specified by path if they do not already exist.
+
     Parameters:
     path (string): path for which to ensure directories exist
 
@@ -130,11 +128,11 @@ def ensure_dir(path: str) -> str:
     return path
 
 
-def dict_to_h5(h5: h5py.File, data: dict, root: str='/', annotations: dict=None) -> None:
+def dict_to_h5(h5_file: h5py.File, data: dict, root: str='/', annotations: dict=None) -> None:
     ''' Save an dict to an h5 file, mounting at root. Keys are mapped to group names recursively.
 
     Parameters:
-    h5 (h5py.File): h5py.file object to operate on
+    h5_file (h5py.File): h5py.file object to operate on
     data (dict): dictionary of data to write
     root (string): group on which to add additional groups and datasets
     annotations (dict): annotation data to add to corresponding h5 datasets. Should contain same keys as data.
@@ -150,27 +148,27 @@ def dict_to_h5(h5: h5py.File, data: dict, root: str='/', annotations: dict=None)
         dest = root + key
         try:
             if isinstance(item, (np.ndarray, np.int64, np.float64, str, bytes)):
-                h5[dest] = item
+                h5_file[dest] = item
             elif isinstance(item, (tuple, list)):
-                h5[dest] = np.asarray(item)
+                h5_file[dest] = np.asarray(item)
             elif isinstance(item, (int, float)):
-                h5[dest] = np.asarray([item])[0]
+                h5_file[dest] = np.asarray([item])[0]
             elif item is None:
-                h5.create_dataset(dest, data=h5py.Empty(dtype=h5py.special_dtype(vlen=str)))
+                h5_file.create_dataset(dest, data=h5py.Empty(dtype=h5py.special_dtype(vlen=str)))
             elif isinstance(item, dict):
-                dict_to_h5(h5, item, dest)
+                dict_to_h5(h5_file, item, dest)
             else:
-                raise ValueError('Cannot save {} type to key {}'.format(type(item), dest))
-        except Exception as e:
-            logging.error(e, exc_info=True)
+                raise ValueError(f'Cannot save {type(item)} type to key {dest}')
+        except Exception as exc: # pylint: disable=broad-except
+            logging.error(exc, exc_info=True)
             if key != 'inputs':
                 logging.error(f'h5py could not encode key: "{key}"')
 
         if key in annotations:
             if annotations[key] is None:
-                h5[dest].attrs['description'] = ""
+                h5_file[dest].attrs['description'] = ""
             else:
-                h5[dest].attrs['description'] = annotations[key]
+                h5_file[dest].attrs['description'] = annotations[key]
 
 
 class Tee(object):
@@ -178,7 +176,7 @@ class Tee(object):
     '''
     def __init__(self, name: str, mode: str='w'):
         ''' Initialize this Tee object
-        
+
         Parameters:
         name (str): path to the output file
         mode (str): mode for opening the file
@@ -223,6 +221,15 @@ class Tee(object):
 
 
 def setup_logging(log_filename: Optional[str]=None):
+    ''' Setup the logging module
+    A) set logging level to INFO
+    b) attach file handler if `log_filename` is not None
+    C) attach stream handler to pump messages through tqdm.write
+        a) filter LogRecords which have `nostream` attribute attached
+
+    Parameters:
+    log_filename (str | None): if not None, attach a file handler writing to this path
+    '''
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
@@ -252,13 +259,15 @@ def click_param_annot(click_cmd: click.Command) -> Dict[str, Optional[str]]:
     annotations (dict): click.Option.human_readable_name as keys; click.Option.help as values
     '''
     annotations = {}
-    for p in click_cmd.params:
-        if isinstance(p, click.Option):
-            annotations[p.human_readable_name] = p.help
+    for param in click_cmd.params:
+        if isinstance(param, click.Option):
+            annotations[param.human_readable_name] = param.help
     return annotations
 
 
 def warn_with_traceback(message, category, filename, lineno, file=None, line=None):
+    ''' write warning with stacktrace information
+    '''
 
     log = file if hasattr(file, 'write') else sys.stderr
     traceback.print_stack(file=log)
@@ -267,7 +276,7 @@ def warn_with_traceback(message, category, filename, lineno, file=None, line=Non
 
 class ProgressFileObject(io.FileIO):
     """ Class used to provide provide file read progress updates """
-    def __init__(self, path, progress=None, tqdm_kwargs=None, *args, **kwargs):
+    def __init__(self, path, *args, progress=None, tqdm_kwargs=None, **kwargs):
         """ Construct an instance of ProgressFileObject
 
         Parameters:
@@ -292,10 +301,12 @@ class ProgressFileObject(io.FileIO):
         super().__init__(path, *args, **kwargs)
 
     def detach_progress(self):
-        p = self.progress
+        ''' Detach and return progress object
+        '''
+        progress = self.progress
         self.progress = None
         self.is_progress_external = False
-        return p
+        return progress
 
     def read(self, size):
         if self.progress:

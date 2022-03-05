@@ -1,12 +1,13 @@
-import logging
-import multiprocessing as mp
 import traceback
-from typing import List, Union
+from typing import List, Union, cast
 
 from torch.multiprocessing import Process, Queue, SimpleQueue
 
 
 class PipelineStep(Process):
+    '''  Represents a single step in a Pipeline
+        Takes a single input queue to work on and adds results to one or more output queues
+    '''
 
     def __init__(self, config: dict, in_queue: SimpleQueue, out_queue: List[SimpleQueue], progress: Queue, name: str=None, **kwargs) -> None:
         super().__init__(name=name, **kwargs)
@@ -18,21 +19,43 @@ class PipelineStep(Process):
             raise TypeError('expected List[Queue] (possibly empty) for parameter `out_queue`')
         self.reset_progress(config['nframes'])
 
-    def reset_progress(self, total):
+    def reset_progress(self, total: int):
+        ''' Reset progress on this step
+
+            Parameters:
+            total (int): new total value for progress
+        '''
         self.progress.put({'total': total})
 
-    def update_progress(self, n=1):
-        self.progress.put({'update': n})
+    def update_progress(self, incremental_progress: int=1):
+        ''' Update the progress on this step
 
-    def write_message(self, message):
+            Parameters:
+            n (int): incremental progress made
+        '''
+        self.progress.put({'update': incremental_progress})
+
+    def write_message(self, message: str):
+        ''' Write a message to the progress message pump
+
+            Parameters:
+            message (str): message to write
+        '''
         self.progress.put({'message': message})
 
     def flush_progress(self):
+        ''' Flush any progress made on the reciever side
+        '''
         self.progress.put({'flush': True})
 
     def set_outputs(self, data):
-        for q in self.out_queue:
-            q.put(data)
+        ''' Send data to the output queues
+
+            Parameters:
+            data (Any): data to send to output consumers
+        '''
+        for queue in self.out_queue:
+            queue.put(data)
 
     def run(self) -> None:
         try:
@@ -43,26 +66,31 @@ class PipelineStep(Process):
                     self.set_outputs(None)
                     break
 
-                out = None
+                out: Union[dict, None] = None
                 try:
-                    out = self.process(data)
-                except Exception as e:
+                    out = self.process(cast(data, dict)) # pylint: disable=assignment-from-no-return
+                except Exception: # pylint: disable=broad-except
                     msg = traceback.format_exc()
                     self.write_message(msg)
 
                 self.set_outputs(out)
                 self.flush_progress()
             self.finalize()
-        except Exception as e:
+        except Exception: # pylint: disable=broad-except
             msg = traceback.format_exc()
             self.write_message(msg)
-            pass
 
     def initialize(self):
-        pass
+        ''' Implement to execute actions on first startup of this step
+        '''
+        pass # pylint: disable=unnecessary-pass
 
-    def process(self, data) -> Union[dict, None]:
-        pass
+    def process(self, data: dict) -> Union[dict, None]:
+        ''' Implement to process data on each new batch of data
+        '''
+        pass # pylint: disable=unnecessary-pass
 
     def finalize(self):
-        pass
+        ''' Implement to execute actions on final shutdown of this step
+        '''
+        pass # pylint: disable=unnecessary-pass

@@ -15,11 +15,15 @@ from moseq2_detectron_extract.proc.util import select_strel
 
 
 class Stream(str, Enum):
-    Depth = 'depth'
+    ''' Represents a specific stream contained within a session
+    '''
+    DEPTH = 'depth'
     RGB = 'rgb'
 
 
 class Session(object):
+    ''' Represents a (possibly compressed) Moseq Session
+    '''
 
     def __init__(self, path: str, frame_trim: Tuple[int, int]=(0, 0)):
         self.session_path = path
@@ -39,7 +43,7 @@ class Session(object):
         if input_file.endswith('.tar.gz') or input_file.endswith('.tgz'):
             tqdm_args = {
                 'disable': False,
-                'desc': 'Scanning {}'.format(os.path.basename(input_file)),
+                'desc': f'Scanning {os.path.basename(input_file)}',
                 'leave': False
             }
             #compute NEW psuedo-dirname now, `input_file` gets overwritten below with depth.dat tarinfo...
@@ -101,8 +105,8 @@ class Session(object):
         '''
         metadata_path: Union[str, IO[bytes]]
         if self.tar is not None and self.tar_members is not None:
-            f = self.tar_members[self.tar_names.index('metadata.json')]
-            efile = self.tar.extractfile(f)
+            tinfo = self.tar_members[self.tar_names.index('metadata.json')]
+            efile = self.tar.extractfile(tinfo)
             if efile is not None:
                 metadata_path = efile
             else:
@@ -125,7 +129,7 @@ class Session(object):
         correction_factor = 1.0
         ts_search = []
 
-        if stream == Stream.Depth:
+        if stream == Stream.DEPTH:
             ts_search.append(('depth_ts.txt', 1.0))
             ts_search.append(('timestamps.csv', 1000.0))
         elif stream == Stream.RGB:
@@ -163,8 +167,10 @@ class Session(object):
 
     def find_roi(self, bg_roi_dilate: Tuple[int, int]=(10,10), bg_roi_shape='ellipse', bg_roi_index: int=0, bg_roi_weights=(1, .1, 1),
                  bg_roi_depth_range: Tuple[int, int]=(650, 750), bg_roi_gradient_filter: bool=False, bg_roi_gradient_threshold: int=3000,
-                 bg_roi_gradient_kernel: int=7, bg_roi_fill_holes: bool=True, use_plane_bground: bool=False, verbose: bool=False, cache_dir: Union[None, str]=None):
-
+                 bg_roi_gradient_kernel: int=7, bg_roi_fill_holes: bool=True, use_plane_bground: bool=False, verbose: bool=False,
+                 cache_dir: Union[None, str]=None):
+        ''' Find a region of interest in depth frames
+        '''
         if cache_dir is None:
             use_cache = False
             cache_dir = ''
@@ -197,7 +203,7 @@ class Session(object):
 
 
         # compute the region of interest, or load one from the cache
-        roi_filename = os.path.join(cache_dir, 'roi_{:02d}.tiff'.format(bg_roi_index))
+        roi_filename = os.path.join(cache_dir, f'roi_{bg_roi_index:02d}.tiff')
         if use_cache and os.path.exists(roi_filename):
             if verbose:
                 logging.info('Loading ROI...')
@@ -233,12 +239,12 @@ class Session(object):
 
         true_depth = np.median(bground_im[roi > 0])
         if verbose:
-            logging.info('Detected true depth: {}'.format(true_depth))
+            logging.info(f'Detected true depth: {true_depth}')
 
         return first_frame, bground_im, roi, true_depth
 
 
-    def iterate(self, chunk_size: int=1000, chunk_overlap: int=0, streams: Iterable[Stream]=(Stream.Depth,)):
+    def iterate(self, chunk_size: int=1000, chunk_overlap: int=0, streams: Iterable[Stream]=(Stream.DEPTH,)):
         ''' Iterate over all frames, returning `chunck_size` frames on each iteration with `chunk_overlap` overlap
 
             Parameters:
@@ -249,7 +255,7 @@ class Session(object):
         return SessionFramesIterator(self, chunk_size, chunk_overlap, streams)
 
 
-    def sample(self, num_samples: int, chunk_size: int=1000, streams: Iterable[Stream]=(Stream.Depth,)):
+    def sample(self, num_samples: int, chunk_size: int=1000, streams: Iterable[Stream]=(Stream.DEPTH,)):
         ''' Randomally sample `num_samples` frames, returning `chunck_size` frames on each iteration.
 
             Parameters:
@@ -260,7 +266,7 @@ class Session(object):
         return SessionFramesSampler(self, num_samples, chunk_size=chunk_size, chunk_overlap=0, streams=streams)
 
 
-    def index(self, frame_idxs: Sequence[int], chunk_size: int=1000, streams: Iterable[Stream]=(Stream.Depth,)):
+    def index(self, frame_idxs: Sequence[int], chunk_size: int=1000, streams: Iterable[Stream]=(Stream.DEPTH,)):
         ''' Fetch specific frames, given by `frame_idxs`, returning `chunck_size` frames on each iteration.
 
             Parameters:
@@ -272,11 +278,11 @@ class Session(object):
 
 
     def __str__(self) -> str:
-        return "{} ({} frames, [{}:{}])".format(self.session_path, self.nframes, self.first_frame_idx, self.last_frame_idx)
+        return f"{self.session_path} ({self.nframes} frames, [{self.first_frame_idx}:{self.last_frame_idx}])"
 
 
     def __repr__(self) -> str:
-        return '{}("{}", frame_trim=({}, {}))'.format(self.__class__.__name__, self.session_path, *self.frame_trim)
+        return f'{self.__class__.__name__}("{self.session_path}", frame_trim=({self.frame_trim[0]}, {self.frame_trim[1]}))'
 
 
 
@@ -334,7 +340,7 @@ class SessionFramesIterator(object):
         out_data = [frame_idxs]
 
         for stream in self.streams:
-            if stream == Stream.Depth:
+            if stream == Stream.DEPTH:
                 out_data.append(load_movie_data(self.session.depth_file, frame_idxs, tar_object=self.session.tar))
             elif stream == Stream.RGB:
                 # rgb_idxs = self.ts_map.map_index(Stream.RGB, Stream.Depth, frame_idxs)
@@ -379,18 +385,24 @@ class SessionFramesIndexer(SessionFramesIterator):
 
 
 class TimestampMapper():
+    ''' Map timestamps between various data streams
+    '''
     def __init__(self) -> None:
         self.timestamp_map: dict = {}
 
 
     def add_timestamps(self, name: str, timestamps: np.ndarray):
+        ''' Add timestampes to this mapper
+        '''
         self.timestamp_map[name] = np.asarray(timestamps)
 
 
     def map_index(self, query: str, reference: str, index: Union[int, Sequence[int]]):
+        ''' map a query index to a timestamp
+        '''
         if isinstance(index, int):
             index = [index]
-        
+
         out = []
         for idx in index:
             reference_time = self.timestamp_map[reference][idx]
@@ -399,6 +411,8 @@ class TimestampMapper():
 
 
     def map_time(self, query: str, reference: str, index: Union[int, Sequence[int]]):
+        ''' map a query timestamp to an index
+        '''
         if isinstance(index, int):
             index = [index]
 
@@ -411,4 +425,6 @@ class TimestampMapper():
 
 
     def nearest(self, data, value):
+        ''' get a value from data which is nearest to value
+        '''
         return np.abs(data - value).argmin()

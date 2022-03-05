@@ -5,11 +5,9 @@ from functools import partial
 from typing import List, Tuple, Union
 
 import numpy as np
-from albumentations.core.transforms_interface import (BasicTransform,
-                                                      DualTransform)
+from albumentations.core.transforms_interface import BasicTransform
 from detectron2.data.transforms import (Augmentation, BlendTransform,
-                                        CropTransform, FixedSizeCrop,
-                                        NoOpTransform, PadTransform,
+                                        NoOpTransform,
                                         ResizeTransform, Transform,
                                         TransformList)
 from FyeldGenerator import generate_field
@@ -44,6 +42,11 @@ class ScaleAugmentation(Augmentation):
             interp: image interpolation method.
         """
         super().__init__()
+        self.min_scale = min_scale
+        self.max_scale = max_scale
+        self.target_height = target_height
+        self.target_width = target_width
+        self.interp = interp
         self._init(locals())
 
     def _get_resize(self, image: np.ndarray, scale: float) -> TransformList:
@@ -71,7 +74,10 @@ class ScaleAugmentation(Augmentation):
 
 
 class DoughnutNoiseAugmentation(Augmentation):
-    def __init__(self, mu: float=0, var_limit: RangeType=(10.0, 50.0), thickness: RangeType=(0, 30), weight: float=0.5, always_apply: bool=False, p: float=0.5):
+    ''' Augmentation to add doughnut shaped noise to an image
+    '''
+    def __init__(self, mu: float=0, var_limit: RangeType=(10.0, 50.0), thickness: RangeType=(0, 30), weight: float=0.5,
+                 always_apply: bool=False, p: float=0.5):
         ''' Apply Doughnut-shaped random noise to an image
 
         Parameters:
@@ -92,6 +98,8 @@ class DoughnutNoiseAugmentation(Augmentation):
         self.p_application = p
 
     def validate_range_arg(self, param_name: str, value):
+        ''' validate user supplied range arguments
+        '''
         if isinstance(value, (tuple, list)):
             if value[0] < 0:
                 raise ValueError(f"Lower {param_name} should be non negative.")
@@ -108,7 +116,9 @@ class DoughnutNoiseAugmentation(Augmentation):
                 f"Expected {param_name} type to be one of (int, float, tuple[int|float], list[int|float]), got {type(value)}"
             )
 
-    def get_transform(self, image):
+    def get_transform(self, image: np.ndarray=None):
+        ''' Get the transform
+        '''
         if (random.random() < self.p_application) or self.always_apply:
             # select random values for some parameters
             thickness = random.uniform(self.thickness[0], self.thickness[1])
@@ -134,7 +144,10 @@ class DoughnutNoiseAugmentation(Augmentation):
 
 
 class RandomFieldNoiseAugmentation(Augmentation):
-    def __init__(self, mu: float=0, std_limit: RangeType=(10.0, 50.0), power: RangeType=(1.0, 3.0), weight: float=0.5, always_apply: bool=False, p: float=0.5):
+    ''' Augmentation to apply Gaussian Random Field type noise to an image
+    '''
+    def __init__(self, mu: float=0, std_limit: RangeType=(10.0, 50.0), power: RangeType=(1.0, 3.0), weight: float=0.5,
+                 always_apply: bool=False, p: float=0.5):
         ''' Apply Gaussian Random Field type noise to an image
 
         Parameters:
@@ -156,6 +169,8 @@ class RandomFieldNoiseAugmentation(Augmentation):
         self.eps = np.finfo(np.float64).eps
 
     def validate_range_arg(self, param_name: str, value):
+        ''' validate user supplied range arguments
+        '''
         if isinstance(value, (tuple, list)):
             if value[0] < 0:
                 raise ValueError(f"Lower {param_name} should be non negative.")
@@ -172,34 +187,40 @@ class RandomFieldNoiseAugmentation(Augmentation):
                 f"Expected {param_name} type to be one of (int, float, tuple[int|float], list[int|float]), got {type(value)}"
             )
 
-    def Pkgen(self, n):
-        # Helper that generates power-law power spectrum
-        def Pk(k):
+    def pkgen(self, n):
+        ''' Helper that generates power-law power spectrum
+        '''
+        def pk(k):
             return np.power(k + self.eps, -n)
-        return Pk
+        return pk
 
     def distrib(self, shape, mu=0.0, scale=1.0):
-        # Draw samples from a normal distribution
+        ''' Draw samples from a normal distribution
+        '''
         a = np.random.normal(loc=mu, scale=scale, size=shape)
         b = np.random.normal(loc=mu, scale=scale, size=shape)
         return a + 1j * b
 
     def get_field(self, shape):
+        ''' Get the gaussian random field
+        '''
         # select random values for some parameters
         dist = partial(self.distrib, mu=self.mu, scale=random.uniform(self.std_limit[0], self.std_limit[1]))
-        power = self.Pkgen(random.uniform(self.power[0], self.power[1]))
+        power = self.pkgen(random.uniform(self.power[0], self.power[1]))
 
         field = generate_field(dist, power, shape)
 
         # seems that field shape can be off by one in axis 1, so resize without warping (padding)
         if field.shape != shape:
-            f2 = np.zeros(shape)
-            f2[0:field.shape[0], 0:field.shape[1]] = field
-            field = f2
+            field2 = np.zeros(shape)
+            field2[0:field.shape[0], 0:field.shape[1]] = field
+            field = field2
 
         return field
 
-    def get_transform(self, image):
+    def get_transform(self, image: np.ndarray=None):
+        ''' Get the transform
+        '''
         if (random.random() < self.p_application) or self.always_apply:
             field = self.get_field(image.shape[:2])
             field = np.abs(field)
@@ -214,6 +235,8 @@ class RandomFieldNoiseAugmentation(Augmentation):
 
 #https://github.com/facebookresearch/detectron2/pull/3306
 class AlbumentationsTransform(Transform):
+    ''' Transform wrapper for transforms implemented by Albumentations
+    '''
     def __init__(self, aug, param):
         self.aug = aug
         self.param = param
@@ -221,7 +244,7 @@ class AlbumentationsTransform(Transform):
     def apply_image(self, img):
         try:
             td_params = self.aug.get_params_dependent_on_targets({"image": img})
-        except:
+        except Exception:
             td_params = {}
         return self.aug.apply(img, **self.param, **td_params)
 
@@ -237,10 +260,10 @@ class Albumentations(Augmentation):
     .. code-block:: python
         import detectron2.data.transforms.external as  A
         import albumentations as AB
-        ## Resize 
+        ## Resize
         #augs1 = A.Albumentations(AB.SmallestMaxSize(max_size=1024, interpolation=1, always_apply=False, p=1))
         #augs1 = A.Albumentations(AB.RandomScale(scale_limit=0.8, interpolation=1, always_apply=False, p=0.5))
-        ## Rotate 
+        ## Rotate
         augs1 = A.Albumentations(AB.RandomRotate90(p=1))
         transform_1 = augs1(input)
         image_transformed_1 = input.image
@@ -273,8 +296,7 @@ class Albumentations(Augmentation):
                     param.kind != param.VAR_POSITIONAL and param.kind != param.VAR_KEYWORD
                 ), "The default __repr__ doesn't support *args or **kwargs"
                 assert hasattr(self._aug, name), (
-                    "Attribute {} not found! "
-                    "Default __repr__ only works if attributes match the constructor.".format(name)
+                    f"Attribute {name} not found! Default __repr__ only works if attributes match the constructor."
                 )
                 attr = getattr(self._aug, name)
                 default = param.default
@@ -284,8 +306,8 @@ class Albumentations(Augmentation):
                 if "\n" in attr_str:
                     # don't show it if pformat decides to use >1 lines
                     attr_str = "..."
-                argstr.append("{}={}".format(name, attr_str))
-            return "{}({}({}))".format(outer_classname, classname, ", ".join(argstr))
+                argstr.append(f"{name}={attr_str}")
+            return f'{outer_classname}({classname}({", ".join(argstr)}))'
         except AssertionError:
             return super().__repr__()
 
