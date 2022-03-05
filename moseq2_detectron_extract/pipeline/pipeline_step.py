@@ -8,7 +8,7 @@ from torch.multiprocessing import Process, Queue
 
 class PipelineStep(Process):
 
-    def __init__(self, config: dict, in_queue: Queue, out_queue: Union[Queue, List[Queue], None], progress: Queue=None, name: str=None, **kwargs) -> None:
+    def __init__(self, config: dict, in_queue: Queue, out_queue: Union[Queue, List[Queue], None], progress: Queue, name: str=None, **kwargs) -> None:
         super().__init__(name=name, **kwargs)
         self.config = config
         self.progress = progress
@@ -20,26 +20,20 @@ class PipelineStep(Process):
         elif out_queue is None:
             self.out_queue = []
         else:
-            raise TypeError('expected Queue or List[Queue]')
+            raise TypeError('expected Queue or List[Queue] or None for parameter `out_queue`')
         self.reset_progress(config['nframes'])
 
     def reset_progress(self, total):
-        if self.progress is not None:
-            self.progress.put({'total': total})
+        self.progress.put({'total': total})
 
     def update_progress(self, n=1):
-        if self.progress is not None:
-            self.progress.put({'update': n})
+        self.progress.put({'update': n})
 
     def write_message(self, message):
-        if self.progress is not None:
-            self.progress.put({'message': message})
-        else:
-            logging.info(message)
+        self.progress.put({'message': message})
 
     def flush_progress(self):
-        if self.progress is not None:
-            self.progress.put({'flush': True})
+        self.progress.put({'flush': True})
 
     def set_outputs(self, data):
         for q in self.out_queue:
@@ -65,7 +59,8 @@ class PipelineStep(Process):
                 self.flush_progress()
             self.finalize()
         except Exception as e:
-            logging.error(exc_info=True)
+            msg = traceback.format_exc()
+            self.write_message(msg)
             pass
 
     def initialize(self):

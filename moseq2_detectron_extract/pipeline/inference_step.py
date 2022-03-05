@@ -27,7 +27,7 @@ class InferenceStep(PipelineStep):
         model_path: str = self.config['model_dir']
 
         if os.path.isfile(model_path) and model_path.endswith('.ts'):
-            self.write_message(' -> Using torchscript model....')
+            self.write_message(f' -> Using torchscript model "{os.path.abspath(model_path)}"....')
             self.predictor = Predictor.from_torchscript(model_path)
 
         else:

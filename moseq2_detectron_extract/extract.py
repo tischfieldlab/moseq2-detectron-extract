@@ -1,24 +1,19 @@
 import logging
 import os
 import time
-import traceback
 import uuid
 from copy import deepcopy
 from datetime import timedelta
-from threading import Thread
-from typing import List, Union
-
-from torch.multiprocessing import Process, Queue, SimpleQueue
 
 from moseq2_detectron_extract.io.annot import (
-    default_keypoint_connection_rules, default_keypoint_names, default_keypoint_colors)
+    default_keypoint_colors, default_keypoint_connection_rules,
+    default_keypoint_names)
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import setup_logging, write_yaml
 from moseq2_detectron_extract.pipeline import (ExtractFeaturesStep,
                                                FrameCropStep, InferenceStep,
-                                               KeypointWriterStep,
+                                               KeypointWriterStep, Pipeline,
                                                PreviewVideoWriterStep,
-                                               ProcessProgress,
                                                ResultH5WriterStep)
 from moseq2_detectron_extract.proc.proc import prep_raw_frames
 from moseq2_detectron_extract.proc.util import check_completion_status
@@ -67,73 +62,39 @@ def extract_session(session: Session, config: dict):
         'true_depth': true_depth,
         'keypoint_names': default_keypoint_names,
         'keypoint_connection_rules': default_keypoint_connection_rules,
-        'keypoint_colors': default_keypoint_colors
+        'keypoint_colors': default_keypoint_colors,
+        'first_frame': first_frame,
+        'bground_im': bground_im,
+        'roi': roi,
     })
 
-
-    progress = ProcessProgress()
-    reader_pbar = progress.add(name='producer', desc='Processing batches', total=session.nframes)
-
-    inference_in: Queue = SimpleQueue()
-    inference_out: Queue = SimpleQueue()
-    inference_pbar = progress.add(desc='Inferring')
-    inference_thread = InferenceStep(config=config, progress=inference_pbar, in_queue=inference_in, out_queue=inference_out)
-
-    extract_features_out: Queue = SimpleQueue()
-    extract_features_pbar = None #progress.add(desc='Extracting Features')
-    extract_features_thread = ExtractFeaturesStep(config=config, progress=extract_features_pbar, in_queue=inference_out, out_queue=extract_features_out)
-
-    frame_crop_out: List[Queue] = [
-        SimpleQueue(),
-        SimpleQueue(),
-        SimpleQueue(),
-    ]
-    frame_crop_pbar = progress.add(desc='Crop and Rotate')
-    frame_crop_thread = FrameCropStep(config=config, progress=frame_crop_pbar, in_queue=extract_features_out, out_queue=frame_crop_out)
-
-    preview_vid_pbar = progress.add(desc='Preview Video')
-    preview_vid_thread = PreviewVideoWriterStep(roi=roi, config=config, progress=preview_vid_pbar, in_queue=frame_crop_out[0], out_queue=None)
-
-    keypoint_writer_pbar = None #progress.add(desc='Writing Keypoints')
-    keypoint_writer_thread = KeypointWriterStep(config=config, progress=keypoint_writer_pbar, in_queue=frame_crop_out[1], out_queue=None)
-
-    result_writer_thread = ResultH5WriterStep(session, roi=roi, bground_im=bground_im, first_frame=first_frame,
-        config=config, status_dict=status_dict, in_queue=frame_crop_out[2], out_queue=None)
-
-    all_threads: List[Union[Thread, Process]] = [
-        inference_thread,
-        extract_features_thread,
-        frame_crop_thread,
-        preview_vid_thread,
-        keypoint_writer_thread,
-        result_writer_thread,
-    ]
-
     try:
-        # start the threads
-        for t in all_threads:
-            t.start()
-        progress.start()
+        pipeline = Pipeline()
+        reader_pbar = pipeline.progress.add(name='producer', desc='Processing batches', total=session.nframes)
+        out = pipeline.add_step('Inferring',InferenceStep, pipeline.input, config=config)
+        out = pipeline.add_step('Extract Features', ExtractFeaturesStep, out, show_progress=False, config=config)
+        out = pipeline.add_step('Crop and Rotate', FrameCropStep, out, num_listners=3, config=config)
+        pipeline.add_step('Preview Video', PreviewVideoWriterStep, out[0], config=config)
+        pipeline.add_step('Write Keypoints', KeypointWriterStep, out[1], show_progress=False, config=config)
+        pipeline.add_step('Write H5 Result', ResultH5WriterStep, out[2], show_progress=False, session=session, config=config, status_dict=status_dict)
+        pipeline.start()
 
         for i, (frame_idxs, raw_frames) in enumerate(session.iterate(config['chunk_size'], config['chunk_overlap'])):
             offset = config['chunk_overlap'] if i > 0 else 0
             raw_frames = prep_raw_frames(raw_frames, bground_im=bground_im, roi=roi, vmin=config['min_height'], vmax=config['max_height'])
             shm = { 'batch': i, 'chunk': raw_frames, 'frame_idxs': frame_idxs, 'offset': offset }
-            while not inference_in.empty():
+            while not pipeline.input.empty():
                 time.sleep(0.1)
-            inference_in.put(shm)
+            pipeline.input.put(shm)
             reader_pbar.put({'update': raw_frames.shape[0]})
-            cp = progress.get_tqdm('producer').format_dict
+            cp = pipeline.progress.get_tqdm('producer').format_dict
             n_frames = (cp["n"] or 0)
             t_frames = cp["total"]
             logging.info(f'Processed {n_frames} / {t_frames} frames ({n_frames/t_frames:.2%}) in {timedelta(seconds=cp["elapsed"])}', extra={'nostream': True})
-        inference_in.put(None) # signal we are done
+        pipeline.input.put(None) # signal we are done
 
         # join the threads
-        for t in all_threads:
-            t.join()
-        progress.shutdown()
-        progress.join()
+        pipeline.shutdown()
     except:
         logging.error('Error during extraction', exc_info=True)
 

@@ -1,6 +1,6 @@
 
 
-
+from .pipeline import Pipeline
 from .progress import ProcessProgress
 from .extract_features_step import ExtractFeaturesStep
 from .frame_crop_step import FrameCropStep

@@ -1,7 +1,7 @@
 import logging
 from queue import Empty
 from threading import Thread
-from typing import List
+from typing import List, Union
 
 import tqdm
 from torch.multiprocessing import Queue
@@ -17,21 +17,23 @@ class ProcessProgress(Thread):
     def shutdown(self):
         self.done = True
 
-    def add(self, name='', **kwargs):
+    def add(self, name='', show=True, **kwargs):
         q = Queue()
         prog = {
             'name': name,
+            'show': show,
             'q': q
         }
-        if not self.disabled:
+        if not self.disabled and show:
             prog['tqdm'] = tqdm.tqdm(**kwargs)
         self.workers.append(prog)
         return q
 
-    def get_tqdm(self, name: str) -> tqdm.tqdm:
+    def get_tqdm(self, name: str) -> Union[tqdm.tqdm, None]:
         for w in self.workers:
             if w['name'] == name:
                 return w['tqdm']
+        return None
 
     def run(self) -> None:
         if self.disabled:
@@ -41,20 +43,21 @@ class ProcessProgress(Thread):
                 try:
                     data = worker['q'].get_nowait()
 
-                    if 'total' in data:
+                    if worker['show'] and 'total' in data:
                         worker['tqdm'].reset(total=data['total'])
 
-                    if 'update' in data:
+                    if worker['show'] and 'update' in data:
                         worker['tqdm'].update(data['update'])
 
                     if 'message' in data:
                         #tqdm.tqdm.write(data['message'])
                         logging.info(data['message'])
 
-                    if 'flush' in data:
+                    if worker['show'] and 'flush' in data:
                         worker['tqdm'].refresh()
 
                 except Empty:
                     pass
         for worker in self.workers:
-            worker['tqdm'].close()
+            if 'tqdm' in worker:
+                worker['tqdm'].close()

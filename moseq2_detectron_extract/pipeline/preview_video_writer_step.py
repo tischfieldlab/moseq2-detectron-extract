@@ -18,9 +18,9 @@ from torch.multiprocessing import Queue
 
 class PreviewVideoWriterStep(PipelineStep):
 
-    def __init__(self, roi, config, in_queue: Queue, out_queue: Union[Queue, List[Queue], None], **kwargs) -> None:
+    def __init__(self, config, in_queue: Queue, out_queue: Union[Queue, List[Queue], None], **kwargs) -> None:
         super().__init__(config, in_queue, out_queue, name="ResultH5", **kwargs)
-        self.roi = roi
+        self.roi = config['roi']
 
     def initialize(self):
         preview_video_dest = os.path.join(self.config['output_dir'], 'results_{:02d}.mp4'.format(self.config['bg_roi_index']))

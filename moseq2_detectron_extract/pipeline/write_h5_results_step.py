@@ -11,14 +11,14 @@ from torch.multiprocessing import Queue
 
 class ResultH5WriterStep(PipelineStep):
     
-    def __init__(self, session: Session, roi, bground_im, first_frame, status_dict, config, in_queue: Queue, out_queue: Union[Queue, List[Queue], None], **kwargs) -> None:
+    def __init__(self, session: Session, status_dict, config, in_queue: Queue, out_queue: Union[Queue, List[Queue], None], **kwargs) -> None:
         super().__init__(config, in_queue, out_queue, name="ResultH5", **kwargs)
         self.timestamps = session.load_timestamps(Stream.Depth)
         self.acquisition_metadata = session.load_metadata()
         self.nframes = session.nframes
-        self.roi = roi
-        self.bground_im = bground_im
-        self.first_frame = first_frame
+        self.roi = self.config['roi']
+        self.bground_im = self.config['bground_im']
+        self.first_frame = self.config['first_frame']
         self.status_dict = status_dict
 
     def initialize(self):
