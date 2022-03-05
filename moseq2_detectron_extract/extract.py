@@ -72,8 +72,8 @@ def extract_session(session: Session, config: dict):
         pipeline = Pipeline()
         reader_pbar = pipeline.progress.add(name='producer', desc='Processing batches', total=session.nframes)
         out = pipeline.add_step('Inferring',InferenceStep, pipeline.input, config=config)
-        out = pipeline.add_step('Extract Features', ExtractFeaturesStep, out, show_progress=False, config=config)
-        out = pipeline.add_step('Crop and Rotate', FrameCropStep, out, num_listners=3, config=config)
+        out = pipeline.add_step('Extract Features', ExtractFeaturesStep, out[0], show_progress=False, config=config)
+        out = pipeline.add_step('Crop and Rotate', FrameCropStep, out[0], num_listners=3, config=config)
         pipeline.add_step('Preview Video', PreviewVideoWriterStep, out[0], config=config)
         pipeline.add_step('Write Keypoints', KeypointWriterStep, out[1], show_progress=False, config=config)
         pipeline.add_step('Write H5 Result', ResultH5WriterStep, out[2], show_progress=False, session=session, config=config, status_dict=status_dict)
@@ -87,10 +87,12 @@ def extract_session(session: Session, config: dict):
                 time.sleep(0.1)
             pipeline.input.put(shm)
             reader_pbar.put({'update': raw_frames.shape[0]})
-            cp = pipeline.progress.get_tqdm('producer').format_dict
-            n_frames = (cp["n"] or 0)
-            t_frames = cp["total"]
-            logging.info(f'Processed {n_frames} / {t_frames} frames ({n_frames/t_frames:.2%}) in {timedelta(seconds=cp["elapsed"])}', extra={'nostream': True})
+            cp = pipeline.progress.get_tqdm('producer')
+            if cp is not None:
+                n_frames = (cp.format_dict["n"] or 0)
+                t_frames = cp.format_dict["total"]
+                s_elapsed = cp.format_dict["elapsed"]
+                logging.info(f'Processed {n_frames} / {t_frames} frames ({n_frames/t_frames:.2%}) in {timedelta(seconds=s_elapsed)}', extra={'nostream': True})
         pipeline.input.put(None) # signal we are done
 
         # join the threads

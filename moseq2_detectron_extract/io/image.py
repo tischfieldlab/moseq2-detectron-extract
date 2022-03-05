@@ -1,7 +1,7 @@
 import ast
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -10,7 +10,7 @@ import tifffile
 from imageio import imwrite
 
 
-def write_image(filename: str, image: np.ndarray, scale: bool=True, scale_factor: Optional[float]=None, dtype: npt.DTypeLike='uint16',
+def write_image(filename: str, image: np.ndarray, scale: bool=True, scale_factor: Optional[Union[float, Tuple[float, float]]]=None, dtype: npt.DTypeLike='uint16',
                 metadata: Optional[dict]=None, compress: int=0) -> None:
     ''' Save image data, possibly with scale factor for easy display
 
@@ -37,7 +37,7 @@ def write_image(filename: str, image: np.ndarray, scale: bool=True, scale_factor
             scale_factor = int(max_int / np.nanmax(image))
             image = image * scale_factor
         elif isinstance(scale_factor, tuple):
-            image = np.float32(image)
+            image = image.astype('float32')
             image = (image - scale_factor[0]) / (scale_factor[1] - scale_factor[0])
             image = np.clip(image, 0, 1) * max_int
 

@@ -1,17 +1,17 @@
 import os
-from typing import List, Union
+from typing import List
 
 import h5py
 from moseq2_detectron_extract.io.result import (create_extract_h5,
                                                 write_extracted_chunk_to_h5)
 from moseq2_detectron_extract.io.session import Session, Stream
 from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
-from torch.multiprocessing import Queue
+from torch.multiprocessing import SimpleQueue
 
 
 class ResultH5WriterStep(PipelineStep):
     
-    def __init__(self, session: Session, status_dict, config, in_queue: Queue, out_queue: Union[Queue, List[Queue], None], **kwargs) -> None:
+    def __init__(self, session: Session, status_dict, config, in_queue: SimpleQueue, out_queue: List[SimpleQueue], **kwargs) -> None:
         super().__init__(config, in_queue, out_queue, name="ResultH5", **kwargs)
         self.timestamps = session.load_timestamps(Stream.Depth)
         self.acquisition_metadata = session.load_metadata()

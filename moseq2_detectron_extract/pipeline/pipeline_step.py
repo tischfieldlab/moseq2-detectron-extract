@@ -3,24 +3,19 @@ import multiprocessing as mp
 import traceback
 from typing import List, Union
 
-from torch.multiprocessing import Process, Queue
+from torch.multiprocessing import Process, Queue, SimpleQueue
 
 
 class PipelineStep(Process):
 
-    def __init__(self, config: dict, in_queue: Queue, out_queue: Union[Queue, List[Queue], None], progress: Queue, name: str=None, **kwargs) -> None:
+    def __init__(self, config: dict, in_queue: SimpleQueue, out_queue: List[SimpleQueue], progress: Queue, name: str=None, **kwargs) -> None:
         super().__init__(name=name, **kwargs)
         self.config = config
         self.progress = progress
         self.in_queue = in_queue
-        if isinstance(out_queue, (mp.queues.Queue, mp.queues.SimpleQueue)):
-            self.out_queue = [out_queue]
-        elif isinstance(out_queue, list):
-            self.out_queue = out_queue
-        elif out_queue is None:
-            self.out_queue = []
-        else:
-            raise TypeError('expected Queue or List[Queue] or None for parameter `out_queue`')
+        self.out_queue = out_queue
+        if not isinstance(out_queue, list):
+            raise TypeError('expected List[Queue] (possibly empty) for parameter `out_queue`')
         self.reset_progress(config['nframes'])
 
     def reset_progress(self, total):

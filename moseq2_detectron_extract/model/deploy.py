@@ -22,7 +22,7 @@ from torch import Tensor, nn
 def export_model(cfg: CfgNode, output: str, run_eval: bool=True):
     logger = setup_logger()
 
-    torch._C._jit_set_bailout_depth(1)
+    torch._C._jit_set_bailout_depth(1) # type: ignore
 
     # cuda context is initialized before creating dataloader, so we don't fork anymore
     cfg.DATALOADER.NUM_WORKERS = 0
@@ -76,24 +76,24 @@ def export_scripting(torch_model, output: str):
             self.eval()
 
     if isinstance(torch_model, GeneralizedRCNN):
-
-        class ScriptableAdapter(ScriptableAdapterBase):
+        class GRCNNScriptableAdapter(ScriptableAdapterBase):
             def forward(self, inputs: List[Dict[str, torch.Tensor]]) -> List[Dict[str, Tensor]]:
                 instances = self.model.inference(inputs, do_postprocess=False)
                 return [i.get_fields() for i in instances]
 
-    else:
+        ts_model = scripting_with_instances(GRCNNScriptableAdapter(), fields)
 
+    else:
         class ScriptableAdapter(ScriptableAdapterBase):
             def forward(self, inputs: List[Dict[str, torch.Tensor]]) -> List[Dict[str, Tensor]]:
                 instances = self.model(inputs)
                 return [i.get_fields() for i in instances]
 
-    ts_model = scripting_with_instances(ScriptableAdapter(), fields)
+        ts_model = scripting_with_instances(ScriptableAdapter(), fields)
+
     with PathManager.open(os.path.join(output, "model.ts"), "wb") as f:
         torch.jit.save(ts_model, f)
     dump_torchscript_IR(ts_model, output)
 
-    
     # TODO inference in Python now missing postprocessing glue code
     return ts_model, os.path.join(output, "model.ts")

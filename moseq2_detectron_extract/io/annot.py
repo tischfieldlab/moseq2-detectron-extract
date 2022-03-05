@@ -3,7 +3,7 @@ import logging
 import os
 import random
 from typing import (Callable, Dict, Iterable, List, MutableSequence, Optional,
-                    Sequence, Tuple, Union)
+                    Sequence, Tuple, Union, cast)
 
 import numpy as np
 import pycocotools
@@ -15,11 +15,14 @@ from tqdm import tqdm
 from typing_extensions import Literal, TypedDict
 
 
-class Annotation(TypedDict):
+class SegmAnnotation(TypedDict):
     bbox: Sequence[float]
     bbox_mode: BoxMode
     category_id: int
     segmentation: Union[Sequence[Sequence[float]], dict]
+
+
+class KptSegmAnnotation(SegmAnnotation):
     keypoints: Sequence[float]
 
 
@@ -29,7 +32,7 @@ class DataItemBase(TypedDict):
     height: int
     image_id: str
     rescale_intensity: float
-    annotations: Sequence[Annotation]
+    annotations: Sequence[KptSegmAnnotation]
 
 
 class DataItem(DataItemBase, total=False):
@@ -287,7 +290,7 @@ def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_forma
         return completions
 
 
-def get_polygon_data(entry: dict, mask_format: MaskFormat) -> dict:
+def get_polygon_data(entry: dict, mask_format: MaskFormat) -> SegmAnnotation:
     ''' Extract polygon data from an annotation entry
     '''
     poly = np.array(entry['value']['points'])
@@ -355,10 +358,12 @@ def get_image_path(entry: dict) -> str:
         return entry['data']['image']
     elif 'data' in entry and 'depth_image' in entry['data']:
         return entry['data']['depth_image']
+    else:
+        raise KeyError('Could not locate image path from entry!')
 
 
-def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: MaskFormat='polygon', keypoint_names: Optional[List[str]]=None) -> dict:
-    annot = {}
+def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: MaskFormat='polygon', keypoint_names: Optional[List[str]]=None) -> DataItem:
+    annot: dict = {}
     kpts = {}
 
     if len(entry[key]) > 1:
@@ -393,7 +398,8 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
         'width': rslt['original_width'],
         'height': rslt['original_height'],
         'image_id': entry['id'],
-        'annotations': [annot],
+        'annotations': [cast(KptSegmAnnotation, annot)],
+        'rescale_intensity': 1,
     }
 
 

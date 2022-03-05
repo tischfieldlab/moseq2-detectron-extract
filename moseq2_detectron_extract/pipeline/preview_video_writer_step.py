@@ -13,12 +13,12 @@ from moseq2_detectron_extract.proc.proc import (colorize_video,
 from moseq2_detectron_extract.proc.roi import get_roi_contour
 from moseq2_detectron_extract.viz import (draw_instances_fast, draw_keypoints,
                                           draw_mask, scale_depth_frames)
-from torch.multiprocessing import Queue
+from torch.multiprocessing import SimpleQueue
 
 
 class PreviewVideoWriterStep(PipelineStep):
 
-    def __init__(self, config, in_queue: Queue, out_queue: Union[Queue, List[Queue], None], **kwargs) -> None:
+    def __init__(self, config, in_queue: SimpleQueue, out_queue: List[SimpleQueue], **kwargs) -> None:
         super().__init__(config, in_queue, out_queue, name="ResultH5", **kwargs)
         self.roi = config['roi']
 

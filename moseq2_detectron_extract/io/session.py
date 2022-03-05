@@ -99,9 +99,14 @@ class Session(object):
         Returns:
         dict, metadata for this session
         '''
-        metadata_path: Union[str, IO[bytes], None]
+        metadata_path: Union[str, IO[bytes]]
         if self.tar is not None and self.tar_members is not None:
-            metadata_path = self.tar.extractfile(self.tar_members[self.tar_names.index('metadata.json')])
+            f = self.tar_members[self.tar_names.index('metadata.json')]
+            efile = self.tar.extractfile(f)
+            if efile is not None:
+                metadata_path = efile
+            else:
+                raise ValueError('Could not find metadata in tar!')
         else:
             metadata_path = os.path.join(self.dirname, 'metadata.json')
         return load_metadata(metadata_path)
@@ -143,14 +148,17 @@ class Session(object):
                     correction_factor = corr_factor
                     break
 
-        timestamps = load_timestamps(timestamp_path, col=0)
+        if timestamp_path is None:
+            raise ValueError('Could not locate timestamp file!')
+        else:
+            timestamps = load_timestamps(timestamp_path, col=0)
 
-        if timestamps is not None:
-            timestamps = timestamps[self.first_frame_idx:self.last_frame_idx]
+            if timestamps is not None:
+                timestamps = timestamps[self.first_frame_idx:self.last_frame_idx]
 
-        timestamps *= correction_factor
+            timestamps *= correction_factor
 
-        return timestamps
+            return timestamps
 
 
     def find_roi(self, bg_roi_dilate: Tuple[int, int]=(10,10), bg_roi_shape='ellipse', bg_roi_index: int=0, bg_roi_weights=(1, .1, 1),

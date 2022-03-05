@@ -23,7 +23,7 @@ class RawVideoInfo(TypedDict):
     bytes_per_frame: int
 
 
-def get_raw_info(filename: str, bit_depth: int=16, frame_dims: Tuple[int, int]=(512, 424)) -> RawVideoInfo:
+def get_raw_info(filename: Union[str, tarfile.TarInfo], bit_depth: int=16, frame_dims: Tuple[int, int]=(512, 424)) -> RawVideoInfo:
     ''' Get info from a raw data file with specified frame dimensions and bit depth
 
     Parameters:
@@ -53,7 +53,14 @@ def get_raw_info(filename: str, bit_depth: int=16, frame_dims: Tuple[int, int]=(
         }
 
 FramesSelection = Union[int, Iterable[int]]
-def read_frames_raw(filename: str, frames: FramesSelection=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16,
+class BlockInfo(TypedDict):
+    seek_point: int
+    read_bytes: int
+    read_points: int
+    dims: Tuple[int, int, int]
+    idxs: Iterable[int]
+
+def read_frames_raw(filename: Union[str, tarfile.TarInfo], frames: FramesSelection=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16,
     dtype: npt.DTypeLike="<i2", tar_object: tarfile.TarInfo=None) -> np.ndarray:
     '''
     Reads in data from raw binary file
@@ -84,7 +91,7 @@ def read_frames_raw(filename: str, frames: FramesSelection=None, frame_dims: Tup
 
     # Build blocks of consecutive frames we can read as one batch.
     # Accounts for possible non-monotonically increasing indices, and random access cases
-    blocks = []
+    blocks: List[BlockInfo] = []
     for start, nframes in collapse_consecutive_values(sorted(frames)):
         blocks.append({
             'seek_point': int(np.maximum(0, start * vid_info['bytes_per_frame'])),
@@ -102,12 +109,14 @@ def read_frames_raw(filename: str, frames: FramesSelection=None, frame_dims: Tup
                 chunk = f.read(b['read_bytes'])
                 chunk = np.frombuffer(chunk, dtype=np.dtype(dtype)).reshape(b['dims'])
                 out_buffer[b['idxs'], ...] = chunk
-    else:
+    elif isinstance(filename, str):
         with open(filename, "rb") as f:
             for b in blocks:
                 f.seek(b['seek_point'])
                 chunk = np.fromfile(file=f, dtype=np.dtype(dtype), count=b['read_points']).reshape(b['dims'])
                 out_buffer[b['idxs'], ...] = chunk
+    else:
+        raise ValueError('Could not read!')
 
     return out_buffer
 
@@ -143,23 +152,31 @@ class FFProbeInfo(TypedDict):
 
 
 # https://gist.github.com/hiwonjoon/035a1ead72a767add4b87afe03d0dd7b
-def get_video_info(filename: str, tar_object: tarfile.TarInfo=None) -> FFProbeInfo:
+def get_video_info(filename: Union[str, tarfile.TarInfo], tar_object: tarfile.TarFile=None) -> FFProbeInfo:
     '''
     Get dimensions of data compressed using ffv1, along with duration via ffmpeg
 
     Parameters:
     filename (str): name of file
-    tar_object (tarfile.TarInfo|None): tarfile to read from. None if filename is not compressed
+    tar_object (tarfile.TarFile|None): tarfile to read from. None if filename is not compressed
 
     Returns:
     FFProbeInfo - dict containing information about video `filename`
     '''
-    is_stream = isinstance(filename, tarfile.TarInfo)
-    if is_stream:
+    if tar_object is not None and isinstance(filename, tarfile.TarInfo):
+        is_stream = True
         f = tempfile.NamedTemporaryFile(delete=False)
-        f.write(tar_object.extractfile(filename).read())
+        efile = tar_object.extractfile(filename)
+        if efile is not None:
+            f.write(efile.read())
         f.close()
-        filename = f.name
+        probe_filename = f.name
+    elif isinstance(filename, str):
+        is_stream = False
+        probe_filename = filename
+    else:
+        raise ValueError(f'Was expecting Union[str, tarfile.TarInfo] for parameter filename, got {type(filename)}')
+
 
     command = [
         'ffprobe',
@@ -168,7 +185,7 @@ def get_video_info(filename: str, tar_object: tarfile.TarInfo=None) -> FFProbeIn
         'stream=width,height,r_frame_rate,nb_frames,codec_name,pix_fmt',
         '-of',
         'default=noprint_wrappers=1:nokey=1',
-        filename,
+        probe_filename,
         '-sexagesimal'
     ]
 
@@ -180,14 +197,14 @@ def get_video_info(filename: str, tar_object: tarfile.TarInfo=None) -> FFProbeIn
 
     if err:
         logging.error(err, stack_info=True)
-    out = out.decode().split(os.linesep)
+    out_lines = out.decode().split(os.linesep)
 
     return {
-        'file': filename,
-        'codec': out[0],
-        'pixel_format': out[3],
-        'dims': (int(out[1]), int(out[2])),
-        'fps': float(out[4].split('/')[0])/float(out[4].split('/')[1]),
+        'file': probe_filename,
+        'codec': out_lines[0],
+        'pixel_format': out_lines[3],
+        'dims': (int(out_lines[1]), int(out_lines[2])),
+        'fps': float(out_lines[4].split('/')[0])/float(out_lines[4].split('/')[1]),
         'nframes': int(out[5])
     }
 
@@ -195,7 +212,7 @@ def get_video_info(filename: str, tar_object: tarfile.TarInfo=None) -> FFProbeIn
 # simple command to pipe frames to an ffv1 file
 def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
                  pixel_format: str='gray16le', codec: str='ffv1', close_pipe: bool=True,
-                 pipe=None, slices: int=24, slicecrc: int=1, frame_size: Tuple[int, int]=None, get_cmd=False):
+                 pipe=None, slices: int=24, slicecrc: int=1, frame_size: str=None, get_cmd=False):
     '''
     Write frames to avi file using the ffv1 lossless encoder
     '''
@@ -203,10 +220,13 @@ def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
     # we probably want to include a warning about multiples of 32 for videos
     # (then we can use pyav and some speedier tools)
 
-    if not frame_size and type(frames) is np.ndarray:
-        frame_size = '{0:d}x{1:d}'.format(frames.shape[2], frames.shape[1])
-    elif not frame_size and type(frames) is tuple:
-        frame_size = '{0:d}x{1:d}'.format(frames[0], frames[1])
+    frame_size_str: str
+    if frame_size is None and isinstance(frames, np.ndarray):
+        frame_size_str = '{0:d}x{1:d}'.format(frames.shape[2], frames.shape[1])
+    elif frame_size is None and isinstance(frames, tuple):
+        frame_size_str = '{0:d}x{1:d}'.format(frames[0], frames[1])
+    else:
+        frame_size_str = frame_size
 
     command = [
         'ffmpeg',
@@ -214,7 +234,7 @@ def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
         '-loglevel', 'fatal',
         '-framerate', str(fps),
         '-f', 'rawvideo',
-        '-s', frame_size,
+        '-s', frame_size_str,
         '-pix_fmt', pixel_format,
         '-i', '-',
         '-an',
@@ -243,7 +263,7 @@ def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
         return pipe
 
 
-def read_frames(filename: str, frames=range(0,), threads: int=6, fps: int=30,
+def read_frames(filename: Union[str, tarfile.TarInfo], frames=range(0,), threads: int=6, fps: int=30,
                 pixel_format: str='gray16le', frame_size: Tuple[int, int]=None,
                 slices: int=24, slicecrc: int=1, get_cmd=False, tar_object=None, **_):
     '''
@@ -262,12 +282,15 @@ def read_frames(filename: str, frames=range(0,), threads: int=6, fps: int=30,
     Returns:
         3d numpy array:  frames x h x w
     '''
-    is_stream = isinstance(filename, tarfile.TarInfo)
-    if is_stream:
+    if isinstance(filename, tarfile.TarInfo):
+        is_stream = True
         f = tempfile.NamedTemporaryFile(delete=False)
         f.write(tar_object.extractfile(filename).read())
         f.close()
-        filename = f.name
+        frames_filename = f.name
+    else:
+        is_stream = False
+        frames_filename = filename
 
     finfo = get_video_info(filename)
 
@@ -277,6 +300,7 @@ def read_frames(filename: str, frames=range(0,), threads: int=6, fps: int=30,
     if not frame_size:
         frame_size = finfo['dims']
 
+    out_shape: Union[Tuple[int, int, int], Tuple[int, int, int, int]]
     if pixel_format == 'gray16le':
         dtype = 'uint16'
         out_shape = (len(frames), frame_size[1], frame_size[0])
@@ -290,7 +314,7 @@ def read_frames(filename: str, frames=range(0,), threads: int=6, fps: int=30,
             'ffmpeg',
             '-loglevel', 'fatal',
             '-ss', str(datetime.timedelta(seconds=start/fps)),
-            '-i', filename,
+            '-i', frames_filename,
             '-vframes', str(nframes),
             '-f', 'image2pipe',
             '-s', '{:d}x{:d}'.format(frame_size[0], frame_size[1]),
@@ -432,7 +456,7 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
 #     return dest_filename
 
 
-def load_movie_data(filename: str, frames=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16, **kwargs):
+def load_movie_data(filename: Union[str, tarfile.TarInfo], frames=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16, **kwargs):
     '''
     Reads in frames
     '''
@@ -457,7 +481,7 @@ def load_movie_data(filename: str, frames=None, frame_dims: Tuple[int, int]=(512
     return frame_data
 
 
-def get_movie_info(filename: str, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16, tar_object: tarfile.TarInfo=None):
+def get_movie_info(filename: Union[str, tarfile.TarInfo], frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16, tar_object: tarfile.TarFile=None):
     '''
     Gets movie info
     '''
@@ -467,11 +491,11 @@ def get_movie_info(filename: str, frame_dims: Tuple[int, int]=(512, 424), bit_de
         fname = filename.lower()
 
     if fname.endswith('.dat'):
-        metadata = get_raw_info(filename, frame_dims=frame_dims, bit_depth=bit_depth)
+        return get_raw_info(filename, frame_dims=frame_dims, bit_depth=bit_depth)
     elif fname.endswith(('.avi', '.mp4')):
-        metadata = get_video_info(filename, tar_object=tar_object)
-
-    return metadata
+        return get_video_info(filename, tar_object=tar_object)
+    else:
+        raise RuntimeError('Could not parse movie info')
 
 
 

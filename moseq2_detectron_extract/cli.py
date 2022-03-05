@@ -58,7 +58,7 @@ def new_init(self, *args, **kwargs):
     orig_init(self, *args, **kwargs)
     self.show_default = True
 # end new_init()
-click.core.Option.__init__ = new_init
+click.core.Option.__init__ = new_init # type: ignore
 
 def enable_profiling():
     logging.info("Enabling profiling...")
@@ -648,7 +648,7 @@ def dataset_info(annot_file, replace_data_path, min_height, max_height):
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 @click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
 @click.option('--evaluate', is_flag=True, help='Run COCO evaluation metrics on supplied annotations.')
-def dataset_info(model_dir, annot_file, replace_data_path, min_height, max_height, checkpoint, evaluate):
+def compile(model_dir, annot_file, replace_data_path, min_height, max_height, checkpoint, evaluate):
     setup_logging()
 
     logging.info('Loading model....')

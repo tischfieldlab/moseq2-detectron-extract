@@ -39,8 +39,8 @@ class Evaluator:
         assert self.input_format in ["L"], self.input_format
 
     def __call__(self, output_dir: str=None):
-        data_loader = Trainer.build_test_loader(self.config, self.cfg.DATASETS.TEST)
-        evaluator = DatasetEvaluators([Trainer.build_evaluator(self.config, self.cfg.DATASETS.TEST, output_folder=output_dir)])
+        data_loader = Trainer.build_test_loader(self.cfg, self.cfg.DATASETS.TEST)
+        evaluator = DatasetEvaluators([Trainer.build_evaluator(self.cfg, self.cfg.DATASETS.TEST, output_folder=output_dir)])
         eval_results = inference_on_dataset(self.model, data_loader, evaluator)
         return eval_results
 
@@ -83,9 +83,9 @@ def inference_on_dataset_readonly_model(
 
     num_warmup = min(5, total - 1)
     start_time = time.perf_counter()
-    total_data_time = 0
-    total_compute_time = 0
-    total_eval_time = 0
+    total_data_time = 0.0
+    total_compute_time = 0.0
+    total_eval_time = 0.0
     with ExitStack() as stack:
         # We comment out the entering of inference context because train attribute is
         # readonly and attempt to modify raises error. In this case the model can only

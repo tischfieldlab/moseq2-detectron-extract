@@ -1,3 +1,5 @@
+from tarfile import TarInfo
+import tarfile
 from typing import Union
 
 import cv2
@@ -5,7 +7,7 @@ import numpy as np
 import scipy
 import skimage.measure
 import tqdm
-from moseq2_detectron_extract.io.video import (get_raw_info, get_video_info,
+from moseq2_detectron_extract.io.video import (FFProbeInfo, RawVideoInfo, get_raw_info, get_video_info,
                                                read_frames, read_frames_raw)
 
 
@@ -284,7 +286,7 @@ def get_bground_im(frames: np.ndarray) -> np.ndarray:
     return bground
 
 
-def get_bground_im_file(frames_file: str, frame_stride: int=500, med_scale: int=5, **kwargs) -> np.ndarray:
+def get_bground_im_file(frames_file: Union[str, TarInfo], frame_stride: int=500, med_scale: int=5, **kwargs) -> np.ndarray:
     ''' Returns background from file
 
     Parameters:
@@ -297,10 +299,16 @@ def get_bground_im_file(frames_file: str, frame_stride: int=500, med_scale: int=
     bground (2d numpy array):  shape (r x c), background image
     '''
 
+    if isinstance(frames_file, tarfile.TarInfo):
+        fname =  frames_file.name.lower()
+    else:
+        fname = frames_file.lower()
+
+    finfo: Union[FFProbeInfo, RawVideoInfo]
     try:
-        if frames_file.endswith('dat'):
+        if fname.endswith('dat'):
             finfo = get_raw_info(frames_file)
-        elif frames_file.endswith('avi'):
+        elif fname.endswith('avi'):
             finfo = get_video_info(frames_file)
     except AttributeError as e:
         finfo = get_raw_info(frames_file)
@@ -310,9 +318,9 @@ def get_bground_im_file(frames_file: str, frame_stride: int=500, med_scale: int=
 
     for i, frame in enumerate(frame_idx):
         try:
-            if frames_file.endswith('dat'):
+            if fname.endswith('dat'):
                 frs = read_frames_raw(frames_file, int(frame)).squeeze()
-            elif frames_file.endswith('avi'):
+            elif fname.endswith('avi'):
                 frs = read_frames(frames_file, [int(frame)]).squeeze()
         except AttributeError as e:
             frs = read_frames_raw(frames_file, int(frame), **kwargs).squeeze()

@@ -4,8 +4,9 @@ import json
 import logging
 import os
 import sys
+from tarfile import TarInfo
 import traceback
-from typing import Dict, Optional
+from typing import IO, Dict, Optional, Union
 import warnings
 
 import click
@@ -30,7 +31,7 @@ def gen_batch_sequence(nframes: int, chunk_size: int, overlap: int, offset: int=
         yield seq[i:i+chunk_size]
 
 
-def load_timestamps(timestamp_file: str, col: int=0) -> np.ndarray:
+def load_timestamps(timestamp_file: Union[str, IO[bytes]], col: int=0) -> np.ndarray:
     ''' Read timestamps from space delimited text file
 
     Parameters:
@@ -42,23 +43,23 @@ def load_timestamps(timestamp_file: str, col: int=0) -> np.ndarray:
     '''
 
     ts = []
-    try:
+    if isinstance(timestamp_file, str):
         with open(timestamp_file, 'r') as f:
-            for line in f:
-                cols = line.split()
+            for line_str in f:
+                cols = line_str.split()
                 ts.append(float(cols[col]))
-        ts = np.array(ts)
-    except TypeError as e:
+        return np.array(ts)
+    elif isinstance(timestamp_file, io.BufferedReader):
         # try iterating directly
-        for line in timestamp_file:
-            cols = line.split()
+        for line_bytes in timestamp_file:
+            cols = line_bytes.decode().split()
             ts.append(float(cols[col]))
-        ts = np.array(ts)
+        return np.array(ts)
+    else:
+        raise ValueError('Could not understand parameter timestamp_file!')
 
-    return ts
 
-
-def load_metadata(metadata_file: str) -> dict:
+def load_metadata(metadata_file: Union[str, IO[bytes]]) -> dict:
     ''' Load session metadata from a json file
 
     Parameters:
@@ -67,16 +68,14 @@ def load_metadata(metadata_file: str) -> dict:
     Returns:
     dict containing session metadata
     '''
-    metadata = {}
-    try:
-        if os.path.exists(metadata_file):
-            with open(metadata_file, 'r') as f:
-                metadata = json.load(f)
-    except TypeError as e:
-        # try loading directly
-        metadata = json.load(metadata_file)
+    if isinstance(metadata_file, str):
+        with open(metadata_file, 'r') as f:
+            return json.load(f)
+    elif isinstance(metadata_file, io.BufferedReader):
+        return json.load(metadata_file)
+    else:
+        raise ValueError(f'Could not load metadata file "{metadata_file}"')
 
-    return metadata
 
 
 def read_yaml(yaml_file: str) -> dict:
@@ -237,15 +236,12 @@ def setup_logging(log_filename: Optional[str]=None):
     stream_handler = _TqdmLoggingHandler()
     stream_handler.setLevel(logging.INFO)
     def filter_progress_records(record: logging.LogRecord):
-        if hasattr(record, 'nostream') and record.nostream:
-            return False
-        else:
-            return True
+        return not getattr(record, 'nostream', False)
     stream_handler.addFilter(filter_progress_records)
     logger.addHandler(stream_handler)
 
 
-def click_param_annot(click_cmd: click.Command) -> Dict[str, str]:
+def click_param_annot(click_cmd: click.Command) -> Dict[str, Optional[str]]:
     ''' Given a click.Command instance, return a dict that maps option names to help strings.
     Currently skips click.Arguments, as they do not have help strings.
 

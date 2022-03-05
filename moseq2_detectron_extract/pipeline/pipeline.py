@@ -9,19 +9,20 @@ class Pipeline:
 
     def __init__(self) -> None:
         self.progress = ProcessProgress()
-        self.steps: PipelineStep = []
-        self.input: Queue = SimpleQueue()
+        self.steps: List[PipelineStep] = []
+        self.input: SimpleQueue = SimpleQueue()
 
-    def add_step(self, name: str, klass: type, in_queue: Queue, show_progress=True, num_listners: int=1, **kwargs) -> Union[Queue, List[Queue], None]:
+    def add_step(self, name: str, klass: type, in_queue: SimpleQueue, show_progress=True, num_listners: int=1, **kwargs) -> List[SimpleQueue]:
         # create output queue based on number of listners
-        out_queue = None
-        if num_listners == 1:
-            out_queue: Queue = SimpleQueue()
-        elif num_listners > 1:
-            out_queue: List[Queue] = [SimpleQueue() for i in range(num_listners)]
+        out_queue: List[SimpleQueue] = [SimpleQueue() for i in range(num_listners)]
 
+        # create progress, which also serves as a message pump
         pbar = self.progress.add(desc=name, show=show_progress)
+
+        # create the pipeline step, attaching queues and progress
         step = klass(in_queue=in_queue, out_queue=out_queue, progress=pbar, **kwargs)
+
+        # add the step and return the output queue[s]
         self.steps.append(step)
         return out_queue
 
