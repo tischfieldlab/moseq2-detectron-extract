@@ -210,4 +210,3 @@ def draw_contour(im: np.ndarray, contour: Iterable[np.ndarray], color: Tuple[int
     np.ndarray, image with contours drawn
     '''
     return cv2.drawContours(im, contour, -1, color, thickness, cv2.LINE_AA)
-

@@ -10,6 +10,8 @@ from moseq2_detectron_extract.model.util import outputs_to_instances
 
 
 class Predictor:
+    ''' Predictor class implementation
+    '''
     def __init__(self, model: Any, is_torchscript: bool=False):
         '''
 
@@ -46,7 +48,7 @@ class Predictor:
         '''
         Parameters:
         original_image (np.ndarray): an image of shape (H, W, C) (in BGR order).
-        -- OR -- 
+        -- OR --
         original_image (np.ndarray): an image of shape (N, H, W, C) (in BGR order).
 
         Returns:

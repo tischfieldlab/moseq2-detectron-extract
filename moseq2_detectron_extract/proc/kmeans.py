@@ -29,7 +29,6 @@ def select_frames_kmeans(session: Session, num_frames_to_pick: int, indices: Opt
     '''
 
     _, bground_im, roi, _ = session.find_roi()
-    
 
     if indices is None:
         frames_iterator = session.iterate(chunk_size=chunk_size)

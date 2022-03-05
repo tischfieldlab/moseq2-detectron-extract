@@ -17,8 +17,8 @@ def get_last_checkpoint(path: str) -> str:
     Returns:
     Path to the last checkpoint
     '''
-    with open(os.path.join(path, 'last_checkpoint'), 'r') as f:
-        last_checkpoint = f.read()
+    with open(os.path.join(path, 'last_checkpoint'), 'r', encoding='utf-8') as chkpt_file:
+        last_checkpoint = chkpt_file.read()
     return os.path.join(path, last_checkpoint)
 
 
@@ -38,6 +38,8 @@ def get_specific_checkpoint(path: str, iteration: int, ext: str='pth') -> str:
 
 
 def outputs_to_instances(inputs: List[Dict[str, torch.Tensor]], outputs: List[Dict[str, torch.Tensor]]) -> List[dict]:
+    ''' Transform model outputs to Instances
+    '''
     instances = []
     for i, o in zip(inputs, outputs):
         height = i.get("height", i['image'].shape[0])

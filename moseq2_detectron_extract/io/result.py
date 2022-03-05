@@ -1,9 +1,12 @@
 import h5py
 import numpy as np
+from pkg_resources import get_distribution
+
+from moseq2_detectron_extract.cli import extract
 from moseq2_detectron_extract.io.util import click_param_annot, dict_to_h5
 from moseq2_detectron_extract.proc.keypoints import keypoint_attributes
 from moseq2_detectron_extract.proc.scalars import scalar_attributes
-from pkg_resources import get_distribution
+
 
 
 def create_extract_h5(h5_file: h5py.File, acquisition_metadata: dict, config_data: dict, status_dict: dict,
@@ -86,17 +89,16 @@ def create_extract_h5(h5_file: h5py.File, acquisition_metadata: dict, config_dat
 
     # Extract Version
     package_name = 'moseq2-detectron-extract'
-    extract_version = '{} v{}'.format(package_name, np.string_(get_distribution(package_name).version))
+    extract_version = f'{package_name} v{np.string_(get_distribution(package_name).version)}'
     h5_file.create_dataset('metadata/extraction/extract_version', data=extract_version)
     h5_file['metadata/extraction/extract_version'].attrs['description'] = 'Version of moseq2-extract'
 
     # Extraction Parameters
-    from moseq2_detectron_extract.cli import infer
-    dict_to_h5(h5_file, status_dict['parameters'], 'metadata/extraction/parameters', click_param_annot(infer))
+    dict_to_h5(h5_file, status_dict['parameters'], 'metadata/extraction/parameters', click_param_annot(extract))
 
     # Acquisition Metadata
     for key, value in acquisition_metadata.items():
-        if type(value) is list and len(value) > 0 and type(value[0]) is str:
+        if isinstance(value, list) and len(value) > 0 and isinstance(value[0], str):
             value = [n.encode('utf8') for n in value]
 
         if value is not None:

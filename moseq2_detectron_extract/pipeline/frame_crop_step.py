@@ -4,6 +4,8 @@ from moseq2_detectron_extract.proc.proc import crop_and_rotate_frame
 
 
 class FrameCropStep(PipelineStep):
+    ''' PipelineStep to crop and rotate frames
+    '''
 
     def process(self, data) -> None:
         crop_size = self.config['crop_size']

@@ -10,6 +10,8 @@ from detectron2.utils.logger import log_every_n_seconds
 
 
 class LossEvalHook(HookBase):
+    ''' Hook to compute loss on evaluation dataset
+    '''
     def __init__(self, eval_period, model, data_loader):
         self._model = model
         self._period = eval_period
@@ -17,7 +19,9 @@ class LossEvalHook(HookBase):
 
 
     def _do_loss_eval(self):
-        # Copying inference_on_dataset from evaluator.py
+        '''
+        Copying inference_on_dataset from evaluator.py
+        '''
         total = len(self._data_loader)
         num_warmup = min(5, total - 1)
 
@@ -39,20 +43,18 @@ class LossEvalHook(HookBase):
                 eta = datetime.timedelta(seconds=int(total_seconds_per_img * (total - idx - 1)))
                 log_every_n_seconds(
                     logging.INFO,
-                    "Loss on Validation  done {}/{}. {:.4f} s / img. ETA={}".format(
-                        idx + 1, total, seconds_per_img, str(eta)
-                    ),
+                    f"Loss on Validation  done {idx + 1}/{total}. {seconds_per_img:.4f} s / img. ETA={eta}",
                     n=5,
                 )
             loss_batch = self._get_loss(inputs)
-            for k, v in loss_batch.items():
+            for key, value in loss_batch.items():
                 try:
-                    losses[k].append(v)
+                    losses[key].append(value)
                 except KeyError:
-                    losses[k] = [v]
+                    losses[key] = [value]
 
-        for k, v in losses.items():
-            self.trainer.storage.put_scalar(f'validation_{k}', np.mean(v))
+        for key, value in losses.items():
+            self.trainer.storage.put_scalar(f'validation_{key}', np.mean(value))
         comm.synchronize()
 
         return losses

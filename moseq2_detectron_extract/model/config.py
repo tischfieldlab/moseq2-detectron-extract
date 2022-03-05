@@ -5,12 +5,25 @@ from moseq2_detectron_extract.io.annot import get_dataset_statistics
 
 
 def load_config(config_file: str) -> CfgNode:
-    with open(config_file, 'r') as cf:
-        config = CfgNode.load_cfg(cf)
+    ''' Load a configuration file
+
+    Parameters:
+    config_file (str): path to configuration file
+
+    Returns:
+    CfgNode: parsed configuration
+    '''
+    with open(config_file, 'r', encoding='utf-8') as cfg_file:
+        config = CfgNode.load_cfg(cfg_file)
     return config
 
 
 def get_base_config() -> CfgNode:
+    ''' Get the base configuration
+
+    Returns:
+    CfgNode: base configuration
+    '''
     cfg = get_cfg()
 
     # USE Keypoint RCNN
@@ -75,6 +88,17 @@ def get_base_config() -> CfgNode:
 
 
 def add_dataset_cfg(cfg: CfgNode, train_dset_name: str="moseq_train", test_dset_name: str="moseq_test", recompute_pixel_stats: bool=True) -> CfgNode:
+    ''' Add dataset-specific configuration details to the config
+
+    Parameters:
+    cfg (CfgNode): configuration to update
+    train_dset_name (str): name of the training dataset
+    test_dset_name (str): name of the testing dataset
+    recompute_pixel_stats (bool): True to recompute pixel statistics
+
+    Returns:
+    CfgNode: updated configuration
+    '''
     cfg.DATASETS.TRAIN = (train_dset_name,)
     cfg.DATASETS.TEST = (test_dset_name,)
 

@@ -12,6 +12,8 @@ from moseq2_detectron_extract.proc.proc import flips_from_keypoints
 
 
 def find_outliers_h5(result_h5: str, dest=None, keypoint_names: List[str]=None, jump_win:int=6, jump_thresh: float=10.0):
+    ''' Find outliers from a h5 results file
+    '''
     if keypoint_names is None:
         keypoint_names = [kp for kp in default_keypoint_names if kp != 'TailTip']
 
@@ -41,7 +43,7 @@ def find_outliers_h5(result_h5: str, dest=None, keypoint_names: List[str]=None, 
 
         if dest is None:
             dest = os.path.splitext(result_h5)[0] + '.outlier_idxs.txt'
-        with open(dest, 'w') as f:
-            f.writelines(f'{idx}\n' for idx in final_indices)
+        with open(dest, 'w', encoding='utf-8') as outlier_idx_file:
+            outlier_idx_file.writelines(f'{idx}\n' for idx in final_indices)
 
         return final_indices

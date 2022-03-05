@@ -26,7 +26,8 @@ def select_strel(shape: str='e', size: Tuple[int, int]=(10, 10)):
     return strel
 
 
-def convert_pxs_to_mm(coords: np.ndarray, resolution: Tuple[int, int]=(512, 424), field_of_view: Tuple[float, float]=(70.6, 60), true_depth: float=673.1) -> np.ndarray:
+def convert_pxs_to_mm(coords: np.ndarray, resolution: Tuple[int, int]=(512, 424), field_of_view: Tuple[float, float]=(70.6, 60),
+                      true_depth: float=673.1) -> np.ndarray:
     '''
     Converts x, y coordinates in pixel space to mm.
     http://stackoverflow.com/questions/17832238/kinect-intrinsic-parameters-from-field-of-view/18199938#18199938
@@ -80,7 +81,7 @@ def slice_dict(data: dict, index: int) -> dict:
     ''' Extract a slice out of a dict of numpy arrays
 
     Parameters:
-    data (dict): dict with 
+    data (dict): dict with
     index (int): index on axis 0 to extract
 
     Returns:
