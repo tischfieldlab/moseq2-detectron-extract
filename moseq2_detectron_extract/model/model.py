@@ -12,7 +12,7 @@ from detectron2.evaluation import COCOEvaluator
 from moseq2_detectron_extract.io.util import ensure_dir
 from moseq2_detectron_extract.model.augmentations import (
     Albumentations, RandomFieldNoiseAugmentation, ScaleAugmentation)
-from moseq2_detectron_extract.model.hooks import LossEvalHook
+from moseq2_detectron_extract.model.hooks import LossEvalHook, MemoryUsageHook
 from moseq2_detectron_extract.model.mapper import MoseqDatasetMapper
 
 
@@ -61,4 +61,5 @@ class Trainer(DefaultTrainer):
                 DatasetMapper(self.cfg, True)
             )
         ))
+        hooks.append(MemoryUsageHook())
         return hooks

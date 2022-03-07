@@ -9,6 +9,16 @@ from detectron2.engine.hooks import HookBase
 from detectron2.utils.logger import log_every_n_seconds
 
 
+class MemoryUsageHook(HookBase):
+    ''' Hook to log torch memory statistics to tensorboard
+    '''
+    def after_step(self):
+        current_device = torch.cuda.current_device()
+        stats = torch.cuda.memory_stats(current_device)
+        with self.trainer.storage.name_scope("Memory"):
+            self.trainer.storage.put_scalars(**stats)
+
+
 class LossEvalHook(HookBase):
     ''' Hook to compute loss on evaluation dataset
     '''
@@ -54,7 +64,8 @@ class LossEvalHook(HookBase):
                     losses[key] = [value]
 
         for key, value in losses.items():
-            self.trainer.storage.put_scalar(f'validation_{key}', np.mean(value))
+            with self.trainer.storage.name_scope(key):
+                self.trainer.storage.put_scalar(f'validation_{key}', np.mean(value))
         comm.synchronize()
 
         return losses
