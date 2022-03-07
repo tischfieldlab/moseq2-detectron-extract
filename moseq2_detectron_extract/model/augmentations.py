@@ -244,7 +244,7 @@ class AlbumentationsTransform(Transform):
     def apply_image(self, img):
         try:
             td_params = self.aug.get_params_dependent_on_targets({"image": img})
-        except Exception:
+        except Exception: # pylint: disable=borad-except
             td_params = {}
         return self.aug.apply(img, **self.param, **td_params)
 
@@ -278,7 +278,7 @@ class Albumentations(Augmentation):
         super().__init__()
         self._aug = augmentor
 
-    def get_transform(self, img):
+    def get_transform(self):
         return AlbumentationsTransform(self._aug, self._aug.get_params())
 
     def __repr__(self):

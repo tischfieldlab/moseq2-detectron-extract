@@ -25,7 +25,7 @@ def find_outliers_h5(result_h5: str, dest=None, keypoint_names: List[str]=None, 
         logging.info(f' -> Found {len(nan_keypoints)} frames with NAN keypoints.\n')
 
         logging.info('Searching for frames with jumping algorithm...')
-        ind, dist, outliers = find_outliers_jumping(kpts, window=jump_win, thresh=jump_thresh)
+        ind, _, _ = find_outliers_jumping(kpts, window=jump_win, thresh=jump_thresh)
         logging.info(f' -> Found {len(ind)} frames via jumping algorithm.\n')
 
         logging.info('Searching for frames with flip disagreements...')
@@ -38,7 +38,7 @@ def find_outliers_h5(result_h5: str, dest=None, keypoint_names: List[str]=None, 
 
         final_indices = sorted(set(np.concatenate([nan_keypoints, ind])))
 
-        nframes = h5['/frames'].shape[0]
+        nframes = h5['/frames'].shape[0] # pylint: disable=no-member
         logging.info(f"Found {len(final_indices)} putative outlier frames out of {nframes} extracted frames ({len(final_indices)/nframes:.2%})")
 
         if dest is None:

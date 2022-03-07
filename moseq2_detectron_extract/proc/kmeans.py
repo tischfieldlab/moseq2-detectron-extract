@@ -1,11 +1,13 @@
 from typing import List, Optional
+
 import numpy as np
 import tqdm
+from skimage.transform import resize
+from sklearn.cluster import MiniBatchKMeans
+
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.proc.proc import (prep_raw_frames,
                                                 scale_raw_frames)
-from skimage.transform import resize
-from sklearn.cluster import MiniBatchKMeans
 
 
 def select_frames_kmeans(session: Session, num_frames_to_pick: int, indices: Optional[List[int]]=None, num_clusters: int=None, chunk_size: int=1000,

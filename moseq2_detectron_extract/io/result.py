@@ -2,7 +2,6 @@ import h5py
 import numpy as np
 from pkg_resources import get_distribution
 
-from moseq2_detectron_extract.cli import extract
 from moseq2_detectron_extract.io.util import click_param_annot, dict_to_h5
 from moseq2_detectron_extract.proc.keypoints import keypoint_attributes
 from moseq2_detectron_extract.proc.scalars import scalar_attributes
@@ -94,6 +93,7 @@ def create_extract_h5(h5_file: h5py.File, acquisition_metadata: dict, config_dat
     h5_file['metadata/extraction/extract_version'].attrs['description'] = 'Version of moseq2-extract'
 
     # Extraction Parameters
+    from moseq2_detectron_extract.cli import extract # pylint: disable=import-outside-toplevel
     dict_to_h5(h5_file, status_dict['parameters'], 'metadata/extraction/parameters', click_param_annot(extract))
 
     # Acquisition Metadata

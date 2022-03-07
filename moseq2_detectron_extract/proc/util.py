@@ -50,12 +50,12 @@ def convert_pxs_to_mm(coords: np.ndarray, resolution: Tuple[int, int]=(512, 424)
     xhat = coords[:, 0] - cx
     yhat = coords[:, 1] - cy
 
-    fw = resolution[0] / (2 * np.deg2rad(field_of_view[0] / 2))
-    fh = resolution[1] / (2 * np.deg2rad(field_of_view[1] / 2))
+    f_w = resolution[0] / (2 * np.deg2rad(field_of_view[0] / 2))
+    f_h = resolution[1] / (2 * np.deg2rad(field_of_view[1] / 2))
 
     new_coords = np.zeros_like(coords)
-    new_coords[:, 0] = true_depth * xhat / fw
-    new_coords[:, 1] = true_depth * yhat / fh
+    new_coords[:, 0] = true_depth * xhat / f_w
+    new_coords[:, 1] = true_depth * yhat / f_h
 
     return new_coords
 
@@ -88,6 +88,6 @@ def slice_dict(data: dict, index: int) -> dict:
     dict with the same keys as `data` and values as the `i`-th index of values from `data`
     '''
     out = {}
-    for k, v in data.items():
-        out[k] = v[index]
+    for key, value in data.items():
+        out[key] = value[index]
     return out

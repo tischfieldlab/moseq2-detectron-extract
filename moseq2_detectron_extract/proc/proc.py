@@ -248,7 +248,7 @@ def crop_and_rotate_frame(frame: np.ndarray, center: Tuple[float, float], angle:
     np.ndarray: copped and rotated frames
     '''
     if np.isnan(angle) or np.any(np.isnan(center)):
-        return np.zeros_like(frame, shape=crop_size)
+        return np.zeros_like(frame, shape=crop_size) # pylint: disable=unexpected-keyword-arg
 
     xmin = int(center[0] - crop_size[0] // 2) + crop_size[0]
     xmax = int(center[0] + crop_size[0] // 2) + crop_size[0]

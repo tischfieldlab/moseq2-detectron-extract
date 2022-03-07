@@ -6,30 +6,53 @@ import matplotlib.pyplot as plt
 import numpy as np
 import skimage
 from detectron2.data.catalog import MetadataCatalog
-from detectron2.data.detection_utils import convert_image_to_rgb, read_image
+from detectron2.data.detection_utils import convert_image_to_rgb
 from detectron2.structures import Instances
 from detectron2.utils.visualizer import ColorMode, Visualizer
 from skimage.util.dtype import img_as_bool
 
-from moseq2_detectron_extract.io.annot import KeypointConnections
+from moseq2_detectron_extract.io.annot import KeypointConnections, DataItem
+from moseq2_detectron_extract.io.image import read_image
 
 
-def visualize_annotations(annotations, metadata, num=5):
+def visualize_annotations(annotations: Iterable[DataItem], metadata, num: int=5):
+    ''' Visualize annotatated segmentation masks and keypoints
+
+    Parameters:
+    annotations (Iterable[DataItem]): Annotated data to visualize
+    metadata: dataset metadata
+    num (int): Number of items to visualize
+
+    Returns:
+    fig, axs: matplotlib Figure and Axes contating visualized annotations
+    '''
     fig, axs = plt.subplots(1, num, figsize=(20*num,20))
     for d, ax in zip(random.sample(annotations, num), axs):
         scale_factor = d["rescale_intensity"] if "rescale_intensity" in d else None
         im = read_image(d["file_name"], scale_factor=scale_factor, dtype='uint8')
-        v = Visualizer(im[:, :, ::-1],
+        viz = Visualizer(im[:, :, ::-1],
                     metadata=metadata,
                     scale=2,
                     instance_mode=ColorMode.IMAGE   # remove the colors of unsegmented pixels. This option is only available for segmentation models
         )
-        out = v.draw_dataset_dict(d)
+        out = viz.draw_dataset_dict(d)
         ax.imshow(out.get_image())
     return fig, axs
 
 
 def visualize_inference(frame: np.ndarray, instances: Instances, min_height: float, max_height: float, scale: float=2.0) -> np.ndarray:
+    ''' Visualize Instances from model inference
+
+    Parameters:
+    frame (np.ndarray): Array containing image data, of shape (x, y)
+    instances (Instances): Instances to visualize
+    min_height (float): Minimum height used in frame scaling
+    max_height (float): Maximum height used in frame scaling
+    scale (float): geometric scaling to apply to image and visualization
+
+    Returns:
+    np.ndarray: array containing image and instance visualization
+    '''
     im = frame[:,:,None].copy().astype('uint8')
     im = (im-min_height)/(max_height-min_height)
     im[im < min_height] = 0
@@ -41,13 +64,13 @@ def visualize_inference(frame: np.ndarray, instances: Instances, min_height: flo
 def draw_instances(frame: np.ndarray, instances: Instances, scale: float=2.0) -> np.ndarray:
     ''' Draw instances using Detectron2 Visualizer class. This is slow, so for speed, use `draw_instances_fast()`
     '''
-    v = Visualizer(
+    viz = Visualizer(
             convert_image_to_rgb(frame, "L"),
             metadata=MetadataCatalog.get("moseq_train"),
             scale=scale,
             instance_mode=ColorMode.SEGMENTATION   # remove the colors of unsegmented pixels. This option is only available for segmentation models
     )
-    out = v.draw_instance_predictions(instances)
+    out = viz.draw_instance_predictions(instances)
     return out.get_image()
 
 
@@ -68,7 +91,7 @@ def scale_depth_frames(frames: np.ndarray, scale: float=2.0) -> np.ndarray:
     else:
         #batch of frames
         width, height = (int(frames.shape[2] * scale), int(frames.shape[1] * scale))
-        out = np.zeros_like(frames, shape=(frames.shape[0], width, height))
+        out = np.zeros_like(frames, shape=(frames.shape[0], width, height)) # pylint: disable=unexpected-keyword-arg
         for i in range(frames.shape[0]):
             out[i] = cv2.resize(frames[i], (width, height))
         return out
@@ -91,7 +114,7 @@ def scale_color_frames(frames: np.ndarray, scale: float=2.0) -> np.ndarray:
     else:
         #batch of frames
         width, height = (int(frames.shape[2] * scale), int(frames.shape[1] * scale))
-        out = np.zeros_like(frames, shape=(frames.shape[0], width, height, 3))
+        out = np.zeros_like(frames, shape=(frames.shape[0], width, height, 3))  # pylint: disable=unexpected-keyword-arg
         for i in range(frames.shape[0]):
             out[i] = cv2.resize(frames[i], (width, height))
         return out

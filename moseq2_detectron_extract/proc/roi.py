@@ -39,8 +39,8 @@ def get_roi(depth_image,
         depth_image, noise_tolerance=noise_tolerance, mask=mask, **kwargs)
     dist_ims = dists.reshape(depth_image.shape)
 
-    if gradient_filter and mask is not None:
-        dist_ims[~mask] = np.inf
+    if gradient_filter:
+        dist_ims[~mask] = np.inf # pylint: disable=invalid-unary-operand-type
 
     bin_im = dist_ims < noise_tolerance
 

@@ -85,6 +85,7 @@ def cli():
 @click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min_height, max_height):
+    ''' CLI entrypoint for model training '''
     logging.info("")
     if resume:
         logging.info(f"Resuming Model Training from: {model_dir}")
@@ -155,6 +156,7 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 @click.option("--profile", is_flag=True)
 def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, profile):
+    ''' CLI entrypoint for model evaluation '''
     logging.info("") # Empty line to give some breething room
 
     if profile:
@@ -218,7 +220,7 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
 def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index,
           bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes,
           use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size, profile, report_outliers):
-
+    ''' CLI entrypoint for extracting a moseq session with a trained model '''
     print("") # Empty line to give some breething room
 
     if profile:
@@ -268,9 +270,9 @@ def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_siz
 # @click.option('--fps', default=30, type=int, help='Frame rate of camera')
 # @click.option('--crop-size', default=(80, 80), type=(int, int), help='size of crop region')
 # @click.option("--profile", is_flag=True)
-# def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
-#           bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir,
-#           min_height, max_height, fps, crop_size, profile):
+# def infer(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index,
+#           bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes,
+#           use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size, profile):
 #     logging.info("") # Empty line to give some breething room
 
 #     if profile:
@@ -431,7 +433,11 @@ def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_siz
 #             'chunk': raw_frames,
 #             'depth_frames': cropped_frames,
 #             'mask_frames': cropped_masks,
-#             'scalars': compute_scalars(raw_frames * features['masks'], features['features'], min_height=min_height, max_height=max_height, true_depth=true_depth),
+#             'scalars': compute_scalars(raw_frames * features['masks'],
+#                                        features['features'],
+#                                        min_height=min_height,
+#                                        max_height=max_height,
+#                                        true_depth=true_depth),
 #             'flips': features['flips'],
 #             'parameters': None # only not None if EM tracking was used (we don't support that here)
 #         }
@@ -488,7 +494,7 @@ def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_siz
 def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights,
             bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground,
             output_dir, min_height, max_height, stream, output_label_studio):
-
+    ''' CLI entrypoint for generating a dataset for model training '''
     setup_logging()
 
     if indices is not None:
@@ -624,6 +630,7 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
 @click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 def dataset_info(annot_file, replace_data_path, min_height, max_height):
+    ''' CLI entrypoint for introspecting a dataset '''
     setup_logging()
 
     logging.info('Loading annotations....')
@@ -653,6 +660,7 @@ def dataset_info(annot_file, replace_data_path, min_height, max_height):
 @click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
 @click.option('--eval-model', is_flag=True, help='Run COCO evaluation metrics on supplied annotations.')
 def compile_model(model_dir, annot_file, replace_data_path, min_height, max_height, checkpoint, eval_model):
+    ''' CLI entrypoint for compiling a model to torchscript '''
     setup_logging()
 
     logging.info('Loading model....')
@@ -693,6 +701,7 @@ def compile_model(model_dir, annot_file, replace_data_path, min_height, max_heig
 @click.option('--window', default=6, type=int, help='sliding window size for jumping algorithm')
 @click.option('--threshold', default=10, type=float, help='threshold for jumping algorithm')
 def find_outliers(result_h5, window, threshold):
+    ''' CLI entrypoint for finding outliers in extracted session data '''
     setup_logging()
     kpt_names = [kp for kp in default_keypoint_names if kp != 'TailTip']
 
