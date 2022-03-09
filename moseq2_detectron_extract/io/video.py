@@ -65,7 +65,7 @@ class BlockInfo(TypedDict):
     idxs: Iterable[int]
 
 def read_frames_raw(filename: Union[str, tarfile.TarInfo], frames: FramesSelection=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16,
-    dtype: npt.DTypeLike="<i2", tar_object: tarfile.TarInfo=None) -> np.ndarray:
+    dtype: npt.DTypeLike="<i2", tar_object: tarfile.TarFile=None) -> np.ndarray:
     '''
     Reads in data from raw binary file
 
