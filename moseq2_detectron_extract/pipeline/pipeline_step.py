@@ -68,7 +68,7 @@ class PipelineStep(Process):
 
                 out: Union[dict, None] = None
                 try:
-                    out = self.process(cast(data, dict)) # pylint: disable=assignment-from-no-return
+                    out = self.process(cast(dict, data)) # pylint: disable=assignment-from-no-return
                 except Exception: # pylint: disable=broad-except
                     msg = traceback.format_exc()
                     self.write_message(msg)
