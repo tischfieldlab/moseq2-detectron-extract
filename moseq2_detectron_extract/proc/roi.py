@@ -305,26 +305,19 @@ def get_bground_im_file(frames_file: Union[str, TarInfo], frame_stride: int=500,
         fname = frames_file.lower()
 
     finfo: Union[FFProbeInfo, RawVideoInfo]
-    try:
-        if fname.endswith('dat'):
-            finfo = get_raw_info(frames_file)
-        elif fname.endswith('avi'):
-            finfo = get_video_info(frames_file)
-    except AttributeError:
+    if fname.endswith('dat'):
         finfo = get_raw_info(frames_file)
+    elif fname.endswith('avi'):
+        finfo = get_video_info(frames_file)
 
     frame_idx = np.arange(0, finfo['nframes'], frame_stride)
-    frame_store = np.zeros((len(frame_idx), finfo['dims'][1], finfo['dims'][0]))
 
-    for i, frame in enumerate(frame_idx):
-        try:
-            if fname.endswith('dat'):
-                frs = read_frames_raw(frames_file, int(frame)).squeeze()
-            elif fname.endswith('avi'):
-                frs = read_frames(frames_file, [int(frame)]).squeeze()
-        except AttributeError:
-            frs = read_frames_raw(frames_file, int(frame), **kwargs).squeeze()
+    if fname.endswith('dat'):
+        frame_store = read_frames_raw(frames_file, frame_idx, **kwargs).squeeze()
+    elif fname.endswith('avi'):
+        frame_store = read_frames(frames_file, frame_idx, **kwargs).squeeze()
 
-        frame_store[i, ...] = cv2.medianBlur(frs, med_scale)
+    for i in range(frame_store.shape[0]):
+        frame_store[i, ...] = cv2.medianBlur(frame_store[i, ...], med_scale)
 
     return get_bground_im(frame_store)
