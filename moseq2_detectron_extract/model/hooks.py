@@ -53,7 +53,7 @@ class LossEvalHook(HookBase):
                 eta = datetime.timedelta(seconds=int(total_seconds_per_img * (total - idx - 1)))
                 log_every_n_seconds(
                     logging.INFO,
-                    f"Loss on Validation  done {idx + 1}/{total}. {seconds_per_img:.4f} s / img. ETA={eta}",
+                    f"Loss on Validation done {idx + 1}/{total}. {seconds_per_img:.4f} s / img. ETA={eta}",
                     n=5,
                 )
             loss_batch = self._get_loss(inputs)
@@ -87,4 +87,4 @@ class LossEvalHook(HookBase):
         is_final = next_iter == self.trainer.max_iter
         if is_final or (self._period > 0 and next_iter % self._period == 0):
             self._do_loss_eval()
-        self.trainer.storage.put_scalars(timetest=12)
+        # self.trainer.storage.put_scalars(timetest=12) # Why we log a constant?? 
