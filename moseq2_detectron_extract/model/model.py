@@ -4,7 +4,6 @@ from albumentations.augmentations.transforms import GaussNoise
 from detectron2.config.config import CfgNode
 from detectron2.data import (build_detection_test_loader,
                              build_detection_train_loader)
-from detectron2.data.dataset_mapper import DatasetMapper
 from detectron2.data.transforms import (FixedSizeCrop, RandomBrightness,
                                         RandomContrast, RandomRotation)
 from detectron2.engine.defaults import DefaultTrainer
@@ -36,11 +35,13 @@ class Trainer(DefaultTrainer):
             # DoughnutNoiseAugmentation(),
             RandomFieldNoiseAugmentation(mu=10, std_limit=(10.0, 20.0), power=(2.0, 3.0))
         ]
-        return build_detection_train_loader(cfg, mapper=MoseqDatasetMapper(cfg, is_train=True, augmentations=augs)) # pylint disable=too-many-function-args
+        mapper = MoseqDatasetMapper(cfg, is_train=True, augmentations=augs)
+        return build_detection_train_loader(cfg, mapper=mapper)
 
     @classmethod
     def build_test_loader(cls, cfg: CfgNode, dataset_name: str):
-        return build_detection_test_loader(cfg, dataset_name, mapper=MoseqDatasetMapper(cfg, is_train=False, augmentations=[])) # pylint disable=too-many-function-args
+        mapper = MoseqDatasetMapper(cfg, is_train=False, augmentations=[])
+        return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
 
     @classmethod
     def build_evaluator(cls, cfg: CfgNode, dataset_name: str, output_folder: str=None):
@@ -52,14 +53,14 @@ class Trainer(DefaultTrainer):
 
     def build_hooks(self):
         hooks = super().build_hooks()
-        hooks.insert(-1,LossEvalHook(
+        hooks.insert(-1, LossEvalHook(
             self.cfg.TEST.EVAL_PERIOD,
             self.model,
             build_detection_test_loader(
                 self.cfg,
                 self.cfg.DATASETS.TEST[0],
-                DatasetMapper(self.cfg, True)
+                MoseqDatasetMapper(self.cfg, is_train=True, augmentations=[])
             )
         ))
-        hooks.append(MemoryUsageHook())
+        hooks.insert(-1, MemoryUsageHook())
         return hooks
