@@ -9,7 +9,7 @@ from moseq2_detectron_extract.io.annot import (
     default_keypoint_colors, default_keypoint_connection_rules,
     default_keypoint_names)
 from moseq2_detectron_extract.io.session import Session
-from moseq2_detectron_extract.io.util import setup_logging, write_yaml
+from moseq2_detectron_extract.io.util import attach_file_logger, ensure_dir, write_yaml
 from moseq2_detectron_extract.pipeline import (ExtractFeaturesStep,
                                                FrameCropStep, InferenceStep,
                                                KeypointWriterStep, Pipeline,
@@ -38,11 +38,10 @@ def extract_session(session: Session, config: dict):
         config['output_dir'] = output_dir
     else:
         output_dir = config['output_dir']
+    ensure_dir(output_dir)
 
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    setup_logging(os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.log"))
+    # Attach log file to logging module
+    attach_file_logger(os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.log"))
 
     status_filename = os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.yaml")
     if check_completion_status(status_filename):

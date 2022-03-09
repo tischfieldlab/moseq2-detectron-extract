@@ -1,3 +1,5 @@
+import atexit
+import cProfile
 import errno
 import io
 import json
@@ -6,6 +8,8 @@ import os
 import sys
 import traceback
 import warnings
+from logging.handlers import MemoryHandler
+from pstats import Stats
 from typing import IO, Dict, Optional, Union
 
 import click
@@ -220,32 +224,67 @@ class Tee(object):
         self.file.flush()
 
 
-def setup_logging(log_filename: Optional[str]=None):
+def setup_logging(name: str=None, level: Union[str, int]=logging.INFO, add_defered_file_handler: bool=False):
     ''' Setup the logging module
-    A) set logging level to INFO
-    b) attach file handler if `log_filename` is not None
+    A) set logging level to `level` (default logging.INFO)
+    b) optionally attach a memory handler, if add_defered_file_handler is True (enables adding a file handler later without losing records)
     C) attach stream handler to pump messages through tqdm.write
         a) filter LogRecords which have `nostream` attribute attached
 
     Parameters:
-    log_filename (str | None): if not None, attach a file handler writing to this path
+    name (str|None): Name of the Logger instance to operate on
+    level (str|int): Set logging level to this level
+    add_defered_file_handler (bool): If true, add a handler to buffer log recors in memory.
+        Use in combination with `attach_file_logger()` to later point these buffered records to a file
     '''
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    if add_defered_file_handler:
+        mem_handler = MemoryHandler(0)
+        mem_handler.name = 'DEFERED_FILE_HANDLER'
+        mem_handler.setLevel(level)
+        logger.addHandler(mem_handler)
 
     # attach file handler
-    if log_filename is not None:
-        file_handler = logging.FileHandler(log_filename)
-        file_handler.setLevel(logging.INFO)
-        logger.addHandler(file_handler)
+    #if log_filename is not None:
+    #    file_handler = logging.FileHandler(log_filename)
+    #    file_handler.setLevel(level)
+    #    logger.addHandler(file_handler)
 
     # attach stream handler
     stream_handler = _TqdmLoggingHandler()
-    stream_handler.setLevel(logging.INFO)
+    stream_handler.setLevel(level)
     def filter_progress_records(record: logging.LogRecord):
         return not getattr(record, 'nostream', False)
     stream_handler.addFilter(filter_progress_records)
     logger.addHandler(stream_handler)
+
+
+def attach_file_logger(log_filename: str, logger: logging.Logger=None):
+    ''' Attach a logging.FileHandler to an existing logging.MemoryHandler
+
+    Parameters:
+    log_filename (str): path for FileHandler to write
+    logger (logging.Logger): Operate on this Logger instance, otherwise use the root Logger
+    '''
+    if logger is None:
+        logger = logging.getLogger()
+
+    for handler in logger.handlers:
+        if isinstance(handler, MemoryHandler) and handler.name == 'DEFERED_FILE_HANDLER':
+            if handler.target is not None:
+                raise RuntimeError('MemoryHandler already has a target!')
+            file_handler = logging.FileHandler(log_filename)
+            file_handler.setLevel(handler.level)
+            handler.setTarget(file_handler)
+            handler.flush()
+            return
+
+    # If we got here, then we could not find the MemoryHandler, we should warn the user!
+    raise RuntimeError('Could not find a suitable handler to attach target!')
+
+
 
 
 def click_param_annot(click_cmd: click.Command) -> Dict[str, Optional[str]]:
@@ -263,6 +302,38 @@ def click_param_annot(click_cmd: click.Command) -> Dict[str, Optional[str]]:
         if isinstance(param, click.Option):
             annotations[param.human_readable_name] = param.help
     return annotations
+
+
+def click_monkey_patch_option_show_defaults():
+    ''' Monkey patch click.core.Option to turn on showing default values.
+    '''
+    orig_init = click.core.Option.__init__
+    def new_init(self, *args, **kwargs):
+        ''' This version of click.core.Option.__init__ will set show default values to True
+        '''
+        orig_init(self, *args, **kwargs)
+        self.show_default = True
+    # end new_init()
+    click.core.Option.__init__ = new_init # type: ignore
+
+
+def enable_profiling():
+    ''' Enable application profiling via cProfile
+    '''
+    logging.info("Enabling profiling...")
+    profiler = cProfile.Profile()
+    profiler.enable()
+
+    def profile_exit():
+        profiler.disable()
+        logging.info("Profiling completed")
+        with open('profiling_stats.txt', 'w', encoding='utf-8') as stream:
+            stats = Stats(profiler, stream=stream)
+            stats.strip_dirs()
+            stats.sort_stats('time')
+            stats.dump_stats('.prof_stats')
+            stats.print_stats()
+    atexit.register(profile_exit)
 
 
 def warn_with_traceback(message, category, filename, lineno, file=None, line=None):

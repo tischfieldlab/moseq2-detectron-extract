@@ -1,12 +1,8 @@
-import atexit
-import cProfile
 import datetime
 import json
 import logging
 import os
-import warnings
 from copy import deepcopy
-from pstats import Stats
 
 import click
 import numpy as np
@@ -21,7 +17,9 @@ from moseq2_detectron_extract.io.annot import (
     validate_annotations)
 from moseq2_detectron_extract.io.image import write_image
 from moseq2_detectron_extract.io.session import Session
-from moseq2_detectron_extract.io.util import Tee, ensure_dir, setup_logging, warn_with_traceback
+from moseq2_detectron_extract.io.util import (
+    attach_file_logger, click_monkey_patch_option_show_defaults,
+    enable_profiling, ensure_dir, setup_logging)
 from moseq2_detectron_extract.model import Evaluator, Trainer
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config,
@@ -34,37 +32,16 @@ from moseq2_detectron_extract.proc.proc import prep_raw_frames
 from moseq2_detectron_extract.proc.roi import apply_roi
 from moseq2_detectron_extract.quality import find_outliers_h5
 
-warnings.filterwarnings("ignore", category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
+
+# import warnings
+# warnings.filterwarnings("ignore", category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
 # warnings.showwarning = warn_with_traceback
 # np.seterr(all='raise')
 
-orig_init = click.core.Option.__init__
-def new_init(self, *args, **kwargs):
-    ''' This version of click.core.Option.__init__ will set show default values to True
-    '''
-    orig_init(self, *args, **kwargs)
-    self.show_default = True
-# end new_init()
-click.core.Option.__init__ = new_init # type: ignore
 
-def enable_profiling():
-    ''' Enable application profiling via cProfile
-    '''
-    logging.info("Enabling profiling...")
-    profiler = cProfile.Profile()
-    profiler.enable()
 
-    def profile_exit():
-        profiler.disable()
-        logging.info("Profiling completed")
-        with open('profiling_stats.txt', 'w', encoding='utf-8') as stream:
-            stats = Stats(profiler, stream=stream)
-            stats.strip_dirs()
-            stats.sort_stats('time')
-            stats.dump_stats('.prof_stats')
-            stats.print_stats()
-    atexit.register(profile_exit)
-
+# Show click option defaults
+click_monkey_patch_option_show_defaults()
 
 @click.group()
 def cli():
@@ -73,6 +50,8 @@ def cli():
     pass # pylint: disable=unnecessary-pass
 
 
+
+# pylint: disable=unused-argument
 
 @cli.command(name='train', help='run training')
 @click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
@@ -86,6 +65,7 @@ def cli():
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min_height, max_height):
     ''' CLI entrypoint for model training '''
+    setup_logging(add_defered_file_handler=True)
     logging.info("")
     if resume:
         logging.info(f"Resuming Model Training from: {model_dir}")
@@ -112,11 +92,10 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
             logging.info("Exiting...")
             return
 
-        logging.info(f"Model output: {cfg.OUTPUT_DIR}")
+        logging.info(f"Model training output directory: {cfg.OUTPUT_DIR}")
 
     ensure_dir(cfg.OUTPUT_DIR)
-    tee = Tee(os.path.join(cfg.OUTPUT_DIR, 'train.log'), mode='a')
-    tee.attach()
+    attach_file_logger(os.path.join(cfg.OUTPUT_DIR, 'train.log'))
 
     seed_all_rng(None if cfg.SEED < 0 else cfg.SEED) # Seed the random number generators
 
@@ -157,6 +136,7 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
 @click.option("--profile", is_flag=True)
 def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, profile):
     ''' CLI entrypoint for model evaluation '''
+    setup_logging()
     logging.info("") # Empty line to give some breething room
 
     if profile:
@@ -221,6 +201,7 @@ def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_siz
           bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes,
           use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size, profile, report_outliers):
     ''' CLI entrypoint for extracting a moseq session with a trained model '''
+    setup_logging(add_defered_file_handler=True)
     print("") # Empty line to give some breething room
 
     if profile:
@@ -527,7 +508,7 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
         session_info_dir = ensure_dir(os.path.join(info_dir, session.session_id))
 
         # Find image background and ROI
-        first_frame, bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
+        _, bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
                 bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground,
                 cache_dir=session_info_dir)
 
