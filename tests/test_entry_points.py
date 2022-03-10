@@ -1,31 +1,29 @@
-import glob
 import os
 import pkgutil
 import subprocess
 from importlib import import_module
 from pathlib import Path
-import sys
 
 import pytest
-
-__this_package = 'moseq2_detectron_extract'
-
-# script_dir = Path(__file__).resolve().parent.parent.joinpath('moseq2_detectron_extract', 'scripts')
-# scripts_to_test = [s for s in script_dir.glob('*.py') if s.name != '__init__.py']
-# script_names = [s.name.replace('.py', '') for s in scripts_to_test]
-
-# @pytest.mark.parametrize("entry_point", scripts_to_test, ids=script_names)
-# def test_entry_point(entry_point):
-#     rtn_code = subprocess.call(['python', str(entry_point), '--help'])
-#     assert rtn_code == 0
-print(os.environ.get("PATH"))
+from moseq2_detectron_extract.cli import cli
 
 
-pkg_path = Path(__file__).resolve().parent.parent.joinpath(__this_package)
-modules_to_test = pkgutil.iter_modules([pkg_path], prefix=__this_package + '.')
-module_names = [m.name for m in modules_to_test]
+__THIS_PACKAGE = 'moseq2_detectron_extract'
+pkg_path = Path(__file__).resolve().parent.parent.joinpath(__THIS_PACKAGE)
 
-@pytest.mark.parametrize("module_path", module_names)
+
+@pytest.mark.parametrize("entry_point", [value.name for value in cli.commands.values()])
+def test_entry_point(entry_point):
+    ''' Test that we can run commands with the --help flag
+    '''
+    rtn_code = subprocess.call(['python', os.path.join(pkg_path, 'cli.py'), str(entry_point), '--help'])
+    assert rtn_code == 0
+
+
+modules_to_test = pkgutil.iter_modules([pkg_path], prefix=__THIS_PACKAGE + '.')
+@pytest.mark.parametrize("module_path", [m.name for m in modules_to_test])
 def test_import(module_path):
-    import_module(module_path, package=__this_package)
+    ''' Test that we can import all modules in the package
+    '''
+    import_module(module_path, package=__THIS_PACKAGE)
     assert True
