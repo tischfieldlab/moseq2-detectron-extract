@@ -87,4 +87,4 @@ class LossEvalHook(HookBase):
         is_final = next_iter == self.trainer.max_iter
         if is_final or (self._period > 0 and next_iter % self._period == 0):
             self._do_loss_eval()
-        # self.trainer.storage.put_scalars(timetest=12) # Why we log a constant?? 
+        # self.trainer.storage.put_scalars(timetest=12) # Why we log a constant??

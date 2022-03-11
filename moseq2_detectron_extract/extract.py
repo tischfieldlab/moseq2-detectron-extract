@@ -82,7 +82,7 @@ def extract_session(session: Session, config: dict):
         out = pipeline.add_step(' Model Inference', InferenceStep, pipeline.input, config=config)
         out = pipeline.add_step('Extract Features', ExtractFeaturesStep, out[0], show_progress=False, config=config)
         out = pipeline.add_step(' Crop and Rotate', FrameCropStep, out[0], num_listners=3, config=config)
-        pipeline.add_step('  Preview Video', PreviewVideoWriterStep, out[0], config=config)
+        pipeline.add_step('   Preview Video', PreviewVideoWriterStep, out[0], config=config)
         pipeline.add_step(' Write Keypoints', KeypointWriterStep, out[1], show_progress=False, config=config)
         pipeline.add_step(' Write H5 Result', ResultH5WriterStep, out[2], show_progress=False, session=session, config=config, status_dict=status_dict)
         pipeline.start()

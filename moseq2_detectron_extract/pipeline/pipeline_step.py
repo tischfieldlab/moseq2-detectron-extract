@@ -1,6 +1,6 @@
 import traceback
 from typing import List, Union, cast
-from torch import Tensor
+import torch
 
 from torch.multiprocessing import Process, Queue, SimpleQueue
 
@@ -63,17 +63,20 @@ class PipelineStep(Process):
             Get the next data item from the queue
             if we have any tensors, clone those over for reuse
         '''
-        data = self.in_queue.get()
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if isinstance(value, Tensor):
-                    data[key] = value.clone()
-        if isinstance(data, Tensor):
-            data = data.clone()
-        return data
+        return self.in_queue.get()
+        # data = self.in_queue.get()
+        # if isinstance(data, dict):
+        #     for key, value in data.items():
+        #         if isinstance(value, Tensor):
+        #             data[key] = value.clone()
+        #             del value
+        # if isinstance(data, Tensor):
+        #     data = data.clone()
+        # return data
 
     def run(self) -> None:
         try:
+            torch.multiprocessing.set_sharing_strategy('file_system')
             self.initialize()
             while True:
                 data = self.__get_inputs()

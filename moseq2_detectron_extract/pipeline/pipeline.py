@@ -1,4 +1,5 @@
 from typing import List
+import torch
 
 from torch.multiprocessing import SimpleQueue
 
@@ -11,6 +12,7 @@ class Pipeline:
     '''
 
     def __init__(self) -> None:
+        torch.multiprocessing.set_sharing_strategy('file_system')
         self.progress = ProcessProgress()
         self.steps: List[PipelineStep] = []
         self.input: SimpleQueue = SimpleQueue()
