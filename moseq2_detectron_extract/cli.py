@@ -35,7 +35,7 @@ from moseq2_detectron_extract.quality import find_outliers_h5
 
 
 # import warnings
-# warnings.filterwarnings("ignore", category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
+# warnings.filterwarnings('ignore', category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
 # warnings.showwarning = warn_with_traceback
 # np.seterr(all='raise')
 
@@ -60,41 +60,41 @@ def cli():
 @cli.command(name='train', help='Train a model')
 @click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
 @click.argument('model_dir', nargs=1, type=click.Path(exists=False))
-@click.option('--config', default=None, type=click.Path(), help="Model configuration to override base configuration, in yaml format.")
+@click.option('--config', default=None, type=click.Path(), help='Model configuration to override base configuration, in yaml format.')
 @click.option('--replace-data-path', multiple=True, default=[], type=(str, str),
-    help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
+    help='Replace path to data image items in `annot_file`. Specify <search> <replace>')
 @click.option('--resume', is_flag=True, help='Resume training from a previous checkpoint')
 @click.option('--auto-cd', is_flag=True, help='treat model_dir as a base directory and create a child dir for this specific run')
 def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd):
     ''' CLI entrypoint for model training '''
     setup_logging(add_defered_file_handler=True)
-    logging.info("")
+    logging.info('')
     if resume:
-        logging.info(f"Resuming Model Training from: {model_dir}")
-        cfg = load_config(os.path.join(model_dir, "config.yaml"))
+        logging.info(f'Resuming Model Training from: {model_dir}')
+        cfg = load_config(os.path.join(model_dir, 'config.yaml'))
 
         if config is not None:
-            logging.warning("WARNING: Ignoring --config because you opted to resume training from a previous checkpoint!")
+            logging.warning('WARNING: Ignoring --config because you opted to resume training from a previous checkpoint!')
     else:
         cfg = get_base_config()
 
         if config is not None:
-            logging.info("Attempting to load your extra --config and merge with the base configuration")
+            logging.info('Attempting to load your extra --config and merge with the base configuration')
             cfg.merge_from_file(config)
 
         if auto_cd:
-            cfg.OUTPUT_DIR = os.path.join(model_dir, datetime.datetime.now().strftime("%Y-%m-%dT%H-%M_%S"))
+            cfg.OUTPUT_DIR = os.path.join(model_dir, datetime.datetime.now().strftime('%Y-%m-%dT%H-%M_%S'))
         else:
             cfg.OUTPUT_DIR = model_dir
 
-        if os.path.exists(os.path.join(cfg.OUTPUT_DIR, "config.yaml")):
-            logging.info(f"Hmmm... it looks like there is already a model located here.... ({cfg.OUTPUT_DIR})")
-            logging.info("If you wish to resume training, please use the --resume flag")
-            logging.info("Otherwise please change the `model_dir` argument to another location, or utilize the --auto-cd option")
-            logging.info("Exiting...")
+        if os.path.exists(os.path.join(cfg.OUTPUT_DIR, 'config.yaml')):
+            logging.info(f'Hmmm... it looks like there is already a model located here.... ({cfg.OUTPUT_DIR})')
+            logging.info('If you wish to resume training, please use the --resume flag')
+            logging.info('Otherwise please change the `model_dir` argument to another location, or utilize the --auto-cd option')
+            logging.info('Exiting...')
             return
 
-        logging.info(f"Model training output directory: {cfg.OUTPUT_DIR}")
+        logging.info(f'Model training output directory: {cfg.OUTPUT_DIR}')
 
     ensure_dir(cfg.OUTPUT_DIR)
     attach_file_logger(os.path.join(cfg.OUTPUT_DIR, 'train.log'))
@@ -117,7 +117,7 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd):
 
     if not resume:
         cfg = add_dataset_cfg(cfg)
-        with open(os.path.join(cfg.OUTPUT_DIR, "config.yaml"), 'w', encoding='utf-8') as config_file:
+        with open(os.path.join(cfg.OUTPUT_DIR, 'config.yaml'), 'w', encoding='utf-8') as config_file:
             config_file.write(cfg.dump())
 
     logging.info(cfg)
@@ -132,14 +132,14 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd):
 @click.argument('model_dir', nargs=1, type=click.Path(exists=True))
 @click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
 @click.option('--replace-data-path', multiple=True, default=[], type=(str, str),
-    help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
+    help='Replace path to data image items in `annot_file`. Specify <search> <replace>')
 def evaluate(model_dir, annot_file, replace_data_path):
     ''' CLI entrypoint for model evaluation '''
     setup_logging()
-    logging.info("") # Empty line to give some breething room
+    logging.info('') # Empty line to give some breething room
 
     logging.info('Loading model configuration....')
-    register_dataset_metadata("moseq_train", default_keypoint_names)
+    register_dataset_metadata('moseq_train', default_keypoint_names)
     cfg = get_base_config()
     with open(os.path.join(model_dir, 'config.yaml'), 'r', encoding='utf-8') as cfg_file:
         cfg = cfg.load_cfg(cfg_file)
@@ -190,7 +190,7 @@ def evaluate(model_dir, annot_file, replace_data_path):
 @optgroup.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
 @optgroup.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 @optgroup.option('--crop-size', default=(80, 80), type=(int, int), help='Size of crop region')
-@optgroup.option("--report-outliers", is_flag=True, help='Report outliers in extracted data')
+@optgroup.option('--report-outliers', is_flag=True, help='Report outliers in extracted data')
 @optgroup.group('Input and Processing')
 @optgroup.option('--frame-trim', default=(0, 0), type=(int, int), help='Frames to trim from beginning and end of data')
 @optgroup.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
@@ -216,7 +216,7 @@ def extract(model_dir, input_file, device, checkpoint, frame_trim, batch_size, c
            ex: /path/to/session_1234567890/depth.dat
     '''
     setup_logging(add_defered_file_handler=True)
-    print("") # Empty line to give some breething room
+    print('') # Empty line to give some breething room
 
     config_data = locals()
     config_data.update({
@@ -229,8 +229,8 @@ def extract(model_dir, input_file, device, checkpoint, frame_trim, batch_size, c
     status_filename = extract_session(session=session, config=config_data)
 
     if report_outliers:
-        logging.info("")
-        logging.info("Searching for outlier frames....")
+        logging.info('')
+        logging.info('Searching for outlier frames....')
         result_filename = os.path.splitext(status_filename)[0] + '.h5'
         kpt_names = [kp for kp in default_keypoint_names if kp != 'TailTip']
         find_outliers_h5(result_filename, keypoint_names=kpt_names)
@@ -388,7 +388,7 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
 
         with open(ls_task_dest, 'w', encoding='utf-8') as task_file:
             json.dump(output_info, task_file, indent='\t')
-        logging.info(f'Wrote label-studio tasks to "{ls_task_dest}" ')
+        logging.info(f'Wrote label-studio tasks to "{ls_task_dest}"')
 
 # end generate_dataset()
 
@@ -396,7 +396,7 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
 @cli.command(name='dataset-info', short_help='Interogate datasets for information')
 @click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
 @click.option('--replace-data-path', multiple=True, default=[], type=(str, str),
-    help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
+    help='Replace path to data image items in `annot_file`. Specify <search> <replace>')
 def dataset_info(annot_file, replace_data_path):
     ''' Interrogate datasets and show statistics.
 
@@ -431,7 +431,7 @@ def dataset_info(annot_file, replace_data_path):
 @click.argument('model_dir', nargs=1, type=click.Path(exists=True))
 @click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
 @click.option('--replace-data-path', multiple=True, default=[], type=(str, str),
-    help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
+    help='Replace path to data image items in `annot_file`. Specify <search> <replace>')
 @click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
 @click.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to compile model for.')
 @click.option('--eval-model', is_flag=True, help='Run COCO evaluation metrics on supplied annotations.')
@@ -440,7 +440,7 @@ def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, 
     setup_logging()
 
     logging.info('Loading model....')
-    register_dataset_metadata("moseq_train", default_keypoint_names)
+    register_dataset_metadata('moseq_train', default_keypoint_names)
     cfg = get_base_config()
     with open(os.path.join(model_dir, 'config.yaml'), 'r', encoding='utf-8') as cfg_file:
         cfg = cfg.load_cfg(cfg_file)
@@ -455,7 +455,7 @@ def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, 
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
     cfg.TEST.DETECTIONS_PER_IMAGE = 1
 
-    logging.info(f" -> Setting device to \"{device}\"")
+    logging.info(f' -> Setting device to \'{device}\'')
     cfg.MODEL.DEVICE = device
 
 
