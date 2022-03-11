@@ -238,6 +238,7 @@ def setup_logging(name: str=None, level: Union[str, int]=logging.INFO, add_defer
         Use in combination with `attach_file_logger()` to later point these buffered records to a file
     '''
     logging.captureWarnings(True)
+    logging.lastResort = logging.NullHandler()
 
     logger = logging.getLogger(name)
     logger.setLevel(level)
