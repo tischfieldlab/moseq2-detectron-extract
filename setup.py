@@ -4,12 +4,14 @@ import sys
 from setuptools import find_packages, setup
 
 
-def install(package):
+def install(package: str):
+    ''' install a `package` via pip
+    '''
     subprocess.call([sys.executable, "-m", "pip", "install", package])
 
 
 try:
-    import cv2  # noqa: F401
+    import cv2  # pylint: disable=unused-import
 except ImportError:
     install('opencv-python')
 
@@ -21,25 +23,25 @@ setup(
     version='0.1.0',
     license='MIT License',
     install_requires=[
+        'albumentations',
+        'bottleneck',
         'click',
+        'click-option-group'
+        'FyeldGenerator',
         'h5py',
+        'imageio',
         'joblib',
         'matplotlib',
         'numpy',
         'pandas',
         'ruamel.yaml',
-        'scipy',
-        'scikit-learn',
         'scikit-image',
-        'tifffile',
-        'imageio',
-        'tabulate',
-        'tqdm',
-        'albumentations',
-        'FyeldGenerator',
-        'bottleneck',
+        'scikit-learn',
+        'scipy',
         'statsmodels',
-        'click-option-group'
+        'tabulate',
+        'tifffile',
+        'tqdm',
     ],
     extras_require={
         'dev': [
@@ -48,10 +50,13 @@ setup(
             'pytest-cov'
         ]
     },
-    python_requires='>=3.6',
+    python_requires='>=3.8',
     packages=find_packages(),
     include_package_data=True,
     entry_points={
-        'console_scripts': ['moseq2-detectron-extract = moseq2_detectron_extract.cli:cli'],
+        'console_scripts': [
+            'moseq2-detectron-extract = moseq2_detectron_extract.cli:cli',
+            'moseq-d2-extract = moseq2_detectron_extract.cli:cli' # add short alias
+        ],
     }
 )
