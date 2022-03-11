@@ -1,15 +1,12 @@
 import datetime
-import json
 import logging
 import os
-from copy import deepcopy
 
 import click
-import numpy as np
-import tqdm
 from click_option_group import optgroup
 from detectron2.utils.env import seed_all_rng
 from tabulate import tabulate
+from moseq2_detectron_extract.dataset import generate_dataset_for_sessions, write_label_studio_tasks
 
 from moseq2_detectron_extract.extract import extract_session
 from moseq2_detectron_extract.io.annot import (default_keypoint_names, load_annotations_helper,
@@ -24,13 +21,13 @@ from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config,
                                                    load_config)
 from moseq2_detectron_extract.model.deploy import export_model
-from moseq2_detectron_extract.model.util import (get_available_device_info, get_available_devices, get_default_device, get_last_checkpoint,
-                                                 get_specific_checkpoint, get_system_versions)
-from moseq2_detectron_extract.proc.kmeans import select_frames_kmeans
-from moseq2_detectron_extract.proc.proc import prep_raw_frames
-from moseq2_detectron_extract.proc.roi import apply_roi
+from moseq2_detectron_extract.model.util import (get_available_device_info,
+                                                 get_available_devices,
+                                                 get_default_device,
+                                                 get_last_checkpoint,
+                                                 get_specific_checkpoint,
+                                                 get_system_versions)
 from moseq2_detectron_extract.quality import find_outliers_h5
-
 
 # import warnings
 # warnings.filterwarnings('ignore', category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
@@ -50,7 +47,6 @@ def cli():
         moseq raw data processing
     '''
     pass # pylint: disable=unnecessary-pass
-
 
 
 # pylint: disable=unused-argument
@@ -151,6 +147,7 @@ def evaluate(model_dir, annot_file, replace_data_path):
     evaluator()
 
 
+
 @cli.command(name='extract', short_help='Extract a moseq session raw data')
 @click.argument('model', nargs=1, type=click.Path(exists=True))
 @click.argument('input_file', nargs=1, type=click.Path(exists=True))
@@ -221,31 +218,37 @@ def extract(model_dir, input_file, device, checkpoint, frame_trim, batch_size, c
         find_outliers_h5(result_filename, keypoint_names=kpt_names)
 
 
+
 @cli.command(name='generate-dataset', help='Generate dataset samples from a moseq session')
 @click.argument('input_file', nargs=-1, type=click.Path(exists=True))
-@click.option('--num-samples', default=100, type=int, help='Total number of samples to draw')
-@click.option('--indices', default=None, type=str, help='A comma separated list of indices, or path to a file containing one index per line. '
+@optgroup.group('Sample Selection')
+@optgroup.option('--num-samples', default=100, type=int, help='Total number of samples to draw')
+@optgroup.option('--indices', default=None, type=str, help='A comma separated list of indices, or path to a file containing one index per line. '
     'When --sample-method=list, the indicies to directly pick. When --sample-method=random or --sample-method=kmeans, '
     'limit selection to this set of indicies. Otherwise unused.')
-@click.option('--sample-method', default='uniform', type=click.Choice(['random', 'uniform', 'kmeans', 'list']),
+@optgroup.option('--sample-method', default='uniform', type=click.Choice(['random', 'uniform', 'kmeans', 'list']),
     help='Method to sample the data. Random chooses a random sample of frames. Uniform will produce a temporally uniform sample. '
     'Kmeans performs clustering on downsampled frames. List interprets --indices as a comma separated list of indices to extract.')
-@click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
-@click.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
-@click.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
-@click.option('--bg-roi-index', default=0, type=int, help='Index of which background mask(s) to use')
-@click.option('--bg-roi-weights', default=(1, .1, 1), type=(float, float, float), help='Feature weighting (area, extent, dist) of the background mask')
-@click.option('--bg-roi-depth-range', default=(650, 750), type=(float, float), help='Range to search for floor of arena (in mm)')
-@click.option('--bg-roi-gradient-filter', default=False, type=bool, help='Exclude walls with gradient filtering')
-@click.option('--bg-roi-gradient-threshold', default=3000, type=float, help='Gradient must be < this to include points')
-@click.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
-@click.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
-@click.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
-@click.option('--output-dir', type=click.Path(), help='Output directory to save the results')
-@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
-@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
-@click.option('--stream', default=['depth'], multiple=True, type=click.Choice(['depth', 'rgb']), help='Data type for processed frames')
-@click.option('--output-label-studio', is_flag=True, help='Output label-studio files')
+@optgroup.group('Background Detection')
+@optgroup.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
+@optgroup.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
+@optgroup.option('--bg-roi-index', default=0, type=int, help='Index of which background mask(s) to use')
+@optgroup.option('--bg-roi-weights', default=(1, .1, 1), type=(float, float, float), help='Feature weighting (area, extent, dist) of the background mask')
+@optgroup.option('--bg-roi-depth-range', default=(650, 750), type=(float, float), help='Range to search for floor of arena (in mm)')
+@optgroup.option('--bg-roi-gradient-filter', default=False, type=bool, help='Exclude walls with gradient filtering')
+@optgroup.option('--bg-roi-gradient-threshold', default=3000, type=float, help='Gradient must be < this to include points')
+@optgroup.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
+@optgroup.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
+@optgroup.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
+@optgroup.group('Output')
+@optgroup.option('--output-dir', type=click.Path(), help='Output directory to save the results')
+@optgroup.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
+@optgroup.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
+@optgroup.option('--stream', default=['depth'], multiple=True, type=click.Choice(['depth', 'rgb']),
+    help='Stream types to output, specify multiple times for multiple streams')
+@optgroup.option('--output-label-studio', is_flag=True, help='Output label-studio files')
+@optgroup.group('Input and Processing')
+@optgroup.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
 def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights,
             bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground,
             output_dir, min_height, max_height, stream, output_label_studio):
@@ -260,122 +263,38 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
         else:
             indices = sorted([int(i) for i in indices.split(',')])
 
-    num_samples_per_file = int(np.ceil(num_samples / len(input_file)))
-    parameters = deepcopy(locals())
-
-
-    output_dir = ensure_dir(output_dir)
-    images_dir = ensure_dir(os.path.join(output_dir, 'images'))
-    info_dir = ensure_dir(os.path.join(output_dir, '.info'))
+    roi_params = {
+        'bg_roi_dilate': bg_roi_dilate,
+        'bg_roi_shape': bg_roi_shape,
+        'bg_roi_index': bg_roi_index,
+        'bg_roi_weights': bg_roi_weights,
+        'bg_roi_depth_range': bg_roi_depth_range,
+        'bg_roi_gradient_filter': bg_roi_gradient_filter,
+        'bg_roi_gradient_threshold': bg_roi_gradient_threshold,
+        'bg_roi_gradient_kernel': bg_roi_gradient_kernel,
+        'bg_roi_fill_holes': bg_roi_fill_holes,
+        'use_plane_bground': use_plane_bground,
+    }
 
     if len(stream) == 0:
         stream = ['depth']
     stream = list(set(stream))
 
-
-    output_info = []
-    for in_file in tqdm.tqdm(input_file, desc='Datasets'):
-        #load session
-        #logging.info('Processing: {}'.format(in_file))
-        session = Session(in_file)
-
-        session_info_dir = ensure_dir(os.path.join(info_dir, session.session_id))
-
-        # Find image background and ROI
-        _, bground_im, roi, true_depth = session.find_roi(bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range,
-                bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground,
-                cache_dir=session_info_dir)
-
-
-        # Dump status information
-        with open(os.path.join(session_info_dir, 'info.json'), 'w', encoding='utf-8') as status_file:
-            json.dump({
-                'parameters': parameters,
-                'session_id': session.session_id,
-                'metadata': session.load_metadata(),
-                'true_depth': true_depth,
-            }, status_file, indent='\t')
-
-        if sample_method == 'random':
-            if indices is not None:
-                seq = np.random.choice(indices, num_samples_per_file, replace=False)
-                iterator = session.index(seq, chunk_size=chunk_size, streams=stream)
-            else:
-                iterator = session.sample(num_samples_per_file, chunk_size=chunk_size, streams=stream)
-
-        elif sample_method == 'uniform':
-            step = session.nframes // num_samples_per_file
-            iterator = session.index(np.arange(step, session.nframes, step), chunk_size=chunk_size, streams=stream)
-
-        elif sample_method == 'kmeans':
-            kmeans_selected_frames = select_frames_kmeans(session,
-                                                          num_samples_per_file,
-                                                          indices=indices,
-                                                          chunk_size=chunk_size,
-                                                          min_height=min_height,
-                                                          max_height=max_height)
-            iterator = session.index(kmeans_selected_frames, chunk_size=chunk_size, streams=stream)
-
-        elif sample_method == 'list':
-            iterator = session.index(indices, chunk_size=chunk_size, streams=stream)
-
-        else:
-            raise ValueError(f'Unknown sample_method "{sample_method}"')
-
-        session_data = {}
-        # Iterate Frames and write images
-        for data in tqdm.tqdm(iterator, desc='Processing batches', leave=False):
-            frame_idxs = data[0]
-
-            for fidx in frame_idxs:
-                session_data[fidx] = {
-                    'data': {
-                        'images': []
-                    },
-                    'meta': {
-                        'frame_idx': int(fidx),
-                        'session_id': session.session_id,
-                        'true_depth': true_depth,
-                        **session.load_metadata()
-                    }
-                }
-
-            if 'depth' in stream:
-                raw_frames = prep_raw_frames(data[stream.index('depth')+1], bground_im=bground_im, roi=roi, vmin=min_height, vmax=max_height)
-
-                for idx, raw_frame in zip(frame_idxs, raw_frames):
-                    dest = os.path.join(images_dir, f'{session.session_id}_depth_{idx}.png')
-                    write_image(dest, raw_frame, scale=True, scale_factor=(0, max_height))
-                    session_data[idx]['data']['depth_image'] = dest
-                    session_data[idx]['data']['images'].append(dest)
-
-            if 'rgb' in stream:
-                rgb_frames = data[stream.index('rgb')+1]
-                rgb_frames = apply_roi(rgb_frames, roi)
-
-                for idx, raw_frame in zip(frame_idxs, rgb_frames):
-                    dest = os.path.join(images_dir, f'{session.session_id}_rgb_{idx}.png')
-                    write_image(dest, raw_frame, scale=False, dtype='uint8')
-                    session_data[idx]['data']['rgb_image'] = dest
-                    session_data[idx]['data']['images'].append(dest)
-
-        output_info.extend(list(session_data.values()))
-
-    logging.info(f'Wrote dataset to "{output_dir}"')
+    output_info = generate_dataset_for_sessions(input_files=input_file,
+                                                streams=stream,
+                                                num_samples=num_samples,
+                                                indices=indices,
+                                                sample_method=sample_method,
+                                                roi_params=roi_params,
+                                                output_dir=output_dir,
+                                                min_height=min_height,
+                                                max_height=max_height,
+                                                chunk_size=chunk_size)
 
     if output_label_studio:
         ls_task_dest = os.path.join(output_dir, 'tasks.json')
-        if os.path.exists(ls_task_dest):
-            logging.warning(f'label-studio tasks file "{ls_task_dest}" seems to already exist! Will append the new tasks to this existing file')
-            with open(ls_task_dest, 'r', encoding='utf-8') as task_file:
-                existing_tasks = json.load(task_file)
-                output_info = existing_tasks + output_info
+        write_label_studio_tasks(output_info, ls_task_dest)
 
-        with open(ls_task_dest, 'w', encoding='utf-8') as task_file:
-            json.dump(output_info, task_file, indent='\t')
-        logging.info(f'Wrote label-studio tasks to "{ls_task_dest}"')
-
-# end generate_dataset()
 
 
 @cli.command(name='dataset-info', short_help='Interogate datasets for information')
@@ -451,6 +370,7 @@ def find_outliers(result_h5, window, threshold):
 
     for h5_path in result_h5:
         find_outliers_h5(h5_path, keypoint_names=kpt_names, jump_win=window, jump_thresh=threshold)
+
 
 
 @cli.command(name='system-info', short_help='Show relevant system information')
