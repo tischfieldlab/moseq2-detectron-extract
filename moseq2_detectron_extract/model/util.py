@@ -55,3 +55,23 @@ def outputs_to_instances(inputs: List[Dict[str, torch.Tensor]], outputs: List[Di
         instances.append({"instances": ins})
 
     return instances
+
+
+def get_default_device() -> str:
+    ''' Get the moniker for the current torch device
+    '''
+    if torch.cuda.is_available():
+        return f'cuda:{torch.cuda.current_device()}'
+    else:
+        return 'cpu'
+
+
+def get_available_devices() -> List[str]:
+    ''' Get a list of available torch device monikers
+    '''
+    devices = ['cpu']
+    if torch.cuda.is_available():
+        devices.append('cuda') # generic cuda is allowed
+        for d in range(torch.cuda.device_count()):
+            devices.append(f'cuda:{d}')
+    return devices

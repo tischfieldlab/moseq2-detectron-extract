@@ -22,6 +22,12 @@ class Predictor:
         self.exit_stack = ExitStack()
         self.exit_stack .enter_context(torch.no_grad())
 
+    @property
+    def device(self):
+        ''' Get the device the model is on
+        '''
+        return next(self.model.parameters()).device
+
     @classmethod
     def from_config(cls, cfg: CfgNode):
         ''' Create a predictor given a Detectron2 config

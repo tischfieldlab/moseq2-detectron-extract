@@ -25,7 +25,7 @@ from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config,
                                                    load_config)
 from moseq2_detectron_extract.model.deploy import export_model
-from moseq2_detectron_extract.model.util import (get_last_checkpoint,
+from moseq2_detectron_extract.model.util import (get_available_devices, get_default_device, get_last_checkpoint,
                                                  get_specific_checkpoint)
 from moseq2_detectron_extract.proc.kmeans import select_frames_kmeans
 from moseq2_detectron_extract.proc.proc import prep_raw_frames
@@ -173,11 +173,10 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
 @cli.command(name='extract', help='run extraction')
 @click.argument('model_dir', nargs=1, type=click.Path(exists=True))
 @click.argument('input_file', nargs=1, type=click.Path(exists=True))
-@click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
-@click.option('--frame-trim', default=(0, 0), type=(int, int), help='Frames to trim from beginning and end of data')
-@click.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
-@click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
-@click.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk. Useful for cable tracking')
+@optgroup.group('Model Inference', help='The options deal with model inference')
+@optgroup.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to run model inference on.')
+@optgroup.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
+@optgroup.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
 @optgroup.group('Background Detection', help='These options deal with background detection')
 @optgroup.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
 @optgroup.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
@@ -189,6 +188,9 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
 @optgroup.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
 @optgroup.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
 @optgroup.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
+@click.option('--frame-trim', default=(0, 0), type=(int, int), help='Frames to trim from beginning and end of data')
+@click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
+@click.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk. Useful for cable tracking')
 @click.option('--frame-dtype', default='uint8', type=click.Choice(['uint8', 'uint16']), help='Data type for processed frames')
 @click.option('--output-dir', default=None, help='Output directory to save the results h5 file')
 @click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
@@ -197,7 +199,7 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
 @click.option('--crop-size', default=(80, 80), type=(int, int), help='size of crop region')
 @click.option("--profile", is_flag=True)
 @click.option("--report-outliers", is_flag=True)
-def extract(model_dir, input_file, checkpoint, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index,
+def extract(model_dir, input_file, device, checkpoint, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index,
           bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes,
           use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size, profile, report_outliers):
     ''' CLI entrypoint for extracting a moseq session with a trained model '''
@@ -639,8 +641,9 @@ def dataset_info(annot_file, replace_data_path, min_height, max_height):
 @click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
 @click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 @click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
+@click.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to compile model for.')
 @click.option('--eval-model', is_flag=True, help='Run COCO evaluation metrics on supplied annotations.')
-def compile_model(model_dir, annot_file, replace_data_path, min_height, max_height, checkpoint, eval_model):
+def compile_model(model_dir, annot_file, replace_data_path, min_height, max_height, checkpoint, device, eval_model):
     ''' CLI entrypoint for compiling a model to torchscript '''
     setup_logging()
 
@@ -659,6 +662,9 @@ def compile_model(model_dir, annot_file, replace_data_path, min_height, max_heig
 
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
     cfg.TEST.DETECTIONS_PER_IMAGE = 1
+
+    logging.info(f" -> Setting device to \"{device}\"")
+    cfg.MODEL.DEVICE = device
 
 
     logging.info('Loading annotations....')

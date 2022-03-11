@@ -31,6 +31,7 @@ class InferenceStep(PipelineStep):
 
         if os.path.isfile(model_path) and model_path.endswith('.ts'):
             self.write_message(f' -> Using torchscript model "{os.path.abspath(model_path)}"....')
+            self.write_message(' -> WARNING: Ignoring --device parameter because this is a torchscript model')
             self.predictor = Predictor.from_torchscript(model_path)
 
         else:
@@ -40,16 +41,20 @@ class InferenceStep(PipelineStep):
                 cfg = cfg.load_cfg(cfg_file)
 
             if checkpoint == 'last':
-                self.write_message(' -> Using last model checkpoint....')
                 cfg.MODEL.WEIGHTS = get_last_checkpoint(self.config['model_dir'])
+                self.write_message(f' -> Using last model checkpoint: "{cfg.MODEL.WEIGHTS}"')
             else:
-                self.write_message(f' -> Using model checkpoint at iteration {checkpoint}....')
                 cfg.MODEL.WEIGHTS = get_specific_checkpoint(self.config['model_dir'], checkpoint)
+                self.write_message(f' -> Using model checkpoint at iteration {checkpoint}: "{cfg.MODEL.WEIGHTS}"')
+
+            self.write_message(f" -> Setting device to \"{self.config['device']}\"")
+            cfg.MODEL.DEVICE = self.config['device']
 
             cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
             cfg.TEST.DETECTIONS_PER_IMAGE = 1
             self.predictor = Predictor.from_config(cfg)
 
+        self.write_message(f' -> Actually using device "{self.predictor.device}"')
         self.write_message('')
 
     def process(self, data):
