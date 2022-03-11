@@ -12,11 +12,9 @@ from detectron2.utils.env import seed_all_rng
 from tabulate import tabulate
 
 from moseq2_detectron_extract.extract import extract_session
-from moseq2_detectron_extract.io.annot import (
-    default_keypoint_names, read_annotations, register_dataset_metadata,
-    register_datasets, replace_data_path_in_annotations, show_dataset_info,
-    validate_annotations)
-from moseq2_detectron_extract.io.image import write_image
+from moseq2_detectron_extract.io.annot import (default_keypoint_names, load_annotations_helper,
+                                               register_dataset_metadata,
+                                               register_datasets)
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import (
     attach_file_logger, click_monkey_patch_option_show_defaults,
@@ -102,17 +100,11 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd):
     seed_all_rng(None if cfg.SEED < 0 else cfg.SEED) # Seed the random number generators
 
 
-    annotations = []
-    for anot_f in annot_file:
-        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT)
-        annotations.extend(annot)
-
-    for search, replace in replace_data_path:
-        replace_data_path_in_annotations(annotations, search, replace)
-    validate_annotations(annotations)
-    logging.info('Dataset information:')
-    show_dataset_info(annotations)
-    register_datasets(annotations, default_keypoint_names)
+    load_annotations_helper(annot_file,
+                            replace_data_path,
+                            mask_format=cfg.INPUT.MASK_FORMAT,
+                            register=True,
+                            show_info=True)
 
 
     if not resume:
@@ -148,18 +140,11 @@ def evaluate(model_dir, annot_file, replace_data_path):
     cfg.TEST.DETECTIONS_PER_IMAGE = 1
 
 
-    logging.info('Loading annotations....')
-    annotations = []
-    for anot_f in annot_file:
-        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT)
-        annotations.extend(annot)
-
-    for search, replace in replace_data_path:
-        replace_data_path_in_annotations(annotations, search, replace)
-    validate_annotations(annotations)
-
-    logging.info('Dataset information:')
-    show_dataset_info(annotations)
+    annotations = load_annotations_helper(annot_file,
+                                          replace_data_path,
+                                          mask_format=cfg.INPUT.MASK_FORMAT,
+                                          register=False,
+                                          show_info=True)
     register_datasets(annotations, default_keypoint_names, split=False)
 
     evaluator = Evaluator(cfg)
@@ -409,21 +394,7 @@ def dataset_info(annot_file, replace_data_path):
          -> Statistics on the image pixel intensities
     '''
     setup_logging()
-
-    logging.info('Loading annotations....')
-    annotations = []
-    for anot_f in annot_file:
-        logging.info(f'Reading annotation file "{anot_f}"')
-        annot = read_annotations(anot_f, default_keypoint_names, mask_format='polygon')
-        logging.info(f' -> Read {len(annot)} annotations')
-        annotations.extend(annot)
-
-    for search, replace in replace_data_path:
-        replace_data_path_in_annotations(annotations, search, replace)
-    validate_annotations(annotations)
-
-    logging.info('Dataset information:')
-    show_dataset_info(annotations)
+    load_annotations_helper(annot_file, replace_data_path, register=False, show_info=True)
 
 
 
@@ -458,17 +429,11 @@ def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, 
     logging.info(f' -> Setting device to \'{device}\'')
     cfg.MODEL.DEVICE = device
 
-
-    logging.info('Loading annotations....')
-    annotations = []
-    for anot_f in annot_file:
-        annot = read_annotations(anot_f, default_keypoint_names, mask_format=cfg.INPUT.MASK_FORMAT)
-        annotations.extend(annot)
-
-    for search, replace in replace_data_path:
-        replace_data_path_in_annotations(annotations, search, replace)
-    validate_annotations(annotations)
-    register_datasets(annotations, default_keypoint_names)
+    load_annotations_helper(annot_file,
+                            replace_data_path,
+                            mask_format=cfg.INPUT.MASK_FORMAT,
+                            register=True,
+                            show_info=True)
 
     logging.info('Exporting model....')
     export_model(cfg, model_dir, run_eval=eval_model)

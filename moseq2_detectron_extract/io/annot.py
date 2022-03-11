@@ -80,6 +80,43 @@ default_keypoint_connection_rules: KeypointConnections = [
     ]
 
 
+def load_annotations_helper(annot_files: Iterable[str], replace_paths: Iterable[Tuple[str, str]]=None,
+                            mask_format: str='polygon', register: bool=True, show_info: bool=True):
+    ''' Utility "do-it-all function for the common task of loading and processing annotations
+
+    Parameters:
+    annot_files (Iterable[str]): file paths to read annotation information from
+    replace_paths (Iterable[Tuple[str, str]]): search and replacement pairs for fixing filename paths in annotations
+    mask_format (str): format that masks should be loaded as
+    register (bool): if True, register loaded annotations with detectron2 dataset register
+    show_info (bool): if True, show information about the dataset
+
+    Returns:
+    List[DataItem] - annotations
+    '''
+    logging.info('Loading annotations....')
+    annotations: List[DataItem] = []
+    for anot_f in annot_files:
+        logging.info(f'Reading annotation file "{anot_f}"')
+        annot = read_annotations(anot_f, default_keypoint_names, mask_format=mask_format)
+        logging.info(f' -> Found {len(annot)} annotations')
+        annotations.extend(annot)
+
+    if replace_paths is not None:
+        for search, replace in replace_paths:
+            replace_data_path_in_annotations(annotations, search, replace)
+    validate_annotations(annotations)
+
+    if show_info:
+        logging.info('Dataset information:')
+        show_dataset_info(annotations)
+
+    if register:
+        register_datasets(annotations, default_keypoint_names)
+
+    return annotations
+
+
 def get_dataset_statistics(dset: Sequence[DataItem]):
     ''' Calculate mean a standard deviation of images over a dataset.
 
