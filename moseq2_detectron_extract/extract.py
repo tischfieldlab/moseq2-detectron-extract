@@ -78,13 +78,13 @@ def extract_session(session: Session, config: dict):
 
     try:
         pipeline = Pipeline()
-        reader_pbar = pipeline.progress.add(name='producer', desc='Processing batches', total=session.nframes)
-        out = pipeline.add_step('Inferring',InferenceStep, pipeline.input, config=config)
+        reader_pbar = pipeline.progress.add(name='producer', desc=' Read Depth Data', total=session.nframes)
+        out = pipeline.add_step(' Model Inference', InferenceStep, pipeline.input, config=config)
         out = pipeline.add_step('Extract Features', ExtractFeaturesStep, out[0], show_progress=False, config=config)
-        out = pipeline.add_step('Crop and Rotate', FrameCropStep, out[0], num_listners=3, config=config)
-        pipeline.add_step('Preview Video', PreviewVideoWriterStep, out[0], config=config)
-        pipeline.add_step('Write Keypoints', KeypointWriterStep, out[1], show_progress=False, config=config)
-        pipeline.add_step('Write H5 Result', ResultH5WriterStep, out[2], show_progress=False, session=session, config=config, status_dict=status_dict)
+        out = pipeline.add_step(' Crop and Rotate', FrameCropStep, out[0], num_listners=3, config=config)
+        pipeline.add_step('  Preview Video', PreviewVideoWriterStep, out[0], config=config)
+        pipeline.add_step(' Write Keypoints', KeypointWriterStep, out[1], show_progress=False, config=config)
+        pipeline.add_step(' Write H5 Result', ResultH5WriterStep, out[2], show_progress=False, session=session, config=config, status_dict=status_dict)
         pipeline.start()
 
         for i, (frame_idxs, raw_frames) in enumerate(session.iterate(config['chunk_size'], config['chunk_overlap'])):
