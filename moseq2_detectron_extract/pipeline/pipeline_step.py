@@ -1,5 +1,6 @@
 import traceback
 from typing import List, Union, cast
+from torch import Tensor
 
 from torch.multiprocessing import Process, Queue, SimpleQueue
 
@@ -16,7 +17,7 @@ class PipelineStep(Process):
         self.in_queue = in_queue
         self.out_queue = out_queue
         if not isinstance(out_queue, list):
-            raise TypeError('expected List[Queue] (possibly empty) for parameter `out_queue`')
+            raise TypeError('expected List[SimpleQueue] (possibly empty) for parameter `out_queue`')
         self.reset_progress(config['nframes'])
 
     def reset_progress(self, total: int):
@@ -57,11 +58,25 @@ class PipelineStep(Process):
         for queue in self.out_queue:
             queue.put(data)
 
+    def __get_inputs(self):
+        ''' For internal use!
+            Get the next data item from the queue
+            if we have any tensors, clone those over for reuse
+        '''
+        data = self.in_queue.get()
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if isinstance(value, Tensor):
+                    data[key] = value.clone()
+        if isinstance(data, Tensor):
+            data = data.clone()
+        return data
+
     def run(self) -> None:
         try:
             self.initialize()
             while True:
-                data = self.in_queue.get()
+                data = self.__get_inputs()
                 if data is None:
                     self.set_outputs(None)
                     break
