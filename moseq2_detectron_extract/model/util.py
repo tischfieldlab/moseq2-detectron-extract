@@ -1,8 +1,13 @@
+import collections
 import glob
 import os
+import subprocess
+import sys
 from typing import Dict, List
 
 import torch
+import torchvision
+import detectron2
 from detectron2.modeling.postprocessing import detector_postprocess
 from detectron2.structures import Boxes, Instances
 
@@ -75,3 +80,70 @@ def get_available_devices() -> List[str]:
         for d in range(torch.cuda.device_count()):
             devices.append(f'cuda:{d}')
     return devices
+
+
+def get_available_device_info():
+    ''' Get a dictionary of available device information
+
+    If fails, will return None
+
+    Returns:
+        dict|None
+    '''
+    try:
+        cmd = [
+            "nvidia-smi",
+            "--format=csv",
+            "--query-gpu=index,name,driver_version,memory.total,memory.used,memory.free"
+        ]
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        out, _ = process.communicate()
+
+        data = []
+        headers = []
+        for line_i, line in enumerate(out.split('\n')):
+            if line.strip() == '':
+                continue
+            fields = [f.strip() for f in line.split(',')]
+            if line_i == 0:
+                headers.extend(fields)
+            else:
+                item = collections.OrderedDict()
+                for field_i, field_name in enumerate(fields):
+                    item[headers[field_i]] = field_name
+                data.append(item)
+
+        return data
+    except: # pylint: disable=bare-except
+        return None
+
+
+def get_system_versions():
+    ''' Get a dictionary of framework versions
+
+    Returns:
+        dict: Contains keys `Framework` and `Version`, both containing lists of data.
+    '''
+    data = collections.OrderedDict()
+    data['Framework'] = []
+    data['Version'] = []
+
+    data['Framework'].append('Python')
+    data['Version'].append(sys.version)
+
+    data['Framework'].append('PyTorch')
+    data['Version'].append(torch.__version__)
+
+    data['Framework'].append('TorchVision')
+    data['Version'].append(torchvision.__version__)
+
+    data['Framework'].append('CUDA')
+    data['Version'].append(str(torch.version.cuda))
+
+    data['Framework'].append('CUDNN')
+    data['Version'].append(str(torch.backends.cudnn.version()))
+
+    data['Framework'].append('Detectron2')
+    data['Version'].append(str(detectron2.__version__))
+
+    return data

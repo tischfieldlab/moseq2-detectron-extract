@@ -9,6 +9,7 @@ import numpy as np
 import tqdm
 from click_option_group import optgroup
 from detectron2.utils.env import seed_all_rng
+from tabulate import tabulate
 
 from moseq2_detectron_extract.extract import extract_session
 from moseq2_detectron_extract.io.annot import (
@@ -25,8 +26,8 @@ from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config,
                                                    load_config)
 from moseq2_detectron_extract.model.deploy import export_model
-from moseq2_detectron_extract.model.util import (get_available_devices, get_default_device, get_last_checkpoint,
-                                                 get_specific_checkpoint)
+from moseq2_detectron_extract.model.util import (get_available_device_info, get_available_devices, get_default_device, get_last_checkpoint,
+                                                 get_specific_checkpoint, get_system_versions)
 from moseq2_detectron_extract.proc.kmeans import select_frames_kmeans
 from moseq2_detectron_extract.proc.proc import prep_raw_frames
 from moseq2_detectron_extract.proc.roi import apply_roi
@@ -489,6 +490,26 @@ def find_outliers(result_h5, window, threshold):
     for h5_path in result_h5:
         find_outliers_h5(h5_path, keypoint_names=kpt_names, jump_win=window, jump_thresh=threshold)
 
+
+@cli.command(name='system-info', short_help='Show relevant system information')
+def system_info():
+    ''' Show relevant system information
+    '''
+    setup_logging()
+    logging.info('')
+    logging.info('System Framework Versions:')
+    vdata = get_system_versions()
+    logging.info(tabulate(vdata, headers='keys'))
+
+    logging.info('\n')
+
+    logging.info(f'System Devices (default is {get_default_device()}):')
+    dinfo = get_available_device_info()
+    if dinfo is not None:
+        logging.info(tabulate(dinfo, headers='keys'))
+    else:
+        logging.info('No devices found')
+    logging.info('\n')
 
 
 
