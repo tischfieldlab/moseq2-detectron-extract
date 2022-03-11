@@ -2,7 +2,7 @@ import logging
 import os
 import tarfile
 from enum import Enum
-from typing import IO, Iterable, List, Sequence, Tuple, Union
+from typing import IO, Callable, Iterable, List, Sequence, Tuple, TypedDict, Union
 
 import numpy as np
 from moseq2_detectron_extract.io.image import read_tiff_image, write_image
@@ -35,7 +35,10 @@ class Session(object):
         self.depth_file: Union[str, tarfile.TarInfo]
         self.rgb_file: Union[str, tarfile.TarInfo]
 
-
+        self._true_depth: Union[None, float] = None
+        self._first_frame: Union[None, np.ndarray] = None
+        self._bground_im: Union[None, np.ndarray] = None
+        self._roi: Union[None, np.ndarray] = None
 
     def __init_session(self, input_file: str):
         self.dirname = os.path.dirname(input_file)
@@ -241,7 +244,48 @@ class Session(object):
         if verbose:
             logging.info(f'Detected true depth: {true_depth}')
 
+        self._true_depth = true_depth
+        self._first_frame = first_frame
+        self._bground_im = bground_im
+        self._roi = roi
+
         return first_frame, bground_im, roi, true_depth
+
+
+    @property
+    def true_depth(self) -> float:
+        ''' Gets the detected true depth for this session. Necessitates calling Session.find_roi() first
+        '''
+        if self._true_depth is not None:
+            return self._true_depth
+        raise RuntimeError('You must first call Session.find_roi() to use this property!')
+
+
+    @property
+    def first_frame(self) -> np.ndarray:
+        ''' Gets the first frame of this session. Necessitates calling Session.find_roi() first
+        '''
+        if self._first_frame is not None:
+            return self._first_frame
+        raise RuntimeError('You must first call Session.find_roi() to use this property!')
+
+
+    @property
+    def bground_im(self) -> np.ndarray:
+        ''' Gets the background image for this session. Necessitates calling Session.find_roi() first
+        '''
+        if self._bground_im is not None:
+            return self._bground_im
+        raise RuntimeError('You must first call Session.find_roi() to use this property!')
+
+
+    @property
+    def roi(self) -> np.ndarray:
+        ''' Gets the ROI for this session. Necessitates calling Session.find_roi() first
+        '''
+        if self._roi is not None:
+            return self._roi
+        raise RuntimeError('You must first call Session.find_roi() to use this property!')
 
 
     def iterate(self, chunk_size: int=1000, chunk_overlap: int=0, streams: Iterable[Stream]=(Stream.DEPTH,)):
@@ -285,6 +329,9 @@ class Session(object):
         return f'{self.__class__.__name__}("{self.session_path}", frame_trim=({self.frame_trim[0]}, {self.frame_trim[1]}))'
 
 
+class _FilterItem(TypedDict):
+    filter: Callable[[np.ndarray], np.ndarray]
+    streams: Iterable[Stream]
 
 class SessionFramesIterator(object):
     ''' Iterator that iterates over Session frames in order
@@ -304,10 +351,46 @@ class SessionFramesIterator(object):
         self.batches = list(self.generate_samples())
         self.current = 0
         self.streams = list(set(streams))
+        self.filters: List[_FilterItem] = []
         self.ts_map = TimestampMapper()
         for stream in streams:
             self.ts_map.add_timestamps(stream, session.load_timestamps(stream))
 
+    @property
+    def nframes(self) -> int:
+        ''' Get the total number of frames this iterator will produce (batches * chunk_size)
+        '''
+        return sum([len(batch) for batch in self.batches])
+
+    @property
+    def nbatches(self) -> int:
+        ''' Get the total number of batches produced by this iterator
+            Same as calling len(iterator)
+        '''
+        return len(self.batches)
+
+
+
+    def attach_filter(self, streams: Iterable[Stream], filterer: Callable[[np.ndarray], np.ndarray]):
+        ''' Attach a filter to this frames iterator. A filter is simply a callable accepting a
+            numpy array of data, performs some operation upon it, and returns and output array.
+            Multiple filters can be attached, and they are called in the order in which they were
+            attachd. You may also specify the streams upon which the filter should apply.
+
+        Parameters:
+        filterer (Callable[[np.ndarray], np.ndarray]): callable used to filter data
+        streams (Iterable[Stream]): streams for which this filter should apply
+        '''
+        self.filters.append({
+            'filter': filterer,
+            'streams': streams
+        })
+
+    def __apply_filters(self, data: np.ndarray, stream: Stream) -> np.ndarray:
+        for filt in self.filters:
+            if stream in filt['stream']:
+                data = filt['filter'](data)
+        return data
 
     def generate_samples(self):
         ''' Generate the sequence of batches of frames indices
@@ -341,10 +424,13 @@ class SessionFramesIterator(object):
 
         for stream in self.streams:
             if stream == Stream.DEPTH:
-                out_data.append(load_movie_data(self.session.depth_file, frame_idxs, tar_object=self.session.tar))
+                data = load_movie_data(self.session.depth_file, frame_idxs, tar_object=self.session.tar)
             elif stream == Stream.RGB:
                 # rgb_idxs = self.ts_map.map_index(Stream.RGB, Stream.Depth, frame_idxs)
-                out_data.append(load_movie_data(self.session.rgb_file, frame_idxs, pixel_format='rgb24', tar_object=self.session.tar))
+                data = load_movie_data(self.session.rgb_file, frame_idxs, pixel_format='rgb24', tar_object=self.session.tar)
+
+            data = self.__apply_filters(data, stream)
+            out_data.append(data)
 
         return tuple(out_data)
 
