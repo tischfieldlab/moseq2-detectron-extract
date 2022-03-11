@@ -237,6 +237,8 @@ def setup_logging(name: str=None, level: Union[str, int]=logging.INFO, add_defer
     add_defered_file_handler (bool): If true, add a handler to buffer log recors in memory.
         Use in combination with `attach_file_logger()` to later point these buffered records to a file
     '''
+    logging.captureWarnings(True)
+
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
