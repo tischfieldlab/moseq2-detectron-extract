@@ -39,6 +39,8 @@ from moseq2_detectron_extract.quality import find_outliers_h5
 # warnings.showwarning = warn_with_traceback
 # np.seterr(all='raise')
 
+if os.getenv('MOSEQ_DETECTRON_PROFILE', 'False').lower() in ('true', '1', 't'):
+    enable_profiling()
 
 
 # Show click option defaults
@@ -63,9 +65,7 @@ def cli():
     help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
 @click.option('--resume', is_flag=True, help='Resume training from a previous checkpoint')
 @click.option('--auto-cd', is_flag=True, help='treat model_dir as a base directory and create a child dir for this specific run')
-@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
-@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
-def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min_height, max_height):
+def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd):
     ''' CLI entrypoint for model training '''
     setup_logging(add_defered_file_handler=True)
     logging.info("")
@@ -133,16 +133,10 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, min
 @click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
 @click.option('--replace-data-path', multiple=True, default=[], type=(str, str),
     help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
-@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
-@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
-@click.option("--profile", is_flag=True)
-def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, profile):
+def evaluate(model_dir, annot_file, replace_data_path):
     ''' CLI entrypoint for model evaluation '''
     setup_logging()
     logging.info("") # Empty line to give some breething room
-
-    if profile:
-        enable_profiling()
 
     logging.info('Loading model configuration....')
     register_dataset_metadata("moseq_train", default_keypoint_names)
@@ -175,11 +169,11 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
 @cli.command(name='extract', short_help='Extract a moseq session raw data')
 @click.argument('model', nargs=1, type=click.Path(exists=True))
 @click.argument('input_file', nargs=1, type=click.Path(exists=True))
-@optgroup.group('Model Inference', help='The options deal with model inference')
-@optgroup.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to run model inference on.')
-@optgroup.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
+@optgroup.group('Model Inference')
+@optgroup.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to run model inference on')
+@optgroup.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint')
 @optgroup.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
-@optgroup.group('Background Detection', help='These options deal with background detection')
+@optgroup.group('Background Detection')
 @optgroup.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
 @optgroup.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
 @optgroup.option('--bg-roi-index', default=0, type=int, help='Index of which background mask(s) to use')
@@ -190,41 +184,39 @@ def evaluate(model_dir, annot_file, replace_data_path, min_height, max_height, p
 @optgroup.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
 @optgroup.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
 @optgroup.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
-@click.option('--frame-trim', default=(0, 0), type=(int, int), help='Frames to trim from beginning and end of data')
-@click.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
-@click.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk. Useful for cable tracking')
-@click.option('--frame-dtype', default='uint8', type=click.Choice(['uint8', 'uint16']), help='Data type for processed frames')
-@click.option('--output-dir', default=None, help='Output directory to save the results h5 file')
-@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
-@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
-@click.option('--fps', default=30, type=int, help='Frame rate of camera')
-@click.option('--crop-size', default=(80, 80), type=(int, int), help='size of crop region')
-@click.option("--profile", is_flag=True)
-@click.option("--report-outliers", is_flag=True)
+@optgroup.group('Output')
+@optgroup.option('--output-dir', default=None, help='Output directory to save the extraction output files')
+@optgroup.option('--frame-dtype', default='uint8', type=click.Choice(['uint8', 'uint16']), help='Data type for processed frames')
+@optgroup.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
+@optgroup.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
+@optgroup.option('--crop-size', default=(80, 80), type=(int, int), help='Size of crop region')
+@optgroup.option("--report-outliers", is_flag=True, help='Report outliers in extracted data')
+@optgroup.group('Input and Processing')
+@optgroup.option('--frame-trim', default=(0, 0), type=(int, int), help='Frames to trim from beginning and end of data')
+@optgroup.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
+@optgroup.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk')
+@optgroup.option('--fps', default=30, type=int, help='Frame rate of camera')
 def extract(model_dir, input_file, device, checkpoint, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index,
           bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes,
-          use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size, profile, report_outliers):
-    ''' Extracts a moseq session with a trained detectron2 model
+          use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size, report_outliers):
+    ''' Extract a moseq session with a trained detectron2 model
 
     \b
     MODEL is a path to a model, which could be:
-        A) Path to a directory containing model files. In this case the model which is loaded is affected
-           by --checkpoint. It is also expected that the directory contain a `config.yaml` containing the
-           model configuration. This method allows dynamically setting the --device parameter.
-        B) Path to a file with a `*.ts` extension whose contents are a compiled model. In this case, the
-           parameters --device and --checkpoint have no effect
+        A) Path to a directory containing model files. It is expected that the directory contain a file `config.yaml`
+           containing the model configuration. The model which is ultimatly loaded is affected by --checkpoint.
+           This method allows dynamically setting the --device parameter.
+        B) Path to a file with a `*.ts` extension whose contents are a compiled torchscript model.
+           The parameters --device and --checkpoint have no effect.
     \b
     INPUT_FILE is a path to moseq raw depth data, which could be:
         A) Path to a compressed moseq session in tar.gz format which contains a depth.dat file,
            ex: /path/to/session_1234567890.tar.gz
-        b) Path to an uncompressed moseq session depth.dat file,
+        B) Path to an uncompressed moseq session depth.dat file,
            ex: /path/to/session_1234567890/depth.dat
     '''
     setup_logging(add_defered_file_handler=True)
     print("") # Empty line to give some breething room
-
-    if profile:
-        enable_profiling()
 
     config_data = locals()
     config_data.update({
@@ -401,14 +393,21 @@ def generate_dataset(input_file, num_samples, indices, sample_method, chunk_size
 # end generate_dataset()
 
 
-@cli.command(name='dataset-info', help='Interogate datasets for information')
+@cli.command(name='dataset-info', short_help='Interogate datasets for information')
 @click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
 @click.option('--replace-data-path', multiple=True, default=[], type=(str, str),
     help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
-@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
-@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
-def dataset_info(annot_file, replace_data_path, min_height, max_height):
-    ''' CLI entrypoint for introspecting a dataset '''
+def dataset_info(annot_file, replace_data_path):
+    ''' Interrogate datasets and show statistics.
+
+        \b
+        Includes the following information:
+         -> Number of annotations in each [sub-]dataset
+         -> Total number of annotations across all datasets
+         -> Size range of images in the dataset
+         -> Statistics on the size and ratio of instance bounding boxes
+         -> Statistics on the image pixel intensities
+    '''
     setup_logging()
 
     logging.info('Loading annotations....')
@@ -433,12 +432,10 @@ def dataset_info(annot_file, replace_data_path, min_height, max_height):
 @click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
 @click.option('--replace-data-path', multiple=True, default=[], type=(str, str),
     help="Replace path to data image items in `annot_file`. Specify <search> <replace>")
-@click.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
-@click.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 @click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
 @click.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to compile model for.')
 @click.option('--eval-model', is_flag=True, help='Run COCO evaluation metrics on supplied annotations.')
-def compile_model(model_dir, annot_file, replace_data_path, min_height, max_height, checkpoint, device, eval_model):
+def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, eval_model):
     ''' CLI entrypoint for compiling a model to torchscript '''
     setup_logging()
 
