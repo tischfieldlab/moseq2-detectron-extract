@@ -27,7 +27,7 @@ class InferenceStep(PipelineStep):
         self.write_message('Loading model....')
         register_dataset_metadata("moseq_train", default_keypoint_names)
 
-        model_path: str = self.config['model_dir']
+        model_path: str = self.config['model']
 
         if os.path.isfile(model_path) and model_path.endswith('.ts'):
             self.write_message(f' -> Using torchscript model "{os.path.abspath(model_path)}"....')
@@ -37,14 +37,14 @@ class InferenceStep(PipelineStep):
         else:
             cfg = get_base_config()
             checkpoint = self.config['checkpoint']
-            with open(os.path.join(self.config['model_dir'], 'config.yaml'), 'r', encoding='utf-8') as cfg_file:
+            with open(os.path.join(self.config['model'], 'config.yaml'), 'r', encoding='utf-8') as cfg_file:
                 cfg = cfg.load_cfg(cfg_file)
 
             if checkpoint == 'last':
-                cfg.MODEL.WEIGHTS = get_last_checkpoint(self.config['model_dir'])
+                cfg.MODEL.WEIGHTS = get_last_checkpoint(self.config['model'])
                 self.write_message(f' -> Using last model checkpoint: "{cfg.MODEL.WEIGHTS}"')
             else:
-                cfg.MODEL.WEIGHTS = get_specific_checkpoint(self.config['model_dir'], checkpoint)
+                cfg.MODEL.WEIGHTS = get_specific_checkpoint(self.config['model'], checkpoint)
                 self.write_message(f' -> Using model checkpoint at iteration {checkpoint}: "{cfg.MODEL.WEIGHTS}"')
 
             self.write_message(f" -> Setting device to \"{self.config['device']}\"")

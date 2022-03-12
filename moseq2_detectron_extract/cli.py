@@ -178,7 +178,7 @@ def evaluate(model_dir, annot_file, replace_data_path):
 @optgroup.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
 @optgroup.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk')
 @optgroup.option('--fps', default=30, type=int, help='Frame rate of camera')
-def extract(model_dir, input_file, device, checkpoint, frame_trim, batch_size, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index,
+def extract(model, input_file, device, checkpoint, batch_size, frame_trim, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index,
           bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes,
           use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size, report_outliers):
     ''' Extract a moseq session with a trained detectron2 model
@@ -203,7 +203,7 @@ def extract(model_dir, input_file, device, checkpoint, frame_trim, batch_size, c
     config_data = locals()
     config_data.update({
         'use_tracking_model': False,
-        'flip_classifier': model_dir
+        'flip_classifier': model
     })
 
     session = Session(input_file, frame_trim=frame_trim)
