@@ -1,27 +1,28 @@
 import logging
+import sys
+import threading
 from queue import Empty
-from threading import Thread
+from time import time
 from typing import List, Union
 
 import tqdm
-from torch.multiprocessing import Queue
+from torch.multiprocessing import SimpleQueue
 
 
-class ProcessProgress(Thread):
+class ProcessProgress(threading.Thread):
     ''' Class to track progress in multiprocessing workers
     '''
     def __init__(self) -> None:
         super().__init__(name='progress', daemon=True)
         self.workers: List[dict] = []
         self.done = False
-        self.disabled = False
 
     def shutdown(self):
         ''' Signal that this thread should shutdown
         '''
         self.done = True
 
-    def add(self, name: str='', show: bool=True, **kwargs) -> Queue:
+    def add(self, name: str, show: bool=True, **kwargs) -> SimpleQueue:
         ''' Add a progress tracker
 
         Parameters:
@@ -32,13 +33,15 @@ class ProcessProgress(Thread):
         Returns:
         Queue - used to send messages for this progress
         '''
-        queue = Queue()
+        queue = SimpleQueue()
+        if self.get_tqdm(name) is not None:
+            raise KeyError(f'Progress with name "{name}" has already been added! Names should be unique!')
         prog = {
             'name': name,
             'show': show,
             'q': queue
         }
-        if not self.disabled and show:
+        if show:
             prog['tqdm'] = tqdm.tqdm(**kwargs)
         self.workers.append(prog)
         return queue
@@ -60,8 +63,7 @@ class ProcessProgress(Thread):
     def run(self) -> None:
         ''' Main loop for this thread
         '''
-        if self.disabled:
-            return
+        self.exception = None
         while not self.done:
             for worker in self.workers:
                 try:
@@ -74,8 +76,11 @@ class ProcessProgress(Thread):
                         worker['tqdm'].update(data['update'])
 
                     if 'message' in data:
-                        #tqdm.tqdm.write(data['message'])
-                        logging.info(data['message'])
+                        if data.get('raise', False):
+                            self.exception = RuntimeError(f'Worker "{worker["name"]}" raised an exception:\n{data["message"]}')
+                            self.shutdown()
+                        else:
+                            logging.log(data.get('level', logging.INFO), data['message'])
 
                     if worker['show'] and 'flush' in data:
                         worker['tqdm'].refresh()
@@ -85,3 +90,8 @@ class ProcessProgress(Thread):
         for worker in self.workers:
             if 'tqdm' in worker:
                 worker['tqdm'].close()
+
+    def join(self, timeout=None):
+        super().join(time)
+        if self.exception is not None:
+            raise self.exception
