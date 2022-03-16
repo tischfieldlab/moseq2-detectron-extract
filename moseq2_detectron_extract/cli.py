@@ -27,6 +27,7 @@ from moseq2_detectron_extract.model.util import (get_available_device_info,
                                                  get_last_checkpoint,
                                                  get_specific_checkpoint,
                                                  get_system_versions)
+from moseq2_detectron_extract.proc.util import check_completion_status
 from moseq2_detectron_extract.quality import find_outliers_h5
 
 # import warnings
@@ -211,11 +212,15 @@ def extract(model, input_file, device, checkpoint, batch_size, frame_trim, chunk
     status_filename = extract_session(session=session, config=config_data)
 
     if report_outliers:
-        logging.info('')
-        logging.info('Searching for outlier frames....')
-        result_filename = os.path.splitext(status_filename)[0] + '.h5'
-        kpt_names = [kp for kp in default_keypoint_names if kp != 'TailTip']
-        find_outliers_h5(result_filename, keypoint_names=kpt_names)
+        if not check_completion_status(status_filename):
+            logging.info('')
+            logging.info('Skipping search for outlier frames because sessoion extraction was not completed!')
+        else:
+            logging.info('')
+            logging.info('Searching for outlier frames....')
+            result_filename = os.path.splitext(status_filename)[0] + '.h5'
+            kpt_names = [kp for kp in default_keypoint_names if kp != 'TailTip']
+            find_outliers_h5(result_filename, keypoint_names=kpt_names)
 
 
 
