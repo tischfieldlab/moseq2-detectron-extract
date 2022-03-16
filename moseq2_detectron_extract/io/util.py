@@ -175,55 +175,6 @@ def dict_to_h5(h5_file: h5py.File, data: dict, root: str='/', annotations: dict=
                 h5_file[dest].attrs['description'] = annotations[key]
 
 
-class Tee(object):
-    ''' Pipes stdout/stderr to a file and stdout/stderr
-    '''
-    def __init__(self, name: str, mode: str='w'):
-        ''' Initialize this Tee object
-
-        Parameters:
-        name (str): path to the output file
-        mode (str): mode for opening the file
-        '''
-        self.name = name
-        self.mode = mode
-        self.file = None
-        self.stdout = None
-        self.stderr = None
-
-    def attach(self):
-        ''' Attach onto stderr/stdout
-        '''
-        self.file = open(self.name, self.mode, encoding='utf-8')
-
-        self.stdout = sys.stdout
-        sys.stdout = self
-
-        self.stderr = sys.stderr
-        sys.stderr = self
-
-    def detach(self):
-        ''' Detach from stderr/stdout
-        '''
-        sys.stdout = self.stdout
-        sys.stderr = self.stderr
-        self.file.close()
-
-    def __del__(self):
-        self.detach()
-
-    def write(self, data):
-        ''' Write data
-        '''
-        self.file.write(data)
-        self.stdout.write(data)
-
-    def flush(self):
-        ''' Flush output
-        '''
-        self.file.flush()
-
-
 def setup_logging(name: str=None, level: Union[str, int]=logging.INFO, add_defered_file_handler: bool=False):
     ''' Setup the logging module
     A) set logging level to `level` (default logging.INFO)
@@ -244,17 +195,12 @@ def setup_logging(name: str=None, level: Union[str, int]=logging.INFO, add_defer
     logger.handlers.clear()
     logger.setLevel(level)
 
+    # attach defered file handler, if requested
     if add_defered_file_handler:
         mem_handler = MemoryHandler(0)
         mem_handler.name = 'DEFERED_FILE_HANDLER'
         mem_handler.setLevel(level)
         logger.addHandler(mem_handler)
-
-    # attach file handler
-    #if log_filename is not None:
-    #    file_handler = logging.FileHandler(log_filename)
-    #    file_handler.setLevel(level)
-    #    logger.addHandler(file_handler)
 
     # attach stream handler
     stream_handler = _TqdmLoggingHandler()
