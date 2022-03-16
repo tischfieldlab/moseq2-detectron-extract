@@ -1,10 +1,8 @@
 
 import os
 from functools import partial
-from typing import List
 
 import numpy as np
-from torch.multiprocessing import SimpleQueue
 
 from moseq2_detectron_extract.io.video import PreviewVideoWriter
 from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
@@ -22,11 +20,8 @@ class PreviewVideoWriterStep(PipelineStep):
     ''' PipelineStep which writes a preview video
     '''
 
-    def __init__(self, config, in_queue: SimpleQueue, out_queue: List[SimpleQueue], **kwargs) -> None:
-        super().__init__(config, in_queue, out_queue, name="ResultH5", **kwargs)
-        self.roi = config['roi']
-
     def initialize(self):
+        self.roi = self.config['roi']
         preview_video_dest = os.path.join(self.config['output_dir'], f"results_{self.config['bg_roi_index']:02d}.mp4")
         self.video_pipe = PreviewVideoWriter(preview_video_dest,
                                              fps=self.config['fps'],

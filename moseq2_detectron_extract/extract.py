@@ -14,8 +14,8 @@ from moseq2_detectron_extract.pipeline import (ExtractFeaturesStep,
                                                FrameCropStep, InferenceStep,
                                                KeypointWriterStep, Pipeline,
                                                PreviewVideoWriterStep,
-                                               ResultH5WriterStep)
-from moseq2_detectron_extract.proc.proc import prep_raw_frames
+                                               ResultH5WriterStep, ProduceFramesStep)
+from moseq2_detectron_extract.pipeline.progress import WorkerError
 from moseq2_detectron_extract.proc.util import check_completion_status
 
 
@@ -74,47 +74,72 @@ def extract_session(session: Session, config: dict):
         'first_frame': first_frame,
         'bground_im': bground_im,
         'roi': roi,
+        'session': session,
+        'status_dict': status_dict,
     })
 
     try:
         pipeline = Pipeline()
-        reader_pbar = pipeline.progress.add(name='producer', desc=' Read Depth Data', total=session.nframes)
-        out = pipeline.add_step(' Model Inference', InferenceStep, pipeline.input, config=config)
-        out = pipeline.add_step('Extract Features', ExtractFeaturesStep, out[0], show_progress=False, config=config)
-        out = pipeline.add_step(' Crop and Rotate', FrameCropStep, out[0], num_listners=3, config=config)
-        pipeline.add_step('   Preview Video', PreviewVideoWriterStep, out[0], config=config)
-        pipeline.add_step(' Write Keypoints', KeypointWriterStep, out[1], show_progress=False, config=config)
-        pipeline.add_step(' Write H5 Result', ResultH5WriterStep, out[2], show_progress=False, session=session, config=config, status_dict=status_dict)
+        step0  = pipeline.add_step(' Read Depth Data', ProduceFramesStep, config=config)
+        step1  = pipeline.add_step(' Model Inference', InferenceStep, config=config)
+        step2  = pipeline.add_step('Extract Features', ExtractFeaturesStep, show_progress=True, config=config)
+        step3  = pipeline.add_step(' Crop and Rotate', FrameCropStep, config=config)
+        step4a = pipeline.add_step('   Preview Video', PreviewVideoWriterStep, config=config)
+        step4b = pipeline.add_step(' Write Keypoints', KeypointWriterStep, show_progress=True, config=config)
+        step4c = pipeline.add_step(' Write H5 Result', ResultH5WriterStep, show_progress=True, config=config)
+        pipeline.link(step0, step1)
+        pipeline.link(step1, step2)
+        pipeline.link(step2, step3)
+        pipeline.link(step3, step4a, step4b, step4c)
+        pipeline.add_timed_callback(30.0, log_processing_status)
         pipeline.start()
+        # logging.info('all workers started')
 
-        for i, (frame_idxs, raw_frames) in enumerate(session.iterate(config['chunk_size'], config['chunk_overlap'])):
-            offset = config['chunk_overlap'] if i > 0 else 0
-            raw_frames = prep_raw_frames(raw_frames, bground_im=bground_im, roi=roi, vmin=config['min_height'], vmax=config['max_height'])
-            shm = { 'batch': i, 'chunk': raw_frames, 'frame_idxs': frame_idxs, 'offset': offset }
-            while not pipeline.input.empty():
-                time.sleep(0.1)
-            pipeline.input.put(shm)
-            reader_pbar.put({'update': raw_frames.shape[0]})
-            producer_progress = pipeline.progress.get_tqdm('producer')
-            if producer_progress is not None:
-                n_frames = (producer_progress.format_dict["n"] or 0)
-                t_frames = producer_progress.format_dict["total"]
-                s_elapsed = producer_progress.format_dict["elapsed"]
-                msg = f'Processed {n_frames} / {t_frames} frames ({n_frames/t_frames:.2%}) in {timedelta(seconds=s_elapsed)}'
-                logging.info(msg, extra={'nostream': True})
-        pipeline.input.put(None) # signal we are done
+        while pipeline.is_running():
+            time.sleep(0.1)
 
-        # join the threads
+        # shutdown the pipeline
         pipeline.shutdown()
+    except WorkerError as work_error:
+        logging.error('')
+        logging.error('One or more workers encountered an error during extraction:\n')
+        for err in work_error.error_info:
+            logging.error(f'Worker "{err.name.strip()}" raised an exception:\n{err.message}')
+            logging.error('')
+
     except Exception: # pylint: disable=broad-except
+        logging.error('')
         logging.error('Error during extraction', exc_info=True)
+        logging.error('')
 
-    # mark status as complete and flush to filesystem
-    status_dict['complete'] = True
-    write_yaml(status_filename, status_dict)
+    else:
+        # mark status as complete and flush to filesystem
+        status_dict['complete'] = True
+        write_yaml(status_filename, status_dict)
 
-    extract_duration = (time.time() - overall_time)
-    extract_fps = session.nframes / extract_duration
-    logging.info(f'Finished processing {session.nframes} frames in {timedelta(seconds=extract_duration)} (approx. {extract_fps:.2f} fps overall)')
+        # show overall processing statistics
+        extract_duration = (time.time() - overall_time)
+        extract_fps = session.nframes / extract_duration
+        logging.info(f'Finished processing {session.nframes} frames in {timedelta(seconds=round(extract_duration))} (approx. {extract_fps:.2f} fps overall)')
+
 
     return status_filename
+
+
+def log_processing_status(pipeline: Pipeline):
+    ''' Log status of pipeline in a way that if friendly to log files
+    '''
+    producer_progress = pipeline.progress.get_stats(pipeline.steps[0].name)
+    complete_progress = pipeline.progress.get_stats(pipeline.steps[-1].name)
+
+    sec_elapsed = producer_progress['elapsed']
+    total_frames = producer_progress['total']
+    produced_frames = (producer_progress['completed'] or 0)
+    completed_frames = (complete_progress['completed'] or 0)
+    in_progress_frames = produced_frames - completed_frames
+    percent_str = f'{completed_frames/total_frames:.1%}'.rjust(6)
+    nchar = len(str(total_frames))
+
+    msg = f'Completed processing {str(completed_frames).rjust(nchar)} / {total_frames} frames ({percent_str}) ' \
+          f'in {timedelta(seconds=round(sec_elapsed))}, another {str(in_progress_frames).rjust(nchar)} frames in progress'
+    logging.info(msg, extra={'nostream': True})

@@ -29,6 +29,8 @@ class InferenceStep(PipelineStep):
 
         model_path: str = self.config['model']
 
+        # raise RuntimeError('Just raising this exception to test things!')
+
         if os.path.isfile(model_path) and model_path.endswith('.ts'):
             self.write_message(f' -> Using torchscript model "{os.path.abspath(model_path)}"....')
             self.write_message(' -> WARNING: Ignoring --device parameter because this is a torchscript model')

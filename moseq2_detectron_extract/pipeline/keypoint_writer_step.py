@@ -35,4 +35,4 @@ class KeypointWriterStep(PipelineStep):
         else:
             self.kp_out_data = pd.concat((self.kp_out_data, pd.DataFrame(kp_data)), ignore_index=True)
 
-        self.kp_out_data.to_csv(self.kp_out_data, sep='\t', index=False)
+        self.kp_out_data.to_csv(self.keypoint_data_dest, sep='\t', index=False)

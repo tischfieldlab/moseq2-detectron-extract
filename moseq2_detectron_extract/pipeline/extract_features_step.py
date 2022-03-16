@@ -13,7 +13,10 @@ class ExtractFeaturesStep(PipelineStep):
 
     def initialize(self):
         self.compute_scalars = partial(compute_scalars,
-            min_height=self.config['min_height'], max_height=self.config['max_height'], true_depth=self.config['true_depth'])
+                                       min_height=self.config['min_height'],
+                                       max_height=self.config['max_height'],
+                                       true_depth=self.config['true_depth'])
+
         self.compute_keypoints = partial(keypoints_to_dict, true_depth=self.config['true_depth'])
 
     def process(self, data):
@@ -26,4 +29,5 @@ class ExtractFeaturesStep(PipelineStep):
                                                    features['features']['orientation'])
         data['features'] = features
         data['scalars'] = scalars
+        self.update_progress(data['chunk'].shape[0])
         return data

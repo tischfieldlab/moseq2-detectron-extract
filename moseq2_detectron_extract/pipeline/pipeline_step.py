@@ -1,8 +1,12 @@
+import logging
 import traceback
+from queue import Empty
 from typing import List, Union, cast
-import torch
 
-from torch.multiprocessing import Process, Queue, SimpleQueue
+import torch
+from torch.multiprocessing import Event, Process, Queue, SimpleQueue
+
+
 
 
 class PipelineStep(Process):
@@ -10,15 +14,21 @@ class PipelineStep(Process):
         Takes a single input queue to work on and adds results to one or more output queues
     '''
 
-    def __init__(self, config: dict, in_queue: SimpleQueue, out_queue: List[SimpleQueue], progress: Queue, name: str=None, **kwargs) -> None:
+    def __init__(self, config: dict, name: str=None, **kwargs) -> None:
         super().__init__(name=name, **kwargs)
+        self.is_producer = False
+        self.shutdown_event: Event = None
         self.config = config
-        self.progress = progress
-        self.in_queue = in_queue
-        self.out_queue = out_queue
-        if not isinstance(out_queue, list):
-            raise TypeError('expected List[SimpleQueue] (possibly empty) for parameter `out_queue`')
-        self.reset_progress(config['nframes'])
+        self.progress: Queue = None
+        self.in_queue: SimpleQueue = None
+        self.out_queue: List[SimpleQueue] = []
+        self.is_complete = Event()
+
+    def attach_progress(self, progress_queue: Queue):
+        ''' Should be called only before pipeline start
+            Attach the progress queue to this step
+        '''
+        self.progress = progress_queue
 
     def reset_progress(self, total: int):
         ''' Reset progress on this step
@@ -36,13 +46,17 @@ class PipelineStep(Process):
         '''
         self.progress.put({'update': incremental_progress})
 
-    def write_message(self, message: str):
+    def write_message(self, message: str, level=logging.INFO, raise_exc=False):
         ''' Write a message to the progress message pump
 
             Parameters:
             message (str): message to write
         '''
-        self.progress.put({'message': message})
+        self.progress.put({
+            'message': message,
+            'level': level,
+            'raise': raise_exc
+        })
 
     def flush_progress(self):
         ''' Flush any progress made on the reciever side
@@ -58,45 +72,73 @@ class PipelineStep(Process):
         for queue in self.out_queue:
             queue.put(data)
 
-    def __get_inputs(self):
-        ''' For internal use!
-            Get the next data item from the queue
-            if we have any tensors, clone those over for reuse
+    def is_output_empty(self) -> bool:
+        ''' Tell if the outputs have been consumed
         '''
-        return self.in_queue.get()
-        # data = self.in_queue.get()
-        # if isinstance(data, dict):
-        #     for key, value in data.items():
-        #         if isinstance(value, Tensor):
-        #             data[key] = value.clone()
-        #             del value
-        # if isinstance(data, Tensor):
-        #     data = data.clone()
-        # return data
+        return all([q.empty() for q in self.out_queue])
+
+    def signal_shutdown(self):
+        ''' Signal that this step should stop processing data and shutdown
+        '''
+        self.shutdown_event.set()
+
+    def shutdown(self):
+        ''' Perform cleanup actions
+        '''
+        for out_queue in self.out_queue:
+            out_queue.close()
+        self.progress.close()
 
     def run(self) -> None:
         try:
+            # Run some setup
             torch.multiprocessing.set_sharing_strategy('file_system')
+            self.reset_progress(self.config['nframes'])
+
+            # Allow the step to initalize itself
             self.initialize()
-            while True:
-                data = self.__get_inputs()
-                if data is None:
-                    self.set_outputs(None)
-                    break
+
+            # Loop while we have not recieved a shutdown signal
+            while not self.shutdown_event.is_set():
+
+                # Possible the input queue is None (pure producer step)
+                # if there is a input queue, try and get the next input data
+                # if the value is None (sentinal value)
+                #  - propagate the None to the next step
+                #  - break out of the processing loop
+                # if we get queue.Empty, continue and allow a re-check of the shutdown signal
+                if self.is_producer:
+                    data = None
+                else:
+                    try:
+                        data = self.in_queue.get(block=True, timeout=0.1)
+                        if data is None:
+                            self.set_outputs(None)
+                            self.is_complete.set()
+                            break
+                    except Empty:
+                        continue
 
                 out: Union[dict, None] = None
-                try:
-                    out = self.process(cast(dict, data)) # pylint: disable=assignment-from-no-return
-                except Exception: # pylint: disable=broad-except
-                    msg = traceback.format_exc()
-                    self.write_message(msg)
-
+                out = self.process(cast(dict, data)) # pylint: disable=assignment-from-no-return
                 self.set_outputs(out)
                 self.flush_progress()
-            self.finalize()
+
+                # If this step is a producer step, and we produced None
+                # that signals the producer is done producing, and we can
+                # stop running this step.
+                if self.is_producer and out is None:
+                    self.is_complete.set()
+                    break
         except Exception: # pylint: disable=broad-except
             msg = traceback.format_exc()
-            self.write_message(msg)
+            self.write_message(msg, level=logging.CRITICAL, raise_exc=True)
+            self.finalize()
+            self.signal_shutdown()
+        finally:
+            self.flush_progress()
+            self.is_complete.set()
+            self.shutdown()
 
     def initialize(self):
         ''' Implement to execute actions on first startup of this step
@@ -112,3 +154,11 @@ class PipelineStep(Process):
         ''' Implement to execute actions on final shutdown of this step
         '''
         pass # pylint: disable=unnecessary-pass
+
+
+class ProducerPipelineStep(PipelineStep):
+    ''' Pipeline step who only produces
+    '''
+    def __init__(self, config: dict, name: str = None, **kwargs) -> None:
+        super().__init__(config, name, **kwargs)
+        self.is_producer = True
