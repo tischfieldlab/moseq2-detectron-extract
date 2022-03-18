@@ -586,6 +586,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     # frames x instances x keypoints x 3
     d2_masks, allocentric_keypoints, num_instances = mask_and_keypoints_from_model_output(model_outputs)
 
+    # Clean frames and get features
     cleaned_frames = clean_frames(raw_frames, iters_tail=3, progress_bar=False)
     features, masks = get_frame_features(cleaned_frames, mask=d2_masks[:, 0, :, :], use_cc=True, frame_threshold=3, progress_bar=False)
 
@@ -643,3 +644,12 @@ def flips_from_keypoints(keypoints: np.ndarray, centroids: np.ndarray, angles: n
     rear_votes = np.mean(rot_keypoint_scores[:, rear_keypoints], axis=1)
     flips = np.where(front_votes < rear_votes, True, False)
     return flips
+
+
+def interpolate_nan_values(data: np.ndarray) -> np.ndarray:
+    ''' Interpolate NaN values in `data` using linear interpolation
+    '''
+    nans = np.isnan(data)
+    x = lambda z: z.nonzero()[0]
+    data[nans]= np.interp(x(nans), x(~nans), data[~nans])
+    return data
