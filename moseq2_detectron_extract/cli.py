@@ -128,7 +128,6 @@ def evaluate(model_dir, annot_file, replace_data_path):
     logging.info('') # Empty line to give some breething room
 
     logging.info('Loading model configuration....')
-    register_dataset_metadata('moseq_train', default_keypoint_names)
     cfg = get_base_config()
     with open(os.path.join(model_dir, 'config.yaml'), 'r', encoding='utf-8') as cfg_file:
         cfg = cfg.load_cfg(cfg_file)
@@ -142,7 +141,7 @@ def evaluate(model_dir, annot_file, replace_data_path):
                                           mask_format=cfg.INPUT.MASK_FORMAT,
                                           register=False,
                                           show_info=True)
-    register_datasets(annotations, default_keypoint_names, split=False)
+    register_datasets(annotations, split=False)
 
     evaluator = Evaluator(cfg)
     evaluator()
@@ -204,7 +203,8 @@ def extract(model, input_file, device, checkpoint, batch_size, frame_trim, chunk
     config_data = locals()
     config_data.update({
         'use_tracking_model': False,
-        'flip_classifier': model
+        'flip_classifier': model,
+        'dataset_name': 'moseq'
     })
 
     session = Session(input_file, frame_trim=frame_trim)
@@ -335,7 +335,7 @@ def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, 
     setup_logging()
 
     logging.info('Loading model....')
-    register_dataset_metadata('moseq_train', default_keypoint_names)
+    register_dataset_metadata('moseq_train')
     cfg = get_base_config()
     with open(os.path.join(model_dir, 'config.yaml'), 'r', encoding='utf-8') as cfg_file:
         cfg = cfg.load_cfg(cfg_file)

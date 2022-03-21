@@ -12,12 +12,13 @@ class ExtractFeaturesStep(PipelineStep):
     '''
 
     def initialize(self):
+        true_depth = self.config['session'].true_depth
         self.compute_scalars = partial(compute_scalars,
                                        min_height=self.config['min_height'],
                                        max_height=self.config['max_height'],
-                                       true_depth=self.config['true_depth'])
+                                       true_depth=true_depth)
 
-        self.compute_keypoints = partial(keypoints_to_dict, true_depth=self.config['true_depth'])
+        self.compute_keypoints = partial(keypoints_to_dict, true_depth=true_depth)
 
     def process(self, data):
         features = instances_to_features(data['inference'], data['chunk'])

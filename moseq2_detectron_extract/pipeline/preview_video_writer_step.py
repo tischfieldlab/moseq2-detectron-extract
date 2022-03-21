@@ -3,6 +3,7 @@ import os
 from functools import partial
 
 import numpy as np
+from detectron2.data import MetadataCatalog
 
 from moseq2_detectron_extract.io.video import PreviewVideoWriter
 from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
@@ -20,8 +21,15 @@ class PreviewVideoWriterStep(PipelineStep):
     ''' PipelineStep which writes a preview video
     '''
 
+    def __init__(self, config: dict, name: str = None, **kwargs) -> None:
+        super().__init__(config, name, **kwargs)
+
+        self.roi = self.config['session'].roi
+        self.keypoint_names = MetadataCatalog.get(self.config['dataset_name']).keypoint_names
+        self.keypoint_colors = MetadataCatalog.get(self.config['dataset_name']).keypoint_colors
+        self.keypoint_connection_rules = MetadataCatalog.get(self.config['dataset_name']).keypoint_connection_rules
+
     def initialize(self):
-        self.roi = self.config['roi']
         preview_video_dest = os.path.join(self.config['output_dir'], f"results_{self.config['bg_roi_index']:02d}.mp4")
         self.video_pipe = PreviewVideoWriter(preview_video_dest,
                                              fps=self.config['fps'],
@@ -35,20 +43,20 @@ class PreviewVideoWriterStep(PipelineStep):
         self.draw_instances = partial(draw_instances_fast,
                                       roi_contour=self.roi_contours,
                                       scale=self.scale,
-                                      keypoint_names=self.config['keypoint_names'],
-                                      keypoint_connection_rules=self.config['keypoint_connection_rules'],
-                                      keypoint_colors=self.config['keypoint_colors'],
+                                      keypoint_names=self.keypoint_names,
+                                      keypoint_connection_rules=self.keypoint_connection_rules,
+                                      keypoint_colors=self.keypoint_colors,
                                       thickness=1)
 
         self.load_rot_kpts = partial(load_keypoint_data_from_dict,
-                                     keypoints=self.config['keypoint_names'],
+                                     keypoints=self.keypoint_names,
                                      coord_system='rotated',
                                      units='px',
                                      root='')
         self.draw_keypoints = partial(draw_keypoints,
-                                      keypoint_names=self.config['keypoint_names'],
-                                      keypoint_connection_rules=self.config['keypoint_connection_rules'],
-                                      keypoint_colors=self.config['keypoint_colors'],
+                                      keypoint_names=self.keypoint_names,
+                                      keypoint_connection_rules=self.keypoint_connection_rules,
+                                      keypoint_colors=self.keypoint_colors,
                                       scale=1.5,
                                       radius=3,
                                       thickness=1)

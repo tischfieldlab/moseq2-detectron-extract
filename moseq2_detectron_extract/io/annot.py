@@ -245,34 +245,32 @@ def split_test_train(annotations: MutableSequence[DataItem], split: float=0.90) 
     return (train_annotations, test_annotations)
 
 
-def register_datasets(annotations: MutableSequence[DataItem], keypoint_names: Iterable[str], split: bool=True) -> None:
+def register_datasets(annotations: MutableSequence[DataItem], split: bool=True) -> None:
     ''' Register annotations with the Detectron2 DatasetCatalog
 
     Parameters:
     annotations (MutableSequence[DataItem]): annotations to register
-    keypoint_names (Iterable[str]): names of the keypoints to register
     split (bool): If true, split annotations into training and test subsets, otherwise all annotations will be assigned to training
     '''
     if split:
         split_annot = split_test_train(annotations)
         for i, dset_type in enumerate(['train', 'test']):
             DatasetCatalog.register(f"moseq_{dset_type}", split_annot[i])
-            register_dataset_metadata(f"moseq_{dset_type}", keypoint_names)
+            register_dataset_metadata(f"moseq_{dset_type}")
     else:
         DatasetCatalog.register("moseq_train", annotations)
-        register_dataset_metadata("moseq_train", keypoint_names)
+        register_dataset_metadata("moseq_train")
 
 
-def register_dataset_metadata(name: str, keypoint_names: Iterable[str]) -> None:
+def register_dataset_metadata(name: str) -> None:
     ''' Register dataset metadata with the Detectron2 MetadataCatalog
 
     Parameters:
     name (str): name of the dataset, should correspond to a dataset registered with Detectron2 DatasetCatalog
-    keypoint_names (Iterable[str]): names of the keypoints to register
     '''
     MetadataCatalog.get(name).thing_classes = ["mouse"]
     MetadataCatalog.get(name).thing_colors = [(0, 0, 255)]
-    MetadataCatalog.get(name).keypoint_names = list(keypoint_names)
+    MetadataCatalog.get(name).keypoint_names = default_keypoint_names
     MetadataCatalog.get(name).keypoint_flip_map = [] #[('Left Ear', 'Right Ear'), ('Left Hip', 'Right Hip')]
     MetadataCatalog.get(name).keypoint_connection_rules = default_keypoint_connection_rules
     MetadataCatalog.get(name).keypoint_colors = default_keypoint_colors

@@ -4,8 +4,6 @@ import os
 from functools import partial
 import warnings
 
-from moseq2_detectron_extract.io.annot import (default_keypoint_names,
-                                               register_dataset_metadata)
 from moseq2_detectron_extract.model import Predictor
 from moseq2_detectron_extract.model.config import get_base_config
 from moseq2_detectron_extract.model.util import (get_last_checkpoint,
@@ -25,11 +23,7 @@ class InferenceStep(PipelineStep):
         self.scale = partial(scale_raw_frames, vmin=self.config['min_height'], vmax=self.config['max_height'])
 
         self.write_message('Loading model....')
-        register_dataset_metadata("moseq_train", default_keypoint_names)
-
         model_path: str = self.config['model']
-
-        # raise RuntimeError('Just raising this exception to test things!')
 
         if os.path.isfile(model_path) and model_path.endswith('.ts'):
             self.write_message(f' -> Using torchscript model "{os.path.abspath(model_path)}"....')

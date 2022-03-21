@@ -5,9 +5,9 @@ import uuid
 from copy import deepcopy
 from datetime import timedelta
 
-from moseq2_detectron_extract.io.annot import (
-    default_keypoint_colors, default_keypoint_connection_rules,
-    default_keypoint_names)
+from detectron2.data import MetadataCatalog
+from moseq2_detectron_extract.io.annot import register_dataset_metadata
+
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import attach_file_logger, ensure_dir, write_yaml
 from moseq2_detectron_extract.pipeline import (ExtractFeaturesStep,
@@ -30,7 +30,8 @@ def extract_session(session: Session, config: dict):
     str: path to status dictionary file
     '''
 
-    overall_time = time.time()
+    # Record the time we started, we can compute overall time spent at the end
+    start_time = time.time()
 
     # set up the output directory
     if config['output_dir'] is None:
@@ -40,14 +41,17 @@ def extract_session(session: Session, config: dict):
         output_dir = config['output_dir']
     ensure_dir(output_dir)
 
-    # Attach log file to logging module
+    # Attach log file to logging module, dependent on having setup output_dir
     attach_file_logger(os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.log"))
 
+    # Make status filename, and check if session looks to be already extracted
+    # we usally don't want to overwrite already processed data
     status_filename = os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.yaml")
     if check_completion_status(status_filename):
         logging.warning('WARNING: Session appears to already be extracted, so skipping!')
         return status_filename
 
+    # Create status dictionary and write out to file system
     status_dict = {
         'complete': False,
         'skip': False,
@@ -59,26 +63,29 @@ def extract_session(session: Session, config: dict):
 
 
     # Find image background and ROI
-    first_frame, bground_im, roi, true_depth = session.find_roi(bg_roi_dilate=config['bg_roi_dilate'], bg_roi_shape=config['bg_roi_shape'],
-        bg_roi_index=config['bg_roi_index'], bg_roi_weights=config['bg_roi_weights'], bg_roi_depth_range=config['bg_roi_depth_range'],
-        bg_roi_gradient_filter=config['bg_roi_gradient_filter'], bg_roi_gradient_threshold=config['bg_roi_gradient_threshold'],
-        bg_roi_gradient_kernel=config['bg_roi_gradient_kernel'], bg_roi_fill_holes=config['bg_roi_fill_holes'],
-        use_plane_bground=config['use_plane_bground'], cache_dir=output_dir, verbose=True)
+    session.find_roi(bg_roi_dilate=config['bg_roi_dilate'],
+                     bg_roi_shape=config['bg_roi_shape'],
+                     bg_roi_index=config['bg_roi_index'],
+                     bg_roi_weights=config['bg_roi_weights'],
+                     bg_roi_depth_range=config['bg_roi_depth_range'],
+                     bg_roi_gradient_filter=config['bg_roi_gradient_filter'],
+                     bg_roi_gradient_threshold=config['bg_roi_gradient_threshold'],
+                     bg_roi_gradient_kernel=config['bg_roi_gradient_kernel'],
+                     bg_roi_fill_holes=config['bg_roi_fill_holes'],
+                     use_plane_bground=config['use_plane_bground'],
+                     cache_dir=output_dir,
+                     verbose=True)
     logging.info("")
     config.update({
-        'nframes': session.nframes,
-        'true_depth': true_depth,
-        'keypoint_names': default_keypoint_names,
-        'keypoint_connection_rules': default_keypoint_connection_rules,
-        'keypoint_colors': default_keypoint_colors,
-        'first_frame': first_frame,
-        'bground_im': bground_im,
-        'roi': roi,
         'session': session,
         'status_dict': status_dict,
     })
 
+    if config['dataset_name'] not in MetadataCatalog:
+        register_dataset_metadata(config['dataset_name'])
+
     try:
+        # Create processing pipeline
         pipeline = Pipeline()
         step0  = pipeline.add_step(' Read Depth Data', ProduceFramesStep, config=config)
         step1  = pipeline.add_step(' Model Inference', InferenceStep, config=config)
@@ -92,9 +99,11 @@ def extract_session(session: Session, config: dict):
         pipeline.link(step2, step3)
         pipeline.link(step3, step4a, step4b, step4c)
         pipeline.add_timed_callback(30.0, log_processing_status)
-        pipeline.start()
-        # logging.info('all workers started')
 
+        # Start processing
+        pipeline.start()
+
+        # poll while running pipeline
         while pipeline.is_running():
             time.sleep(0.1)
 
@@ -118,7 +127,7 @@ def extract_session(session: Session, config: dict):
         write_yaml(status_filename, status_dict)
 
         # show overall processing statistics
-        extract_duration = (time.time() - overall_time)
+        extract_duration = (time.time() - start_time)
         extract_fps = session.nframes / extract_duration
         logging.info(f'Finished processing {session.nframes} frames in {timedelta(seconds=round(extract_duration))} (approx. {extract_fps:.2f} fps overall)')
 

@@ -61,12 +61,12 @@ def visualize_inference(frame: np.ndarray, instances: Instances, min_height: flo
     return draw_instances(im, instances, scale=scale)
 
 
-def draw_instances(frame: np.ndarray, instances: Instances, scale: float=2.0) -> np.ndarray:
+def draw_instances(frame: np.ndarray, instances: Instances, scale: float=2.0, dataset_name='moseq_train') -> np.ndarray:
     ''' Draw instances using Detectron2 Visualizer class. This is slow, so for speed, use `draw_instances_fast()`
     '''
     viz = Visualizer(
             convert_image_to_rgb(frame, "L"),
-            metadata=MetadataCatalog.get("moseq_train"),
+            metadata=MetadataCatalog.get(dataset_name),
             scale=scale,
             instance_mode=ColorMode.SEGMENTATION   # remove the colors of unsegmented pixels. This option is only available for segmentation models
     )

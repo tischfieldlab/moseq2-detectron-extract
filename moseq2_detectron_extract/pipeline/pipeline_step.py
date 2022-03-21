@@ -18,11 +18,12 @@ class PipelineStep(Process):
         super().__init__(name=name, **kwargs)
         self.is_producer = False
         self.shutdown_event: Event = None
-        self.config = config
         self.progress: Queue = None
         self.in_queue: SimpleQueue = None
         self.out_queue: List[SimpleQueue] = []
         self.is_complete = Event()
+
+        self.config = config
 
     def attach_progress(self, progress_queue: Queue):
         ''' Should be called only before pipeline start
@@ -89,11 +90,17 @@ class PipelineStep(Process):
             out_queue.close()
         self.progress.close()
 
+    @property
+    def total_items(self) -> int:
+        ''' Get the total number of items this step is expected to process
+        '''
+        return self.config['session'].nframes
+
     def run(self) -> None:
         try:
             # Run some setup
             torch.multiprocessing.set_sharing_strategy('file_system')
-            self.reset_progress(self.config['nframes'])
+            self.reset_progress(self.total_items)
 
             # Allow the step to initalize itself
             self.initialize()
