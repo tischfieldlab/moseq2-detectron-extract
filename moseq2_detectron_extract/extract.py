@@ -6,16 +6,16 @@ from copy import deepcopy
 from datetime import timedelta
 
 from detectron2.data import MetadataCatalog
-from moseq2_detectron_extract.io.annot import register_dataset_metadata
 
+from moseq2_detectron_extract.io.annot import register_dataset_metadata
 from moseq2_detectron_extract.io.session import Session
-from moseq2_detectron_extract.io.util import attach_file_logger, ensure_dir, write_yaml
-from moseq2_detectron_extract.pipeline import (ExtractFeaturesStep,
-                                               FrameCropStep, InferenceStep,
-                                               KeypointWriterStep, Pipeline,
+from moseq2_detectron_extract.io.util import (attach_file_logger, ensure_dir,
+                                              write_yaml)
+from moseq2_detectron_extract.pipeline import (InferenceStep,Pipeline,
                                                PreviewVideoWriterStep,
-                                               ResultH5WriterStep, ProduceFramesStep)
-from moseq2_detectron_extract.pipeline.progress import WorkerError
+                                               ProduceFramesStep,
+                                               ProcessFeaturesStep,
+                                               ResultWriterStep, WorkerError)
 from moseq2_detectron_extract.proc.util import check_completion_status
 
 
@@ -89,15 +89,12 @@ def extract_session(session: Session, config: dict):
         pipeline = Pipeline()
         step0  = pipeline.add_step(' Read Depth Data', ProduceFramesStep, config=config)
         step1  = pipeline.add_step(' Model Inference', InferenceStep, config=config)
-        step2  = pipeline.add_step('Extract Features', ExtractFeaturesStep, show_progress=True, config=config)
-        step3  = pipeline.add_step(' Crop and Rotate', FrameCropStep, config=config)
-        step4a = pipeline.add_step('   Preview Video', PreviewVideoWriterStep, config=config)
-        step4b = pipeline.add_step(' Write Keypoints', KeypointWriterStep, show_progress=True, config=config)
-        step4c = pipeline.add_step(' Write H5 Result', ResultH5WriterStep, show_progress=True, config=config)
+        step2  = pipeline.add_step('Process Features', ProcessFeaturesStep, show_progress=True, config=config)
+        step3a = pipeline.add_step('   Preview Video', PreviewVideoWriterStep, config=config)
+        step3b = pipeline.add_step('    Write Reults', ResultWriterStep, show_progress=True, config=config)
         pipeline.link(step0, step1)
         pipeline.link(step1, step2)
-        pipeline.link(step2, step3)
-        pipeline.link(step3, step4a, step4b, step4c)
+        pipeline.link(step2, step3a, step3b)
         pipeline.add_timed_callback(30.0, log_processing_status)
 
         # Start processing
