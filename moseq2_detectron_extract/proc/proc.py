@@ -559,6 +559,7 @@ def mask_and_keypoints_from_model_output(model_outputs: List[dict]) -> Tuple[np.
     # initialize output arrays
     first = model_outputs[0]["instances"]
     masks = np.empty((len(model_outputs), 1, *first.pred_masks.shape[1:]), dtype='uint8')
+    masks.fill(np.nan)
     keypoints = np.empty((len(model_outputs), 1, first.pred_keypoints.shape[1], 3), dtype=float)
     keypoints.fill(np.nan)
     num_instances = np.zeros((len(model_outputs)), dtype=int)
@@ -590,8 +591,14 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     cleaned_frames = clean_frames(raw_frames, iters_tail=3, progress_bar=False)
     features, masks = get_frame_features(cleaned_frames, mask=d2_masks[:, 0, :, :], use_cc=True, frame_threshold=3, progress_bar=False)
 
-    angles = features['orientation']
+    # interpolate NaN values in features data
+    #features['centroid'][:, 0] = interpolate_nan_values(features['centroid'][:, 0])
+    #features['centroid'][:, 1] = interpolate_nan_values(features['centroid'][:, 1])
+    #features['orientation'] = interpolate_nan_values(features['orientation'])
+    #lengths = interpolate_nan_values(np.max(features['axis_length'], axis=1))
     lengths = np.max(features['axis_length'], axis=1)
+
+    angles = features['orientation']
     incl = ~np.isnan(angles)
     angles[incl] = np.unwrap(angles[incl] * 2) / 2
     angles = -np.rad2deg(angles)
