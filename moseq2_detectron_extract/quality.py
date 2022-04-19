@@ -6,6 +6,7 @@ import h5py
 import numpy as np
 
 from moseq2_detectron_extract.io.annot import default_keypoint_names
+from moseq2_detectron_extract.io.video import collapse_consecutive_values
 from moseq2_detectron_extract.proc.keypoints import (
     find_nan_keypoints, find_outliers_jumping, load_keypoint_data_from_h5)
 from moseq2_detectron_extract.proc.proc import flips_from_keypoints
@@ -60,12 +61,19 @@ def find_outliers_h5(result_h5: str, dest: str=None, keypoint_names: List[str]=N
         return final_indices
 
 
-def write_indicies(filename: str, indicies: Iterable[int]):
+def write_indicies(filename: str, indicies: Iterable[int], collapse: bool = True):
     ''' Write indicies to a file
 
     Parameters:
     filename (str): path to write to
     indicies (Iterable[int]): indicies to write
+    collapse (bool): If True, collapse indicies ranges before writing
     '''
+    if collapse:
+        ranges = collapse_consecutive_values(indicies)
+        to_write = [f'{start} - {start + span}\n' for start, span in ranges]
+    else:
+        to_write = [f'{idx}\n' for idx in indicies]
+
     with open(filename, 'w', encoding='utf-8') as outlier_idx_file:
-        outlier_idx_file.writelines(f'{idx}\n' for idx in indicies)
+        outlier_idx_file.writelines(to_write)
