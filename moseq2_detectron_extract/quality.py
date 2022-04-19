@@ -41,7 +41,7 @@ def find_outliers_h5(result_h5: str, dest: str=None, keypoint_names: List[str]=N
 
         logging.info('Searching for frames with jumping algorithm...')
         ind, _, _ = find_outliers_jumping(kpts, window=jump_win, thresh=jump_thresh)
-        write_indicies(dest.format('jumping'), nan_keypoints)
+        write_indicies(dest.format('jumping'), ind)
         logging.info(f' -> Found {len(ind)} frames via jumping algorithm.\n')
 
         logging.info('Searching for frames with flip disagreements...')
