@@ -8,7 +8,7 @@ from datetime import timedelta
 from detectron2.data import MetadataCatalog
 
 from moseq2_detectron_extract.io.annot import register_dataset_metadata
-from moseq2_detectron_extract.io.session import Session
+from moseq2_detectron_extract.io.session import Session, Stream
 from moseq2_detectron_extract.io.util import (attach_file_logger, ensure_dir,
                                               write_yaml)
 from moseq2_detectron_extract.pipeline import (InferenceStep,Pipeline,
@@ -77,8 +77,13 @@ def extract_session(session: Session, config: dict):
                      verbose=True)
     logging.info("")
     config.update({
-        'session': session,
+        'nframes': session.nframes,
+        'true_depth': session.true_depth,
+        'roi': session.roi,
+        'first_frame': session.first_frame,
+        'bground_im': session.bground_im,
         'status_dict': status_dict,
+        'timestamps': session.load_timestamps(Stream.DEPTH),
     })
 
     if config['dataset_name'] not in MetadataCatalog:
@@ -87,7 +92,7 @@ def extract_session(session: Session, config: dict):
     try:
         # Create processing pipeline
         pipeline = Pipeline()
-        step0  = pipeline.add_step(' Read Depth Data', ProduceFramesStep, config=config)
+        step0  = pipeline.add_step(' Read Depth Data', ProduceFramesStep, session=session, config=config)
         step1  = pipeline.add_step(' Model Inference', InferenceStep, config=config)
         step2  = pipeline.add_step('Process Features', ProcessFeaturesStep, show_progress=True, config=config)
         step3a = pipeline.add_step('   Preview Video', PreviewVideoWriterStep, config=config)
@@ -135,17 +140,20 @@ def extract_session(session: Session, config: dict):
 def log_processing_status(pipeline: Pipeline):
     ''' Log status of pipeline in a way that if friendly to log files
     '''
-    producer_progress = pipeline.progress.get_stats(pipeline.steps[0].name)
-    complete_progress = pipeline.progress.get_stats(pipeline.steps[-1].name)
+    try:
+        producer_progress = pipeline.progress.get_stats(pipeline.steps[0].name)
+        complete_progress = pipeline.progress.get_stats(pipeline.steps[-1].name)
 
-    sec_elapsed = producer_progress['elapsed']
-    total_frames = producer_progress['total']
-    produced_frames = (producer_progress['completed'] or 0)
-    completed_frames = (complete_progress['completed'] or 0)
-    in_progress_frames = produced_frames - completed_frames
-    percent_str = f'{completed_frames/total_frames:.1%}'.rjust(6)
-    nchar = len(str(total_frames))
+        sec_elapsed = producer_progress['elapsed']
+        total_frames = producer_progress['total']
+        produced_frames = (producer_progress['completed'] or 0)
+        completed_frames = (complete_progress['completed'] or 0)
+        in_progress_frames = produced_frames - completed_frames
+        percent_str = f'{completed_frames/total_frames:.1%}'.rjust(6)
+        nchar = len(str(total_frames))
 
-    msg = f'Completed processing {str(completed_frames).rjust(nchar)} / {total_frames} frames ({percent_str}) ' \
-          f'in {timedelta(seconds=round(sec_elapsed))}, another {str(in_progress_frames).rjust(nchar)} frames in progress'
-    logging.info(msg, extra={'nostream': True})
+        msg = f'Completed processing {str(completed_frames).rjust(nchar)} / {total_frames} frames ({percent_str}) ' \
+            f'in {timedelta(seconds=round(sec_elapsed))}, another {str(in_progress_frames).rjust(nchar)} frames in progress'
+        logging.info(msg, extra={'nostream': True})
+    except: # pylint: disable=bare-except
+        pass

@@ -2,20 +2,20 @@ from functools import partial
 
 import numpy as np
 
-from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
+from moseq2_detectron_extract.pipeline.pipeline_step import ProcessPipelineStep
 from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict
 from moseq2_detectron_extract.proc.proc import crop_and_rotate_frame, instances_to_features
 from moseq2_detectron_extract.proc.scalars import compute_scalars
 
 # pylint: disable=attribute-defined-outside-init
 
-class ProcessFeaturesStep(PipelineStep):
+class ProcessFeaturesStep(ProcessPipelineStep):
     ''' Pipeline step to extract features
     '''
 
     def initialize(self):
         self.crop = self.config['crop_size']
-        true_depth = self.config['session'].true_depth
+        true_depth = self.config['true_depth']
         self.compute_keypoints = partial(keypoints_to_dict, true_depth=true_depth)
         self.compute_scalars = partial(compute_scalars,
                                        min_height=self.config['min_height'],

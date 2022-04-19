@@ -1,11 +1,11 @@
 from threading import Timer
 import time
-from typing import Callable, List
+from typing import Callable, List, Union
 import torch
 
 from torch.multiprocessing import Queue, Event
 
-from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
+from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep, ProcessPipelineStep, ThreadPipelineStep
 from moseq2_detectron_extract.pipeline.progress import ProcessProgress, WorkerError
 
 
@@ -19,7 +19,7 @@ class Pipeline:
         torch.multiprocessing.set_sharing_strategy('file_system')
         self.problem_queue = Queue()
         self.progress = ProcessProgress(self.problem_queue)
-        self.steps: List[PipelineStep] = []
+        self.steps: List[Union[ThreadPipelineStep, ProcessPipelineStep]] = []
         self.shutdown_event = Event()
         self.timers = []
 
@@ -114,9 +114,10 @@ class Pipeline:
                 step.terminate()
                 num_terminated += 1
             else:
-                exitcode = step.exitcode
-                if exitcode:
-                    num_failed += 1
+                if hasattr(step, 'exitcode'):
+                    exitcode = step.exitcode
+                    if exitcode:
+                        num_failed += 1
 
         # shutdown any timers
         for timer in self.timers:

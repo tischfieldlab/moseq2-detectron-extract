@@ -2,14 +2,13 @@ from importlib.metadata import version
 
 import h5py
 
-from moseq2_detectron_extract.io.session import Session, Stream
 from moseq2_detectron_extract.io.util import click_param_annot, dict_to_h5
 from moseq2_detectron_extract.proc.keypoints import keypoint_attributes
 from moseq2_detectron_extract.proc.scalars import scalar_attributes
 
 
 
-def create_extract_h5(h5_file: h5py.File, session: Session, config_data: dict, status_dict: dict) -> None:
+def create_extract_h5(h5_file: h5py.File, config_data: dict, status_dict: dict) -> None:
     ''' Prepare a h5 file for writing extraction results. Creates the necessary datasets and writes initial metadata:
      - Acquisition metadata
      - extraction metadata
@@ -20,12 +19,11 @@ def create_extract_h5(h5_file: h5py.File, session: Session, config_data: dict, s
 
     Parameters:
     h5_file (h5py.File): opened h5 file object to write to.
-    session (Session): moseq raw data session object. Expected you have called `session.find_roi()` prior to using this function!
     config_data (dict): dictionary object containing all required extraction parameters. (auto generated)
     status_dict (dict): dictionary that helps indicate if the session has been extracted fully.
     kwargs (dict): additional keyword arguments.
     '''
-    nframes = session.nframes
+    nframes = config_data['nframes']
 
     h5_file.create_dataset('metadata/uuid', data=status_dict['uuid'])
 
@@ -42,7 +40,7 @@ def create_extract_h5(h5_file: h5py.File, session: Session, config_data: dict, s
         h5_file[f'keypoints/{kp}'].attrs['description'] = keypoint_attrs[kp]
 
     # Timestamps
-    h5_file.create_dataset('timestamps', compression='gzip', data=session.load_timestamps(Stream.DEPTH))
+    h5_file.create_dataset('timestamps', compression='gzip', data=config_data['timestamps'])
     h5_file['timestamps'].attrs['description'] = "Depth video timestamps"
 
     # Cropped Frames
@@ -66,19 +64,19 @@ def create_extract_h5(h5_file: h5py.File, session: Session, config_data: dict, s
         h5_file['metadata/extraction/flips'].attrs['description'] = 'Output from flip classifier, false=no flip, true=flip'
 
     # True Depth
-    h5_file.create_dataset('metadata/extraction/true_depth', data=session.true_depth)
+    h5_file.create_dataset('metadata/extraction/true_depth', data=config_data['true_depth'])
     h5_file['metadata/extraction/true_depth'].attrs['description'] = 'Detected true depth of arena floor in mm'
 
     # ROI
-    h5_file.create_dataset('metadata/extraction/roi', data=session.roi, compression='gzip')
+    h5_file.create_dataset('metadata/extraction/roi', data=config_data['roi'], compression='gzip')
     h5_file['metadata/extraction/roi'].attrs['description'] = 'ROI mask'
 
     # First Frame
-    h5_file.create_dataset('metadata/extraction/first_frame', data=session.first_frame, compression='gzip')
+    h5_file.create_dataset('metadata/extraction/first_frame', data=config_data['first_frame'], compression='gzip')
     h5_file['metadata/extraction/first_frame'].attrs['description'] = 'First frame of depth dataset'
 
     # Background
-    h5_file.create_dataset('metadata/extraction/background', data=session.bground_im, compression='gzip')
+    h5_file.create_dataset('metadata/extraction/background', data=config_data['bground_im'], compression='gzip')
     h5_file['metadata/extraction/background'].attrs['description'] = 'Computed background image'
 
     # Extract Version
@@ -92,7 +90,7 @@ def create_extract_h5(h5_file: h5py.File, session: Session, config_data: dict, s
     dict_to_h5(h5_file, status_dict['parameters'], 'metadata/extraction/parameters', click_param_annot(extract))
 
     # Acquisition Metadata
-    for key, value in session.load_metadata().items():
+    for key, value in status_dict['metadata'].items():
         if isinstance(value, list) and len(value) > 0 and isinstance(value[0], str):
             value = [n.encode('utf8') for n in value]
 

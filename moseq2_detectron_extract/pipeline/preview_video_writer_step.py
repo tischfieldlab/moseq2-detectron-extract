@@ -6,7 +6,7 @@ import numpy as np
 from detectron2.data import MetadataCatalog
 
 from moseq2_detectron_extract.io.video import PreviewVideoWriter
-from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
+from moseq2_detectron_extract.pipeline.pipeline_step import ProcessPipelineStep
 from moseq2_detectron_extract.proc.keypoints import \
     load_keypoint_data_from_dict
 from moseq2_detectron_extract.proc.proc import (colorize_video,
@@ -17,14 +17,14 @@ from moseq2_detectron_extract.viz import (draw_instances_fast, draw_keypoints,
 
 # pylint: disable=attribute-defined-outside-init
 
-class PreviewVideoWriterStep(PipelineStep):
+class PreviewVideoWriterStep(ProcessPipelineStep):
     ''' PipelineStep which writes a preview video
     '''
 
     def __init__(self, config: dict, name: str = None, **kwargs) -> None:
         super().__init__(config, name, **kwargs)
 
-        self.roi = self.config['session'].roi
+        self.roi = self.config['roi']
         self.keypoint_names = MetadataCatalog.get(self.config['dataset_name']).keypoint_names
         self.keypoint_colors = MetadataCatalog.get(self.config['dataset_name']).keypoint_colors
         self.keypoint_connection_rules = MetadataCatalog.get(self.config['dataset_name']).keypoint_connection_rules

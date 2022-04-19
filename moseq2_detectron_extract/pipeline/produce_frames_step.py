@@ -1,5 +1,6 @@
 import time
 from functools import partial
+from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.pipeline.pipeline_step import ProducerPipelineStep
 
 from moseq2_detectron_extract.proc.proc import prep_raw_frames
@@ -10,8 +11,11 @@ class ProduceFramesStep(ProducerPipelineStep):
     ''' PipelineStep to produce raw frames for processing
     '''
 
+    def __init__(self, session: Session, config: dict, name: str = None, **kwargs) -> None:
+        super().__init__(config, name, **kwargs)
+        self.session = session
+
     def initialize(self):
-        self.session = self.config['session']
         self.prep_frames = partial( prep_raw_frames,
                                     bground_im=self.session.bground_im,
                                     roi=self.session.roi,

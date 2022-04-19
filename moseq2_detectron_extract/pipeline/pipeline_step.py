@@ -1,4 +1,5 @@
 import logging
+from threading import Thread
 import traceback
 from queue import Empty
 from typing import List, Union, cast
@@ -9,7 +10,7 @@ from torch.multiprocessing import Event, Process, Queue, SimpleQueue
 
 
 
-class PipelineStep(Process):
+class PipelineStep(object):
     '''  Represents a single step in a Pipeline
         Takes a single input queue to work on and adds results to one or more output queues
     '''
@@ -94,9 +95,10 @@ class PipelineStep(Process):
     def total_items(self) -> int:
         ''' Get the total number of items this step is expected to process
         '''
-        return self.config['session'].nframes
+        return self.config['nframes']
 
     def run(self) -> None:
+        ''' Implementation of run() '''
         try:
             # Run some setup
             torch.multiprocessing.set_sharing_strategy('file_system')
@@ -145,7 +147,7 @@ class PipelineStep(Process):
         finally:
             self.flush_progress()
             self.is_complete.set()
-            self.shutdown()
+            #self.shutdown()
 
     def initialize(self):
         ''' Implement to execute actions on first startup of this step
@@ -163,7 +165,15 @@ class PipelineStep(Process):
         pass # pylint: disable=unnecessary-pass
 
 
-class ProducerPipelineStep(PipelineStep):
+class ThreadPipelineStep(PipelineStep, Thread):
+    ''' Pipeline step which runs in a thread '''
+    pass # pylint: disable=unnecessary-pass
+
+class ProcessPipelineStep(PipelineStep, Process):
+    ''' Pipeline step which runs in a process '''
+    pass # pylint: disable=unnecessary-pass
+
+class ProducerPipelineStep(ThreadPipelineStep):
     ''' Pipeline step who only produces
     '''
     def __init__(self, config: dict, name: str = None, **kwargs) -> None:

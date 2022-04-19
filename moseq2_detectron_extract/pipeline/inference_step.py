@@ -8,12 +8,12 @@ from moseq2_detectron_extract.model import Predictor
 from moseq2_detectron_extract.model.config import get_base_config
 from moseq2_detectron_extract.model.util import (get_last_checkpoint,
                                                  get_specific_checkpoint)
-from moseq2_detectron_extract.pipeline.pipeline_step import PipelineStep
+from moseq2_detectron_extract.pipeline.pipeline_step import ProcessPipelineStep
 from moseq2_detectron_extract.proc.proc import scale_raw_frames
 
 # pylint: disable=attribute-defined-outside-init
 
-class InferenceStep(PipelineStep):
+class InferenceStep(ProcessPipelineStep):
     ''' Step to provide inference on frame data
     '''
 
