@@ -214,7 +214,7 @@ def extract(model, input_file, device, checkpoint, batch_size, frame_trim, chunk
     if report_outliers:
         if not check_completion_status(status_filename):
             logging.info('')
-            logging.info('Skipping search for outlier frames because sessoion extraction was not completed!')
+            logging.info('Skipping search for outlier frames because session extraction was not completed!')
         else:
             logging.info('')
             logging.info('Searching for outlier frames....')
