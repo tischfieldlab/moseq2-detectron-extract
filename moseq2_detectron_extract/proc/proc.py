@@ -514,31 +514,33 @@ def filter_angles(angles: np.ndarray, window: int=3, tolerance: float=60) -> np.
     return out
 
 
-def iterative_filter_angles(data: np.ndarray, max_iters: int=1000) -> Tuple[np.ndarray, np.ndarray]:
+def iterative_filter_angles(angles: np.ndarray, window: int=3, tolerance: float=60, max_iters: int=1000) -> Tuple[np.ndarray, np.ndarray]:
     ''' Iteratively filter angles until filtering stabilizes or `max_iters` is reached
 
     Parameters:
     angles (np.ndarray): angles to inspect, of shape (nframes,)
+    window (int): window size to use when inspecting angles
+    tolerance (float): tolerance of the angle deviance relative to 180 degrees
     max_iters (int): maximum number of iterations allowed
 
     Returns:
     (angles, flips) - angles are corrected angles. flips is bool np.ndarray with True values indicating a flipped index
     '''
-    last = np.copy(data)
+    last = np.copy(angles)
     iterations = 0
     while True:
         if iterations > max_iters:
             break
 
         iterations += 1
-        curr = filter_angles(last)
+        curr = filter_angles(last, window=window, tolerance=tolerance)
 
         if np.allclose(curr, last):
             # logging.debug(f'Converged after {iterations} iterations')
             break
         else:
             last = curr
-    flips = np.isclose(np.abs(curr - data), 180)
+    flips = np.isclose(np.abs(curr - angles), 180)
     return curr, flips
 
 
