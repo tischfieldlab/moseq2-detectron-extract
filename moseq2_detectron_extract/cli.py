@@ -43,6 +43,7 @@ if os.getenv('MOSEQ_DETECTRON_PROFILE', 'False').lower() in ('true', '1', 't'):
 click_monkey_patch_option_show_defaults()
 
 @click.group()
+@click.version_option()
 def cli():
     ''' Toolbox for training and using Detectron2 models for
         moseq raw data processing
