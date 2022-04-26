@@ -624,7 +624,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     }
 
 
-def flips_from_keypoints(keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray, length: float=80):
+def flips_from_keypoints(keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray, length: float=80) -> np.ndarray:
     ''' Estimate flips given keypoints, centroids, angles, and lengths
 
     Parameters:
