@@ -110,7 +110,7 @@ class Pipeline:
         # Clear the steps list and _terminate_ any steps that have not yet exited
         while self.steps:
             step = self.steps.pop()
-            if step.is_alive():
+            if step.is_alive() and hasattr(step, 'terminate'):
                 step.terminate()
                 num_terminated += 1
             else:
