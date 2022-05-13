@@ -1,3 +1,4 @@
+from email.contentmanager import raw_data_manager
 from typing import Dict, List, Literal, Sequence, Tuple
 
 import cv2
@@ -7,6 +8,7 @@ import numpy.typing as npt
 import scipy
 import tqdm
 from bottleneck import move_median
+from moseq2_detectron_extract.proc.kalman import KalmanTracker, KalmanTracker2
 from moseq2_detectron_extract.proc.keypoints import rotate_points_batch
 from moseq2_detectron_extract.proc.roi import apply_roi
 
@@ -575,7 +577,7 @@ def mask_and_keypoints_from_model_output(model_outputs: List[dict]) -> Tuple[np.
     return masks, keypoints, num_instances
 
 
-def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
+def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tracker: KalmanTracker=None):
     ''' Detect additional features and perform feature postprocessing
 
     Parameters:
@@ -586,6 +588,61 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     Dict[str, Any] - dict containing features and cleaned data
     '''
 
+    # frames x instances x keypoints x 3
+    d2_masks, allocentric_keypoints, num_instances = mask_and_keypoints_from_model_output(model_outputs)
+
+    if tracker is not None:
+        if not tracker.is_initialized:
+            tracker.initialize(allocentric_keypoints[:, 0, :, :2])
+
+        for i in range(allocentric_keypoints.shape[0]):
+            allocentric_keypoints[i, 0, :, :2] = tracker.filter_update(allocentric_keypoints[i, 0, :, :2])
+
+    # Clean frames and get features
+    cleaned_frames = clean_frames(raw_frames, iters_tail=3, progress_bar=False)
+    features, masks = get_frame_features(cleaned_frames, mask=d2_masks[:, 0, :, :], use_cc=True, frame_threshold=3, progress_bar=False)
+
+    # interpolate NaN values in features data
+    #features['centroid'][:, 0] = interpolate_nan_values(features['centroid'][:, 0])
+    #features['centroid'][:, 1] = interpolate_nan_values(features['centroid'][:, 1])
+    #features['orientation'] = interpolate_nan_values(features['orientation'])
+    #lengths = interpolate_nan_values(np.max(features['axis_length'], axis=1))
+    lengths = np.max(features['axis_length'], axis=1)
+
+    angles = features['orientation']
+    incl = ~np.isnan(angles)
+    angles[incl] = np.unwrap(angles[incl] * 2) / 2
+    angles = -np.rad2deg(angles)
+
+    # Get and apply flips using keypoint information
+    flips = flips_from_keypoints(allocentric_keypoints[:,0,...], features['centroid'], angles, lengths)
+    angles[flips] += 180
+
+    # apply iterative filter on angle values
+    angles, filter_flips = iterative_filter_angles(angles)
+    features['orientation'] = np.array(angles)
+    flips = np.logical_xor(flips, filter_flips)
+
+    return {
+        'cleaned_frames': cleaned_frames,
+        'masks': masks,
+        'features': features,
+        'flips': flips,
+        'keypoints': allocentric_keypoints[:,0,...],
+        'num_instances': num_instances
+    }
+
+
+def instances_to_features2(model_outputs: List[dict], raw_frames: np.ndarray, tracker: KalmanTracker2=None):
+    ''' Detect additional features and perform feature postprocessing
+
+    Parameters:
+    model_outputs (List[dict]): Model output data in Detectron2 output format
+    raw_frames (np.ndarray): raw depth frames of shape (nframes, height, width)
+
+    Returns:
+    Dict[str, Any] - dict containing features and cleaned data
+    '''
     # frames x instances x keypoints x 3
     d2_masks, allocentric_keypoints, num_instances = mask_and_keypoints_from_model_output(model_outputs)
 
@@ -604,6 +661,17 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     incl = ~np.isnan(angles)
     angles[incl] = np.unwrap(angles[incl] * 2) / 2
     angles = -np.rad2deg(angles)
+
+
+    if tracker is not None:
+        if not tracker.is_initialized:
+            tracker.initialize(keypoints=allocentric_keypoints[:, 0, :, :2], centroids=features['centroid'], angles=angles)
+
+        for i in range(allocentric_keypoints.shape[0]):
+            t_kpts, t_cent, t_angle = tracker.filter_update(allocentric_keypoints[i, 0, :, :2], features['centroid'][i], angles[i])
+            features['centroid'][i, :] = t_cent
+            allocentric_keypoints[i, 0, :, :2] = t_kpts
+            angles[i] = t_angle
 
     # Get and apply flips using keypoint information
     flips = flips_from_keypoints(allocentric_keypoints[:,0,...], features['centroid'], angles, lengths)

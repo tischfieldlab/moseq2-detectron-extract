@@ -3,8 +3,9 @@ from functools import partial
 import numpy as np
 
 from moseq2_detectron_extract.pipeline.pipeline_step import ProcessPipelineStep
+from moseq2_detectron_extract.proc.kalman import KalmanTracker, KalmanTracker2
 from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict
-from moseq2_detectron_extract.proc.proc import crop_and_rotate_frame, instances_to_features
+from moseq2_detectron_extract.proc.proc import crop_and_rotate_frame, instances_to_features, instances_to_features2
 from moseq2_detectron_extract.proc.scalars import compute_scalars
 
 # pylint: disable=attribute-defined-outside-init
@@ -21,6 +22,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
                                        min_height=self.config['min_height'],
                                        max_height=self.config['max_height'],
                                        true_depth=true_depth)
+        self.tracker = KalmanTracker2(order=3)
 
     def process(self, data: dict):
         data = self.__compute_features(data)
@@ -29,7 +31,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
 
 
     def __compute_features(self, data):
-        features = instances_to_features(data['inference'], data['chunk'])
+        features = instances_to_features2(data['inference'], data['chunk'], tracker=self.tracker)
         scalars = self.compute_scalars(data['chunk'] * features['masks'], features['features'])
 
         data['keypoints'] = self.compute_keypoints(features['keypoints'],
@@ -57,6 +59,8 @@ class ProcessFeaturesStep(ProcessPipelineStep):
         for i in range(nframes):
             if num_instances[i] <= 0:
                 self.write_message(f'WARN: No instances found for frame {frame_idxs[i]}')
+            if frame_idxs[i] >= 3600 and frame_idxs[i] < 3620:
+                self.write_message(f'Frame {frame_idxs[i]} had {num_instances[i]} instances')
             cropped_frames[i] = crop_and_rotate_frame(raw_frames[i], centroids[i], angles[i], self.crop)
             cropped_masks[i] = crop_and_rotate_frame(masks[i], centroids[i], angles[i], self.crop)
             self.update_progress()
