@@ -275,10 +275,12 @@ class KalmanTracker2(object):
         measures (np.ndarray): array of shape (nframes, nkeypoints * 2 + 3)
         
         '''
+        # print(measures.shape)
         if len(measures.shape) == 2:
             kpt_idx = range(0, keypoints.shape[1] * 2)
-            cnt_idx = range(kpt_idx[-1], kpt_idx[-1] + 2)
-            ang_idx = range(cnt_idx[-1], cnt_idx[-1] + 1)
+            cnt_idx = range(kpt_idx[-1] + 1, kpt_idx[-1] + 3)
+            ang_idx = range(cnt_idx[-1] + 1, cnt_idx[-1] + 2)
+            # print(kpt_idx, cnt_idx, ang_idx)
             return (
                 measures[:, kpt_idx].reshape(keypoints.shape), # keypoints
                 measures[:, cnt_idx].reshape(centroids.shape), # centroids
@@ -286,8 +288,9 @@ class KalmanTracker2(object):
             )
         else:
             kpt_idx = range(0, keypoints.shape[0] * 2)
-            cnt_idx = range(kpt_idx[-1], kpt_idx[-1] + 2)
-            ang_idx = range(cnt_idx[-1], cnt_idx[-1] + 1)
+            cnt_idx = range(kpt_idx[-1] + 1, kpt_idx[-1] + 3)
+            ang_idx = range(cnt_idx[-1] + 1, cnt_idx[-1] + 2)
+            # print(kpt_idx, cnt_idx, ang_idx)
             return (
                 measures[kpt_idx].reshape(keypoints.shape), # keypoints
                 measures[cnt_idx].reshape(centroids.shape), # centroids
@@ -318,7 +321,7 @@ class KalmanTracker2(object):
         '''
         to_filter = self._prepare_data(keypoints, centroids, angles)
         mu, cov, _, _ = self.kalman_filter.batch_filter(to_filter)
-        print(cov)
+        # print(cov)
         measurements = self._states_to_measurements(mu)
         return self._measurements_to_data(measurements, keypoints, centroids, angles)
 
