@@ -668,19 +668,28 @@ def instances_to_features2(model_outputs: List[dict], raw_frames: np.ndarray, tr
             tracker.initialize(keypoints=allocentric_keypoints[:, 0, :, :2], centroids=features['centroid'], angles=angles)
 
         for i in range(allocentric_keypoints.shape[0]):
+            # evaluate keypoint liklihood, possibly mask keypoints
+
+            # ask keypoint opinion on if angle should be flipped
+            flips = flips_from_keypoints(allocentric_keypoints[[i],0,...], features['centroid'][[i],:], angles[[i]], lengths)
+            angles[flips] += 180
+
+            # compare angle to kalman prior, see if it should be flipped
+
+            # finally updata kalman filter
             t_kpts, t_cent, t_angle = tracker.filter_update(allocentric_keypoints[i, 0, :, :2], features['centroid'][i], angles[i])
             features['centroid'][i, :] = t_cent
             allocentric_keypoints[i, 0, :, :2] = t_kpts
             angles[i] = t_angle
 
     # Get and apply flips using keypoint information
-    flips = flips_from_keypoints(allocentric_keypoints[:,0,...], features['centroid'], angles, lengths)
-    angles[flips] += 180
+    # flips = flips_from_keypoints(allocentric_keypoints[:,0,...], features['centroid'], angles, lengths)
+    # angles[flips] += 180
 
     # apply iterative filter on angle values
-    angles, filter_flips = iterative_filter_angles(angles)
-    features['orientation'] = np.array(angles)
-    flips = np.logical_xor(flips, filter_flips)
+    # angles, filter_flips = iterative_filter_angles(angles)
+    # features['orientation'] = np.array(angles)
+    # flips = np.logical_xor(flips, filter_flips)
 
     return {
         'cleaned_frames': cleaned_frames,
