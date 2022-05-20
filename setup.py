@@ -26,7 +26,7 @@ setup(
         'albumentations',
         'bottleneck',
         'click',
-        'click-option-group'
+        'click-option-group',
         'FyeldGenerator',
         'h5py',
         'imageio',
