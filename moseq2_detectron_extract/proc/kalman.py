@@ -168,6 +168,7 @@ class KalmanTracker2(object):
 
         self.init_data = self._prepare_data(keypoints, centroids, angles)
         self.num_points = self.init_data.shape[1]
+        self.num_keypoints = keypoints.shape[1]
         assert self.num_points == (keypoints.shape[1] * 2) + 2 + 1
 
         self.kalman_filter = KalmanFilter(
@@ -269,36 +270,32 @@ class KalmanTracker2(object):
     def _states_to_measurements(self, states: np.ndarray) -> np.ndarray:
         return np.apply_along_axis(self.kalman_filter.measurement_of_state, 1, states)
 
-    def _measurements_to_data(self, measures: np.ndarray, keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _measurements_to_data(self, measures: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         ''' Convert a measurements to data
         Parameters:
-        measures (np.ndarray): array of shape (nframes, nkeypoints * 2 + 3)
+        measures (np.ndarray): array of shape (nframes, nkeypoints * 2 + 3) OR (nkeypoints * 2 + 3,)
         
         '''
+        kpt_idx = range(0, self.num_keypoints * 2)
+        cnt_idx = range(kpt_idx[-1] + 1, kpt_idx[-1] + 3)
+        ang_idx = range(cnt_idx[-1] + 1, cnt_idx[-1] + 2)
+        # print(kpt_idx, cnt_idx, ang_idx)
         # print(measures.shape)
         if len(measures.shape) == 2:
-            kpt_idx = range(0, keypoints.shape[1] * 2)
-            cnt_idx = range(kpt_idx[-1] + 1, kpt_idx[-1] + 3)
-            ang_idx = range(cnt_idx[-1] + 1, cnt_idx[-1] + 2)
-            # print(kpt_idx, cnt_idx, ang_idx)
             return (
-                measures[:, kpt_idx].reshape(keypoints.shape), # keypoints
-                measures[:, cnt_idx].reshape(centroids.shape), # centroids
-                measures[:, ang_idx].reshape(angles.shape),    # angles
+                measures[:, kpt_idx].reshape(-1, self.num_keypoints, 2), # keypoints
+                measures[:, cnt_idx].reshape(-1, 2),                     # centroids
+                measures[:, ang_idx].reshape(-1),                        # angles
             )
         else:
-            kpt_idx = range(0, keypoints.shape[0] * 2)
-            cnt_idx = range(kpt_idx[-1] + 1, kpt_idx[-1] + 3)
-            ang_idx = range(cnt_idx[-1] + 1, cnt_idx[-1] + 2)
-            # print(kpt_idx, cnt_idx, ang_idx)
             return (
-                measures[kpt_idx].reshape(keypoints.shape), # keypoints
-                measures[cnt_idx].reshape(centroids.shape), # centroids
-                measures[ang_idx].reshape(angles.shape),    # angles
+                measures[kpt_idx].reshape(self.num_keypoints, 2), # keypoints
+                measures[cnt_idx].reshape(2),                     # centroids
+                measures[ang_idx].reshape(1),                     # angles
             )
 
 
-    def smooth(self, keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray) -> np.ndarray:
+    def smooth(self, keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         ''' Use the kalman filter to smooth data points
 
         Parameters:
@@ -310,9 +307,9 @@ class KalmanTracker2(object):
         mu, cov, _, _ = self.kalman_filter.batch_filter(to_smooth)
         means, _, _, _ = self.kalman_filter.rts_smoother(mu, cov)
         measurements = self._states_to_measurements(means)
-        return self._measurements_to_data(measurements, keypoints, centroids, angles)
+        return self._measurements_to_data(measurements)
 
-    def filter(self, keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray) -> np.ndarray:
+    def filter(self, keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         ''' Use the kalman filter to batch filter data points
         Parameters:
         keypoints (np.ndarray): keypoint data, of shape (nframes, npoints, 2 [x, y])
@@ -323,12 +320,18 @@ class KalmanTracker2(object):
         mu, cov, _, _ = self.kalman_filter.batch_filter(to_filter)
         # print(cov)
         measurements = self._states_to_measurements(mu)
-        return self._measurements_to_data(measurements, keypoints, centroids, angles)
+        return self._measurements_to_data(measurements)
 
-    def filter_update(self, keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray) -> np.ndarray:
+    def filter_update(self, keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         ''' Filter and update '''
         to_filter = self._prepare_data(keypoints, centroids, angles)
         self.kalman_filter.predict()
         self.kalman_filter.update(to_filter)
         measurement: np.ndarray = self.kalman_filter.measurement_of_state(self.kalman_filter.x)
-        return self._measurements_to_data(measurement, keypoints, centroids, angles)
+        return self._measurements_to_data(measurement)
+
+    def get_prediction(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        mu, cov = self.kalman_filter.get_prediction()
+        measurement: np.ndarray = self.kalman_filter.measurement_of_state(mu)
+        return self._measurements_to_data(measurement)
+
