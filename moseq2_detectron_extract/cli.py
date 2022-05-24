@@ -1,6 +1,7 @@
 import datetime
 import logging
 import os
+import shutil
 
 import click
 from click_option_group import optgroup
@@ -12,6 +13,7 @@ from moseq2_detectron_extract.extract import extract_session
 from moseq2_detectron_extract.io.annot import (default_keypoint_names, load_annotations_helper,
                                                register_dataset_metadata,
                                                register_datasets)
+from moseq2_detectron_extract.io.flips import flip_dataset, read_flips_file
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import (
     attach_file_logger, click_monkey_patch_option_show_defaults,
@@ -398,6 +400,62 @@ def system_info():
     else:
         logging.info('No devices found')
     logging.info('\n')
+
+
+
+@cli.command(name='manual-flip', help='Apply flips from manual annotations')
+@click.argument('h5_file', nargs=1, type=click.Path(exists=True))
+@click.argument('flips_file', nargs=1, type=click.Path(exists=True))
+@click.option('--visualize', is_flag=True, help='Visualize the newly flipped dataset')
+@click.option('--dest', type=click.Path(), help='Directory to save visualization results')
+def manual_flip(h5_file, flips_file, visualize, dest):
+    ''' Manually flip frames according to flips file '''
+    setup_logging()
+    # read flips file
+    flips = read_flips_file(flips_file)
+
+    # create backup of h5 file
+    shutil.copy(h5_file, h5_file+'.BAK')
+
+    #apply flips
+    flip_dataset(h5_file, flip_ranges=flips)
+
+    # TODO: add visualization!
+    #if visualize:
+    #    ensure_dir(dest)
+    #    vdest = os.path.join(dest, os.path.basename(h5_file).replace('.h5', '.mp4'))
+    #    make_results_video(h5_file, vdest)
+
+
+@cli.command(name='verify-flips', help='Verify flip files')
+@click.argument('flip_file', nargs=-1, type=click.Path(exists=True))
+def verify_flips(flip_file):
+    ''' Verify flip ranges in a flip file '''
+    setup_logging()
+    logging.info(f'\nChecking {len(flip_file)} flip files for errors:\n\n')
+    error_count = 0
+    was_last_error = False
+    for ff in flip_file:
+        # read flips file
+        try:
+            flips = read_flips_file(ff)
+
+            if was_last_error:
+                logging.info('\n')
+
+        except RuntimeError as e:
+            error_count += 1
+            was_last_error = True
+            logging.warning(f'\nWARNING: {str(e)}\n')
+        else:
+            was_last_error = False
+            logging.info(f'OK: File "{ff}" containing {len(flips)} ranges appears valid\n')
+
+    if error_count == 0:
+        logging.info(f'\nIt appears all {len(flip_file)} files are valid.\n')
+    else:
+        logging.warning(f'\nWARNING: {error_count}/{len(flip_file)} files have at least one issue!\n')
+
 
 
 
