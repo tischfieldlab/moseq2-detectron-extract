@@ -121,7 +121,7 @@ def colorize_video(frames: np.ndarray, vmin: float=0, vmax: float=100, cmap: str
 
 
 def prep_raw_frames(frames: np.ndarray, bground_im: np.ndarray=None, roi: np.ndarray=None, vmin: float=None, vmax: float=None,
-                    dtype: npt.DTypeLike='uint8'):
+                    dtype: npt.DTypeLike='uint8', fix_invalid_pixels=True) -> np.ndarray:
     ''' Prepare raw `frames` by:
             1) subtracting background based on `bground_im`
             2) applying a region of interest (crop and mask according to `roi`)
@@ -129,12 +129,28 @@ def prep_raw_frames(frames: np.ndarray, bground_im: np.ndarray=None, roi: np.nda
                 a) values less than `vmin` are set to zero
                 b) values greater than `vmax` are set to `vmax`
             All operations are optional.
+
+    Parameters:
+    frames (np.ndarray): frames to process, of shape (nframes, height, width).
+    bground_im (np.ndarray): background image to subtract from `frames`, of shape (height, width). If None, the operation is skipped.
+    roi (np.ndarray): mask image specifying the region of interest, of shape (height, width), used to crop and mask `frames`. If None, the operation is skipped.
+    vmin (float): minimum value allowed in `frames`, values less than this parameter will be set to this value. If None, the operation is skipped.
+    vmax (float): maximum value allowed in `frames`, values greater than this parameter will be set to this value. If None, the operation is skipped.
+    dtype (npt.DTypeLike): dtype of the returned frames (default='uint8')
+
+    Returns:
+    Processed frames of shape (nframes, roi_height, roi_width)
     '''
+    if fix_invalid_pixels:
+        mask = find_invalid_pixels(frames)
+
     if bground_im is not None:
         frames = bground_im - frames
 
     if roi is not None:
         frames = apply_roi(frames, roi)
+        if fix_invalid_pixels:
+            mask = apply_roi(mask, roi)
 
     if vmin is not None:
         frames[frames < vmin] = 0
@@ -142,7 +158,51 @@ def prep_raw_frames(frames: np.ndarray, bground_im: np.ndarray=None, roi: np.nda
     if vmax is not None:
         frames[frames > vmax] = vmax
 
-    return frames.astype(dtype)
+    frames = frames.astype(dtype)
+
+    if fix_invalid_pixels:
+        frames = fill_invalid_pixels(frames, mask)
+
+    return frames
+
+
+def find_invalid_pixels(frames: np.ndarray) -> np.ndarray:
+    ''' Find invalid pixels in `frames` and return their locations as a mask
+
+    Parameters:
+    frames (np.ndarray): frames to search for invalid pixels, of shape (nframes, height, width)
+
+    Returns:
+    Mask with same shape as `frames`. Zeros indicate valid pixels and ones indicate invalid pixels
+    '''
+    mask = np.zeros_like(frames, dtype='uint8')
+    mask[frames == 0] = 1 # values of zero indicate bad pixels in Kinect v2
+    return mask
+
+
+def fill_invalid_pixels(frames: np.ndarray, invalid_mask: np.ndarray) -> np.ndarray:
+    ''' Fill invalid pixels in `frames`
+
+    We use openCV inpaint method, choosing the algorithm cv2.INPAINT_NS. cv.INPAINT_TELEA was also
+    considered; both seem to have similar results but cv2.INPAINT_NS is slightly faster with lower
+    variance of execution time, so we go with that one.
+
+    Parameters:
+    frames (np.ndarray): frames to fill, of shape (nframes, height, width)
+    invalid_mask (np.ndarray): mask where ones indicating invalid pixels to be filled, of same shape as `frames`
+
+    Returns:
+    frames with invalid pixels filled.
+    '''
+    assert frames.shape == invalid_mask.shape
+
+    if frames.dtype == np.int16:
+        frames = frames.astype(np.uint16)
+
+    for i in range(frames.shape[0]):
+        frames[i] = cv2.inpaint(frames[i], invalid_mask[i], 3, cv2.INPAINT_NS)
+    return frames
+
 
 
 def scale_raw_frames(frames: np.ndarray, vmin: float, vmax: float, dtype: npt.DTypeLike='uint8') -> np.ndarray:
