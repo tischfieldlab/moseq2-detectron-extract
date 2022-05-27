@@ -343,7 +343,6 @@ class SessionFramesIterator(object):
             session (Session): Session over which this iterator should iterate
             chunk_size (int): each iteration should produce `chunk_size` frames
             chunk_overlap (int): iterations should overlap but this number of frames
-
         '''
         self.session = session
         self.chunk_size = chunk_size
@@ -371,7 +370,7 @@ class SessionFramesIterator(object):
 
 
 
-    def attach_filter(self, streams: Iterable[Stream], filterer: Callable[[np.ndarray], np.ndarray]):
+    def attach_filter(self, stream: Union[Stream, Iterable[Stream]], filterer: Callable[[np.ndarray], np.ndarray]):
         ''' Attach a filter to this frames iterator. A filter is simply a callable accepting a
             numpy array of data, performs some operation upon it, and returns and output array.
             Multiple filters can be attached, and they are called in the order in which they were
@@ -381,6 +380,12 @@ class SessionFramesIterator(object):
         filterer (Callable[[np.ndarray], np.ndarray]): callable used to filter data
         streams (Iterable[Stream]): streams for which this filter should apply
         '''
+        streams: List[Stream]
+        if isinstance(stream, Stream):
+            streams = [stream]
+        else:
+            streams = list(stream)
+
         self.filters.append({
             'filter': filterer,
             'streams': streams
@@ -388,7 +393,7 @@ class SessionFramesIterator(object):
 
     def __apply_filters(self, data: np.ndarray, stream: Stream) -> np.ndarray:
         for filt in self.filters:
-            if stream in filt['stream']:
+            if stream in filt['streams']:
                 data = filt['filter'](data)
         return data
 
@@ -428,6 +433,8 @@ class SessionFramesIterator(object):
             elif stream == Stream.RGB:
                 # rgb_idxs = self.ts_map.map_index(Stream.RGB, Stream.Depth, frame_idxs)
                 data = load_movie_data(self.session.rgb_file, frame_idxs, pixel_format='rgb24', tar_object=self.session.tar)
+            else:
+                raise ValueError(f'Unsupported stream "{stream}"')
 
             data = self.__apply_filters(data, stream)
             out_data.append(data)

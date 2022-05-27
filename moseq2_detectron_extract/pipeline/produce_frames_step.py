@@ -1,6 +1,6 @@
 import time
 from functools import partial
-from moseq2_detectron_extract.io.session import Session
+from moseq2_detectron_extract.io.session import Session, Stream
 from moseq2_detectron_extract.pipeline.pipeline_step import ProducerPipelineStep
 
 from moseq2_detectron_extract.proc.proc import prep_raw_frames
@@ -21,14 +21,20 @@ class ProduceFramesStep(ProducerPipelineStep):
                                     roi=self.session.roi,
                                     vmin=self.config['min_height'],
                                     vmax=self.config['max_height'])
-        self.iterator = enumerate(self.session.iterate(self.config['chunk_size'], self.config['chunk_overlap']))
+        self.iterator = self.session.iterate(self.config['chunk_size'], self.config['chunk_overlap'])
+        self.iterator.attach_filter(stream=Stream.DEPTH, filterer=self.prep_frames)
+        self.enumerator = enumerate(self.iterator)
 
     def process(self, data) -> None:
         try:
-            i, (frame_idxs, raw_frames) = next(self.iterator)
+            i, (frame_idxs, raw_frames) = next(self.enumerator)
             offset = self.config['chunk_overlap'] if i > 0 else 0
-            raw_frames = self.prep_frames(raw_frames)
-            data = { 'batch': i, 'chunk': raw_frames, 'frame_idxs': frame_idxs, 'offset': offset }
+            data = {
+                'batch': i,
+                'chunk': raw_frames,
+                'frame_idxs': frame_idxs,
+                'offset': offset
+            }
 
             while not self.shutdown_event.is_set() and not self.is_output_empty():
                 # we only want to produce a new batch once the cosumer has taken
