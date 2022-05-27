@@ -4,62 +4,47 @@ from functools import partial
 
 import numpy as np
 from detectron2.data import MetadataCatalog
-
 from moseq2_detectron_extract.io.video import PreviewVideoWriter
 from moseq2_detectron_extract.pipeline.pipeline_step import ProcessPipelineStep
 from moseq2_detectron_extract.proc.keypoints import \
     load_keypoint_data_from_dict
-from moseq2_detectron_extract.proc.proc import (colorize_video,
-                                                scale_raw_frames, stack_videos)
-from moseq2_detectron_extract.proc.roi import get_roi_contour
-from moseq2_detectron_extract.viz import (draw_instances_fast, draw_keypoints,
-                                          draw_mask, scale_depth_frames)
+from moseq2_detectron_extract.proc.proc import stack_videos
+from moseq2_detectron_extract.viz import ArenaView, CleanedFramesView, RotatedKeypointsView
 
 # pylint: disable=attribute-defined-outside-init
 
 class PreviewVideoWriterStep(ProcessPipelineStep):
     ''' PipelineStep which writes a preview video
     '''
-
     def __init__(self, config: dict, name: str = None, **kwargs) -> None:
         super().__init__(config, name, **kwargs)
 
-        self.roi = self.config['roi']
-        self.keypoint_names = MetadataCatalog.get(self.config['dataset_name']).keypoint_names
-        self.keypoint_colors = MetadataCatalog.get(self.config['dataset_name']).keypoint_colors
-        self.keypoint_connection_rules = MetadataCatalog.get(self.config['dataset_name']).keypoint_connection_rules
+        # We need to grab the metadata for the dataset here, or the data will not be available in the subprocess!!
+        self.dset_meta = MetadataCatalog.get(self.config['dataset_name'])
 
     def initialize(self):
         preview_video_dest = os.path.join(self.config['output_dir'], f"results_{self.config['bg_roi_index']:02d}.mp4")
+        
+        self.clean_frames_view = CleanedFramesView(scale=1.5, dset_meta=self.dset_meta)
+        self.rot_kpt_view = RotatedKeypointsView(scale=1.5, dset_meta=self.dset_meta)
+        self.arena_view = ArenaView(self.config['roi'], scale=2.0, vmin=self.config['min_height'], vmax=self.config['max_height'], dset_meta=self.dset_meta)
+
         self.video_pipe = PreviewVideoWriter(preview_video_dest,
                                              fps=self.config['fps'],
                                              vmin=self.config['min_height'],
                                              vmax=self.config['max_height'])
 
-        self.iscale = partial(scale_raw_frames, vmin=self.config['min_height'], vmax=self.config['max_height'])
-
-        self.scale = 2.0
-        self.roi_contours = get_roi_contour(self.roi, crop=True)
-        self.draw_instances = partial(draw_instances_fast,
-                                      roi_contour=self.roi_contours,
-                                      scale=self.scale,
-                                      keypoint_names=self.keypoint_names,
-                                      keypoint_connection_rules=self.keypoint_connection_rules,
-                                      keypoint_colors=self.keypoint_colors,
-                                      thickness=1)
 
         self.load_rot_kpts = partial(load_keypoint_data_from_dict,
-                                     keypoints=self.keypoint_names,
+                                     keypoints=self.dset_meta.keypoint_names,
                                      coord_system='rotated',
                                      units='px',
                                      root='')
-        self.draw_keypoints = partial(draw_keypoints,
-                                      keypoint_names=self.keypoint_names,
-                                      keypoint_connection_rules=self.keypoint_connection_rules,
-                                      keypoint_colors=self.keypoint_colors,
-                                      scale=1.5,
-                                      radius=3,
-                                      thickness=1)
+        self.load_ref_kpts = partial(load_keypoint_data_from_dict,
+                                     keypoints=self.dset_meta.keypoint_names,
+                                     coord_system='reference',
+                                     units='px',
+                                     root='')
 
     def finalize(self):
         self.video_pipe.close()
@@ -69,24 +54,25 @@ class PreviewVideoWriterStep(ProcessPipelineStep):
         instances = data['inference']
         masks = data['mask_frames']
         clean_frames = data['depth_frames']
-        rfs = raw_frames.shape
-        keypoints = self.load_rot_kpts(data['keypoints'])
+        rot_keypoints = self.load_rot_kpts(data['keypoints'])
 
-        field_video = np.zeros((rfs[0], int(rfs[1]*self.scale), int(rfs[2]*self.scale), 3), dtype='uint8')
-
-        rckv_width = int(clean_frames.shape[2] * 1.5)
-        rckv_height = int(clean_frames.shape[1] * 1.5)
-        rot_crop_keypoints_video = np.zeros((clean_frames.shape[0], rckv_height, rckv_width, 3), dtype='uint8')
-        rot_crop_keypoints_origin = (int(rckv_width // 2), int(rckv_height // 2))
-        for i in range(rfs[0]):
+        ref_masks = []
+        ref_keypoints = []
+        ref_boxes = []
+        for i in range(len(instances)):
             frame_instances = instances[i]["instances"].to('cpu')
-            field_video[i,:,:,:] = self.draw_instances(self.iscale(raw_frames[i,:,:,None].copy()), frame_instances)
+            ref_masks.append(frame_instances.pred_masks.numpy())
+            ref_keypoints.append(frame_instances.pred_keypoints.numpy())
+            ref_boxes.append(frame_instances.pred_boxes.tensor.numpy())
+        ref_masks = np.array(ref_masks)
+        ref_keypoints = np.array(ref_keypoints)
+        ref_boxes = np.array(ref_boxes)
 
-            rot_crop_keypoints_video[i,:,:,:] = draw_mask(rot_crop_keypoints_video[i,:,:,:], masks[i], alpha=0.7)
-            rot_crop_keypoints_video[i,:,:,:] = self.draw_keypoints(rot_crop_keypoints_video[i,:,:,:], keypoints[i], origin=rot_crop_keypoints_origin)
-            self.update_progress()
+        field_video = self.arena_view.generate_frames(raw_frames=raw_frames, boxes=ref_boxes, keypoints=ref_keypoints, masks=ref_masks)
+        rc_kpts_video = self.rot_kpt_view.generate_frames(masks=masks, keypoints=rot_keypoints)
+        cln_depth_video = self.clean_frames_view.generate_frames(clean_frames=clean_frames, masks=masks)
 
-        cleaned_depth = colorize_video(scale_depth_frames(clean_frames * masks, scale=1.5))
-        proc_stack = stack_videos([cleaned_depth, rot_crop_keypoints_video], orientation='vertical')
+        proc_stack = stack_videos([cln_depth_video, rc_kpts_video], orientation='vertical')
         out_video_combined = stack_videos([proc_stack, field_video], orientation='horizontal')
         self.video_pipe.write_frames(data['frame_idxs'], out_video_combined)
+        self.update_progress(raw_frames.shape[0])

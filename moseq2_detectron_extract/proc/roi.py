@@ -1,6 +1,6 @@
 from tarfile import TarInfo
 import tarfile
-from typing import Union
+from typing import Tuple, Union
 
 import cv2
 import numpy as np
@@ -252,6 +252,23 @@ def get_bbox(roi: np.ndarray) -> Union[np.ndarray, None]:
         return None
     else:
         return np.array([[y.min(), x.min()], [y.max(), x.max()]])
+
+
+def get_bbox_size(roi: np.ndarray) -> Tuple[int, int]:
+    ''' Given a binary mask, return a tuple with of the width and height of the positive region
+
+    Parameters:
+    roi (np.ndarray): 2D mask representing region of interest
+
+    Returns:
+    Tuple[int, int]: size of the masked region of the form (width, height) ((y_min, x_min), (y_max, x_max)).
+    If no elements of the roi contain non-zero values, `None` will be returned.
+    '''
+    bbox = get_bbox(roi)
+    if bbox is None:
+        return (0, 0)
+    else:
+        return (bbox[1,1] - bbox[0,1], bbox[1,0] - bbox[0,0])
 
 
 def get_roi_contour(roi: np.ndarray, crop: bool=True) -> np.ndarray:

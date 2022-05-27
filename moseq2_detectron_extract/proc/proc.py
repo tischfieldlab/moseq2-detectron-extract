@@ -236,7 +236,7 @@ def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.n
 
 
 def crop_and_rotate_frame(frame: np.ndarray, center: Tuple[float, float], angle: float, crop_size: Tuple[int, int]=(80, 80)) -> np.ndarray:
-    ''' Rotate a singe frame around `center` by `angle` degrees and crop to `crop_size` centered on `center`
+    ''' Rotate a single frame around `center` by `angle` degrees and crop to `crop_size` centered on `center`
 
     Parameters:
     frame (np.ndarray): Frame to crop and rotate, of shape (x, y)
@@ -259,6 +259,37 @@ def crop_and_rotate_frame(frame: np.ndarray, center: Tuple[float, float], angle:
     rot_mat = cv2.getRotationMatrix2D((crop_size[0] // 2, crop_size[1] // 2), angle, 1)
     use_frame = cv2.copyMakeBorder(frame, *border, cv2.BORDER_CONSTANT, 0)
     return cv2.warpAffine(use_frame[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
+
+
+def reverse_crop_and_rotate_frame(frame: np.ndarray, dest_size: Tuple[int, int], center: Tuple[float, float], angle: float):
+    ''' Attempts to reverse the process of `crop_and_rotate_frame()`.
+
+    Parameters:
+    frame (np.ndarray): Cropped and rotated frame to reverse crop/rotate process, of shape (x, y)
+    dest_size (Tuple[int, int]): size of the output image, (x, y)
+    center (Tuple[float, float]): center coordinates in real space (not cropped/rotated), (x, y)
+    angle (float): angle by which to rotate, in degrees
+
+    Returns:
+    np.ndarray: reverse copped and rotated frames
+    '''
+    if np.isnan(angle) or np.any(np.isnan(center)):
+        return np.zeros_like(frame, shape=dest_size) # pylint: disable=unexpected-keyword-arg
+
+    frame = frame.copy()
+    src_shape = frame.shape
+    src_center = (src_shape[0] // 2, src_shape[1] // 2)
+
+    rot_mat = cv2.getRotationMatrix2D(src_center, -angle, 1)
+    frame = cv2.warpAffine(frame, rot_mat, (dest_size[0], dest_size[1]))
+
+    translate_mat = np.float32([
+        [1, 0, center[0] - src_center[0]],
+        [0, 1, center[1] - src_center[1]]
+    ])
+    frame = cv2.warpAffine(frame, translate_mat, (dest_size[0], dest_size[1]))
+
+    return frame
 
 
 def crop_and_rotate_frames(frames: np.ndarray, features: Dict[str, np.ndarray], crop_size: Tuple[int, int]=(80, 80),

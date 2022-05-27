@@ -1,11 +1,12 @@
+import itertools
 import random
 from typing import Iterable, Sequence, Tuple
 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
-import skimage
-from detectron2.data.catalog import MetadataCatalog
+import skimage.transform
+from detectron2.data.catalog import MetadataCatalog, Metadata
 from detectron2.data.detection_utils import convert_image_to_rgb
 from detectron2.structures import Instances
 from detectron2.utils.visualizer import ColorMode, Visualizer
@@ -13,6 +14,8 @@ from skimage.util.dtype import img_as_bool
 
 from moseq2_detectron_extract.io.annot import KeypointConnections, DataItem
 from moseq2_detectron_extract.io.image import read_image
+from moseq2_detectron_extract.proc.proc import colorize_video, scale_raw_frames
+from moseq2_detectron_extract.proc.roi import get_roi_contour
 
 
 def visualize_annotations(annotations: Iterable[DataItem], metadata, num: int=5):
@@ -139,6 +142,41 @@ def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names:
     Returns:
     np.ndarray, frame with instances drawn
     '''
+    return draw_instances_data_fast(frame,
+                                    instances.pred_keypoints.cpu().numpy(),
+                                    instances.pred_masks.cpu().numpy(),
+                                    instances.pred_boxes.tensor.to('cpu').numpy(),
+                                    keypoint_names=keypoint_names,
+                                    keypoint_connection_rules=keypoint_connection_rules,
+                                    keypoint_colors=keypoint_colors,
+                                    roi_contour=roi_contour,
+                                    scale=scale,
+                                    radius=radius,
+                                    thickness=thickness)
+
+
+
+def draw_instances_data_fast(frame: np.ndarray, keypoints: np.ndarray, masks: np.ndarray, boxes: np.ndarray, keypoint_names: Sequence[str],
+    keypoint_connection_rules: KeypointConnections, keypoint_colors: Sequence[Tuple[int, int, int]],
+    roi_contour: Iterable[np.ndarray]=None, scale: float=2.0, radius: int=3, thickness: int=2) -> np.ndarray:
+    ''' Draw `instances` on `frame`
+
+    Parameters:
+    frame (np.ndarray): grayscale frame to draw instances on, of shape (height, width)
+    keypoints (np.ndarray): keypoint data, of shape (ninstances, nkeypoints, 3 [x, y, s])
+    masks (np.ndarray): mask data, of shape (ninstances, height, width)
+    boxes (np.ndarray): bounding box data, of shape (ninstances, 4)
+    keypoint_names (Sequence[str]): names of the keypoints to draw
+    keypoint_connection_rules (KeypointConnections): rules describing how keypoints are connected
+    keypoint_colors (Sequence[Tuple[int, int, int]]): Colors to use for drawing keypoints, each a tuple of ints in the range 0-255 specifying color in RGB
+    roi_contour (Iterable[np.ndarray]): Contours of the roi, found via `cv2.findContours()`
+    scale (float): size scale factor to scale frame and instances by
+    radius (int): radius of the circles drawn for keypoints
+    thickness (int): thickness of the lines drawn for keypoint connections
+
+    Returns:
+    np.ndarray, frame with instances drawn
+    '''
     im = convert_image_to_rgb(frame, "L")
 
     if roi_contour is not None:
@@ -146,19 +184,28 @@ def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names:
 
     im = cv2.resize(im, (int(im.shape[1] * scale), int(im.shape[0] * scale)))
 
-    for i in range(len(instances)):
+    if masks is None:
+        masks = []
+
+    if keypoints is None:
+        keypoints = []
+
+    if boxes is None:
+        boxes = []
+
+    for mask, kpts, box in itertools.zip_longest(masks, keypoints, boxes, fillvalue=None):
         # draw mask
-        mask = instances.pred_masks[i].cpu().numpy()
-        im = draw_mask(im, mask)
+        if mask is not None:
+            im = draw_mask(im, mask)
 
         # draw box
-        box = instances.pred_boxes.tensor.to('cpu').numpy()[i]
-        box *= scale
-        im = cv2.rectangle(im, tuple(box[0:2].astype(int)), tuple(box[2:4].astype(int)), (0,255,0))
+        if box is not None:
+            box *= scale
+            im = cv2.rectangle(im, tuple(box[0:2].astype(int)), tuple(box[2:4].astype(int)), (0,255,0))
 
         # keypoints
-        kpts = instances.pred_keypoints[i, :, :].cpu().numpy()
-        im = draw_keypoints(im, kpts, keypoint_names, keypoint_connection_rules, keypoint_colors, scale=scale, radius=radius, thickness=thickness)
+        if kpts is not None:
+            im = draw_keypoints(im, kpts, keypoint_names, keypoint_connection_rules, keypoint_colors, scale=scale, radius=radius, thickness=thickness)
 
     return im
 
@@ -233,3 +280,75 @@ def draw_contour(im: np.ndarray, contour: Iterable[np.ndarray], color: Tuple[int
     np.ndarray, image with contours drawn
     '''
     return cv2.drawContours(im, contour, -1, color, thickness, cv2.LINE_AA)
+
+
+
+class BaseView():
+    def __init__(self, scale: float = 1, dset_meta: Metadata = None) -> None:
+        self.is_setup = False
+        self.scale = scale
+        self.dset_meta = dset_meta
+
+
+class ArenaView(BaseView):
+    def __init__(self, roi: np.ndarray, scale: float = 2, vmin: float = 0.0, vmax: float = 100.0, dset_meta: Metadata = None) -> None:
+        super().__init__(scale=scale, dset_meta=dset_meta)
+        self.vmin = vmin
+        self.vmax = vmax
+        self.contour = get_roi_contour(roi, crop=True)
+
+
+    def generate_frames(self, raw_frames: np.ndarray, keypoints: np.ndarray, masks: np.ndarray, boxes: np.ndarray):
+        rfs = raw_frames.shape
+        video = np.zeros((rfs[0], int(rfs[1]*self.scale), int(rfs[2]*self.scale), 3), dtype='uint8')
+
+        for i in range(rfs[0]):
+            #frame_instances = instances[i]["instances"].to('cpu')
+
+            scaled_frames = scale_raw_frames(raw_frames[i,:,:,None].copy(), vmin=self.vmin, vmax=self.vmax)
+            video[i,:,:,:] = draw_instances_data_fast(
+                                scaled_frames,
+                                keypoints=keypoints[i,...] if keypoints is not None else None,
+                                masks=masks[i,...] if masks is not None else None,
+                                boxes=boxes[i,...] if boxes is not None else None,
+                                roi_contour=self.contour,
+                                scale=self.scale,
+                                keypoint_names=self.dset_meta.keypoint_names,
+                                keypoint_connection_rules=self.dset_meta.keypoint_connection_rules,
+                                keypoint_colors=self.dset_meta.keypoint_colors,
+                                thickness=1)
+        return video
+
+
+
+class RotatedKeypointsView(BaseView):
+    def __init__(self, scale: float = 1.5, dset_meta: Metadata = None) -> None:
+        super().__init__(scale=scale, dset_meta=dset_meta)
+
+    def generate_frames(self, masks: np.ndarray, keypoints: np.ndarray) -> np.ndarray:
+        width = int(masks.shape[2] * 1.5)
+        height = int(masks.shape[1] * 1.5)
+        video = np.zeros((masks.shape[0], height, width, 3), dtype='uint8')
+        origin = (int(width // 2), int(height // 2))
+
+        for i in range(masks.shape[0]):
+            video[i,:,:,:] = draw_mask(video[i,:,:,:], masks[i], alpha=0.7)
+            video[i,:,:,:] = draw_keypoints(video[i,:,:,:],
+                                            keypoints[i],
+                                            origin=origin,
+                                            keypoint_names=self.dset_meta.keypoint_names,
+                                            keypoint_connection_rules=self.dset_meta.keypoint_connection_rules,
+                                            keypoint_colors=self.dset_meta.keypoint_colors,
+                                            scale=1.5,
+                                            radius=3,
+                                            thickness=1)
+
+        return video
+
+class CleanedFramesView(BaseView):
+    def __init__(self, scale: float = 1.5, dset_meta: Metadata = None) -> None:
+        super().__init__(scale=scale, dset_meta=dset_meta)
+
+    def generate_frames(self, clean_frames: np.ndarray, masks: np.ndarray) -> np.ndarray:
+        cleaned_depth = colorize_video(scale_depth_frames(clean_frames * masks, scale=1.5))
+        return cleaned_depth

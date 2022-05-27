@@ -1,19 +1,29 @@
-from datetime import datetime
 import itertools
 import sys
+from datetime import datetime
+from typing import List, Tuple
 
 import h5py
 import numpy as np
+from detectron2.data.catalog import MetadataCatalog
+from tqdm import tqdm
+from moseq2_detectron_extract.io.util import gen_batch_sequence
+from moseq2_detectron_extract.io.video import PreviewVideoWriter
+from moseq2_detectron_extract.proc.keypoints import load_keypoint_data_from_h5
+from moseq2_detectron_extract.proc.proc import reverse_crop_and_rotate_frame, stack_videos
+from moseq2_detectron_extract.proc.roi import get_bbox_size
+from moseq2_detectron_extract.viz import (ArenaView, CleanedFramesView,
+                                          RotatedKeypointsView)
 
 
-def read_flips_file(file_path):
+def read_flips_file(file_path: str) -> List[Tuple[int, int]]:
     ''' Read a file containing flip annotations and return a list of flips
 
     Parameters:
     file_path (string): path to the filps file to parse
 
     Returns:
-    ranges (list of list): list of flip ranges
+    ranges (List[Tuple[int, int]]): list of flip ranges
 
     '''
     flips = []
@@ -25,6 +35,11 @@ def read_flips_file(file_path):
                     # ignore comment lines
                     continue
 
+                if '#' in line:
+                    # ignore data after an inline comment
+                    comment_parts = line.split('#')
+                    line = comment_parts[0]
+
                 try:
                     parts = [int(i.strip()) for i in line.split('-')]
                 except ValueError as e:
@@ -33,7 +48,7 @@ def read_flips_file(file_path):
                 if len(parts) != 2:
                     raise RuntimeError(f'File {file_path} line {lno + 1}: Expected only 2 indicies, but recieved {len(parts)}! "{line}"')
 
-                flips.append(parts[:2])
+                flips.append(tuple(parts[:2]))
 
     try:
         verify_ranges(flips)
@@ -43,7 +58,7 @@ def read_flips_file(file_path):
     return flips
 
 
-def verify_ranges(ranges, vmin=0, vmax=sys.maxsize):
+def verify_ranges(ranges: List[Tuple[int, int]], vmin: int=0, vmax: int=sys.maxsize) -> bool:
     ''' Verify that ranges is within bounds and there are no overlapping intervals
 
     Raises `RuntimeError` if any violations are found, otherwise return `True`
@@ -75,8 +90,8 @@ def verify_ranges(ranges, vmin=0, vmax=sys.maxsize):
     return True
 
 
-def flip_dataset(h5_file, flip_mask=None, flip_ranges=None, frames_path='/frames', frames_mask_path='/frames_mask',
-                 angle_path='/scalars/angle', flips_path='/metadata/extraction/flips', flip_class=1):
+def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[Tuple[int, int]] = None, frames_path: str = '/frames', frames_mask_path: str = '/frames_mask',
+                 angle_path: str = '/scalars/angle', flips_path: str = '/metadata/extraction/flips', flip_class: int = 1):
     ''' Flip a dataset according to either `flip_mask` xor `flip_ranges`
 
     If `flip_ranges` is provided, it is converted to a `flip_mask` first. You cannot provide both `flip_mask` and `flip_ranges`,
@@ -93,8 +108,8 @@ def flip_dataset(h5_file, flip_mask=None, flip_ranges=None, frames_path='/frames
 
     Parameters:
         h5_file (string): Path to the h5 file to flip
-        flip_mask (ndarray): mask of indicies to flip
-        flip_ranges (list<list<int>>): list of frame ranges to flip
+        flip_mask (np.ndarray): mask of indicies to flip
+        flip_ranges (List[Tuple[int, int]]): list of frame ranges to flip
         frames_path (str): Path to the frames dataset within the h5 file
         frames_mask_path (str): Path to the frames_mask dataset within the h5 file
         angle_path (str): Path to the angle dataset within the h5 file
@@ -167,3 +182,49 @@ def flip_vertical(data: np.ndarray) -> np.ndarray:
     ndarray: data flipped vertically
     '''
     return np.flip(data, axis=-2)
+
+
+def preview_video_from_h5(h5_file: h5py.File, dest: str, dset_name: str = 'moseq', vmin=0, vmax=100, fps=30, batch_size=10):
+
+    total_frames = h5_file['/frames'].shape[0]
+    roi = h5_file['/metadata/extraction/roi'][()]
+    roi_size = get_bbox_size(roi)
+
+    dset_meta = MetadataCatalog.get(dset_name)
+    clean_frames_view = CleanedFramesView(scale=1.5, dset_meta=dset_meta)
+    rot_kpt_view = RotatedKeypointsView(scale=1.5, dset_meta=dset_meta)
+    arena_view = ArenaView(roi, scale=2.0, vmin=vmin, vmax=vmax, dset_meta=dset_meta)
+
+    video_pipe = PreviewVideoWriter(dest, fps=fps, vmin=vmin, vmax=vmax)
+
+    batches = list(gen_batch_sequence(h5_file['/frames'].shape[0], batch_size, 0, 0))
+
+    for batch, batch_idxs in enumerate(tqdm(batches, desc='batches', total=len(batches))):
+        batch_idxs = list(batch_idxs)
+        #print(batch_idxs)
+        masks = h5_file['/frames_mask'][batch_idxs, ...]
+        clean_frames = h5_file['/frames'][batch_idxs, ...]
+        centroids = np.stack((
+            h5_file['/scalars/centroid_x_px'][batch_idxs],
+            h5_file['/scalars/centroid_y_px'][batch_idxs]
+        ), axis=1)
+        angles = h5_file['/scalars/angle'][batch_idxs]
+        rot_keypoints = load_keypoint_data_from_h5(h5_file, coord_system='rotated', units='px')
+        ref_keypoints = load_keypoint_data_from_h5(h5_file, coord_system='reference', units='px')
+        
+
+        raw_frames = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='uint8')
+        raw_masks = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='bool')
+        for i in range(clean_frames.shape[0]):
+            raw_frames[i, ...] = reverse_crop_and_rotate_frame(clean_frames[i], roi_size, centroids[i], angles[i])
+            raw_masks[i, ...] = reverse_crop_and_rotate_frame(masks[i].astype('uint8'), roi_size, centroids[i], angles[i]).astype('bool')
+
+        field_video = arena_view.generate_frames(raw_frames=raw_frames, keypoints=ref_keypoints[:, None, ...], masks=raw_masks, boxes=None)
+        rc_kpts_video = rot_kpt_view.generate_frames(masks=masks, keypoints=rot_keypoints)
+        cln_depth_video = clean_frames_view.generate_frames(clean_frames=clean_frames, masks=masks)
+
+        proc_stack = stack_videos([cln_depth_video, rc_kpts_video], orientation='vertical')
+        out_video_combined = stack_videos([proc_stack, field_video], orientation='horizontal')
+        video_pipe.write_frames(batch_idxs, out_video_combined)
+
+    video_pipe.close()
