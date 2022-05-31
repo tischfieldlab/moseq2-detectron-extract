@@ -184,7 +184,7 @@ def flip_vertical(data: np.ndarray) -> np.ndarray:
     return np.flip(data, axis=-2)
 
 
-def preview_video_from_h5(h5_file: h5py.File, dest: str, dset_name: str = 'moseq', vmin=0, vmax=100, fps=30, batch_size=10):
+def preview_video_from_h5(h5_file: h5py.File, dest: str, dset_name: str = 'moseq', vmin=0, vmax=100, fps=30, batch_size=10, start=None, stop=None):
 
     total_frames = h5_file['/frames'].shape[0]
     roi = h5_file['/metadata/extraction/roi'][()]
@@ -209,8 +209,8 @@ def preview_video_from_h5(h5_file: h5py.File, dest: str, dset_name: str = 'moseq
             h5_file['/scalars/centroid_y_px'][batch_idxs]
         ), axis=1)
         angles = h5_file['/scalars/angle'][batch_idxs]
-        rot_keypoints = load_keypoint_data_from_h5(h5_file, coord_system='rotated', units='px')
-        ref_keypoints = load_keypoint_data_from_h5(h5_file, coord_system='reference', units='px')
+        rot_keypoints = load_keypoint_data_from_h5(h5_file, coord_system='rotated', units='px')[batch_idxs]
+        ref_keypoints = load_keypoint_data_from_h5(h5_file, coord_system='reference', units='px')[batch_idxs]
         
 
         raw_frames = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='uint8')

@@ -308,9 +308,9 @@ class ArenaView(BaseView):
             scaled_frames = scale_raw_frames(raw_frames[i,:,:,None].copy(), vmin=self.vmin, vmax=self.vmax)
             video[i,:,:,:] = draw_instances_data_fast(
                                 scaled_frames,
-                                keypoints=keypoints[i,...] if keypoints is not None else None,
-                                masks=masks[i,...] if masks is not None else None,
-                                boxes=boxes[i,...] if boxes is not None else None,
+                                keypoints=keypoints[i] if keypoints is not None else None,
+                                masks=masks[i] if masks is not None else None,
+                                boxes=boxes[i] if boxes is not None else None,
                                 roi_contour=self.contour,
                                 scale=self.scale,
                                 keypoint_names=self.dset_meta.keypoint_names,
