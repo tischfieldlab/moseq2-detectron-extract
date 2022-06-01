@@ -29,67 +29,69 @@ def extract_session(session: Session, config: dict):
     Returns:
     str: path to status dictionary file
     '''
-
-    # Record the time we started, we can compute overall time spent at the end
-    start_time = time.time()
-
-    # set up the output directory
-    if config['output_dir'] is None:
-        output_dir = os.path.join(session.dirname, 'proc')
-        config['output_dir'] = output_dir
-    else:
-        output_dir = config['output_dir']
-    ensure_dir(output_dir)
-
-    # Attach log file to logging module, dependent on having setup output_dir
-    attach_file_logger(os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.log"))
-
-    # Make status filename, and check if session looks to be already extracted
-    # we usally don't want to overwrite already processed data
-    status_filename = os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.yaml")
-    if check_completion_status(status_filename):
-        logging.warning('WARNING: Session appears to already be extracted, so skipping!')
-        return status_filename
-
-    # Create status dictionary and write out to file system
-    status_dict = {
-        'complete': False,
-        'skip': False,
-        'uuid': str(uuid.uuid4()),
-        'metadata': session.load_metadata(),
-        'parameters': deepcopy(config)
-    }
-    write_yaml(status_filename, status_dict)
-
-
-    # Find image background and ROI
-    session.find_roi(bg_roi_dilate=config['bg_roi_dilate'],
-                     bg_roi_shape=config['bg_roi_shape'],
-                     bg_roi_index=config['bg_roi_index'],
-                     bg_roi_weights=config['bg_roi_weights'],
-                     bg_roi_depth_range=config['bg_roi_depth_range'],
-                     bg_roi_gradient_filter=config['bg_roi_gradient_filter'],
-                     bg_roi_gradient_threshold=config['bg_roi_gradient_threshold'],
-                     bg_roi_gradient_kernel=config['bg_roi_gradient_kernel'],
-                     bg_roi_fill_holes=config['bg_roi_fill_holes'],
-                     use_plane_bground=config['use_plane_bground'],
-                     cache_dir=output_dir,
-                     verbose=True)
-    logging.info("")
-    config.update({
-        'nframes': session.nframes,
-        'true_depth': session.true_depth,
-        'roi': session.roi,
-        'first_frame': session.first_frame,
-        'bground_im': session.bground_im,
-        'status_dict': status_dict,
-        'timestamps': session.load_timestamps(Stream.DEPTH),
-    })
-
-    if config['dataset_name'] not in MetadataCatalog:
-        register_dataset_metadata(config['dataset_name'])
-
     try:
+        # Record the time we started, we can compute overall time spent at the end
+        start_time = time.time()
+
+        # set up the output directory
+        if config['output_dir'] is None:
+            output_dir = os.path.join(session.dirname, 'proc')
+            config['output_dir'] = output_dir
+        else:
+            output_dir = config['output_dir']
+        ensure_dir(output_dir)
+
+        # Attach log file to logging module, dependent on having setup output_dir
+        attach_file_logger(os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.log"))
+
+        # Make status filename, and check if session looks to be already extracted
+        # we usally don't want to overwrite already processed data
+        status_filename = os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.yaml")
+        if check_completion_status(status_filename):
+            logging.warning('WARNING: Session appears to already be extracted, so skipping!')
+            return status_filename
+
+        # Create status dictionary and write out to file system
+        status_dict = {
+            'complete': False,
+            'skip': False,
+            'uuid': str(uuid.uuid4()),
+            'metadata': session.load_metadata(),
+            'parameters': deepcopy(config)
+        }
+        write_yaml(status_filename, status_dict)
+
+        # Find image background and ROI
+        session.find_roi(bg_roi_dilate=config['bg_roi_dilate'],
+                        bg_roi_shape=config['bg_roi_shape'],
+                        bg_roi_index=config['bg_roi_index'],
+                        bg_roi_weights=config['bg_roi_weights'],
+                        bg_roi_depth_range=config['bg_roi_depth_range'],
+                        bg_roi_gradient_filter=config['bg_roi_gradient_filter'],
+                        bg_roi_gradient_threshold=config['bg_roi_gradient_threshold'],
+                        bg_roi_gradient_kernel=config['bg_roi_gradient_kernel'],
+                        bg_roi_fill_holes=config['bg_roi_fill_holes'],
+                        use_plane_bground=config['use_plane_bground'],
+                        cache_dir=output_dir,
+                        verbose=True)
+        logging.info("")
+
+        # Update config with some additional data
+        config.update({
+            'nframes': session.nframes,
+            'true_depth': session.true_depth,
+            'roi': session.roi,
+            'first_frame': session.first_frame,
+            'bground_im': session.bground_im,
+            'status_dict': status_dict,
+            'timestamps': session.load_timestamps(Stream.DEPTH),
+        })
+
+        # Register dataset metadata
+        if config['dataset_name'] not in MetadataCatalog:
+            register_dataset_metadata(config['dataset_name'])
+
+
         # Create processing pipeline
         pipeline = Pipeline()
         step0  = pipeline.add_step(' Read Depth Data', ProduceFramesStep, session=session, config=config)
@@ -111,6 +113,7 @@ def extract_session(session: Session, config: dict):
 
         # shutdown the pipeline
         pipeline.shutdown()
+
     except WorkerError as work_error:
         logging.error('')
         logging.error('One or more workers encountered an error during extraction:\n')
@@ -132,7 +135,6 @@ def extract_session(session: Session, config: dict):
         extract_duration = (time.time() - start_time)
         extract_fps = session.nframes / extract_duration
         logging.info(f'Finished processing {session.nframes} frames in {timedelta(seconds=round(extract_duration))} (approx. {extract_fps:.2f} fps overall)')
-
 
     return status_filename
 
