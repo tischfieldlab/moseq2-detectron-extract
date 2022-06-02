@@ -179,3 +179,4 @@ class ProducerPipelineStep(ThreadPipelineStep):
     def __init__(self, config: dict, name: str = None, **kwargs) -> None:
         super().__init__(config, name, **kwargs)
         self.is_producer = True
+        self.daemon = True
