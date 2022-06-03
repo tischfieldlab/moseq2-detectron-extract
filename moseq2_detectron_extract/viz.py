@@ -11,11 +11,16 @@ from detectron2.data.detection_utils import convert_image_to_rgb
 from detectron2.structures import Instances
 from detectron2.utils.visualizer import ColorMode, Visualizer
 from skimage.util.dtype import img_as_bool
+from tqdm import tqdm
+import h5py
 
 from moseq2_detectron_extract.io.annot import KeypointConnections, DataItem
 from moseq2_detectron_extract.io.image import read_image
-from moseq2_detectron_extract.proc.proc import colorize_video, scale_raw_frames
-from moseq2_detectron_extract.proc.roi import get_roi_contour
+from moseq2_detectron_extract.io.util import gen_batch_sequence
+from moseq2_detectron_extract.io.video import PreviewVideoWriter
+from moseq2_detectron_extract.proc.keypoints import load_keypoint_data_from_h5
+from moseq2_detectron_extract.proc.proc import colorize_video, reverse_crop_and_rotate_frame, scale_raw_frames, stack_videos
+from moseq2_detectron_extract.proc.roi import get_bbox_size, get_roi_contour
 
 
 def visualize_annotations(annotations: Iterable[DataItem], metadata, num: int=5):
@@ -129,7 +134,7 @@ def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names:
     ''' Draw `instances` on `frame`
 
     Parameters:
-    frame (np.ndarray): grayscale frame to draw instances on, of shape (height, width)
+    frame (np.ndarray): grayscale frame to draw instances on, of shape (height, width, 1)
     instances (Instances): Detectron2 instances
     keypoint_names (Sequence[str]): names of the keypoints to draw
     keypoint_connection_rules (KeypointConnections): rules describing how keypoints are connected
@@ -162,7 +167,7 @@ def draw_instances_data_fast(frame: np.ndarray, keypoints: np.ndarray, masks: np
     ''' Draw `instances` on `frame`
 
     Parameters:
-    frame (np.ndarray): grayscale frame to draw instances on, of shape (height, width)
+    frame (np.ndarray): grayscale frame to draw instances on, of shape (height, width, 1)
     keypoints (np.ndarray): keypoint data, of shape (ninstances, nkeypoints, 3 [x, y, s])
     masks (np.ndarray): mask data, of shape (ninstances, height, width)
     boxes (np.ndarray): bounding box data, of shape (ninstances, 4)
@@ -216,7 +221,7 @@ def draw_mask(im: np.ndarray, mask: np.ndarray, alpha: float=0.3, color: Tuple[i
     Parameters:
     im (np.ndarray): image to draw mask upon, of shape (height, width, 3)
     mask (np.ndarray): mask to draw
-    alpha (float): alpha leve to use when drawing mask. 0=Transparent, 1=Opaque
+    alpha (float): alpha level to use when drawing mask. 0=Transparent, 1=Opaque
     color (Tuple[int, int, int]): color to draw the mask, tuple of ints in range [0-255] in RGB order
 
     Returns:
@@ -282,6 +287,57 @@ def draw_contour(im: np.ndarray, contour: Iterable[np.ndarray], color: Tuple[int
     return cv2.drawContours(im, contour, -1, color, thickness, cv2.LINE_AA)
 
 
+def preview_video_from_h5(h5_file: str, dest: str, dset_name: str = 'moseq', vmin=0, vmax=100, fps=30, batch_size=10, start=None, stop=None):
+    with(h5py.File(h5_file, 'r')) as h5:
+        total_frames = h5['/frames'].shape[0]
+        roi = h5['/metadata/extraction/roi'][()]
+        roi_size = get_bbox_size(roi)
+
+        dset_meta = MetadataCatalog.get(dset_name)
+        clean_frames_view = CleanedFramesView(scale=1.5, dset_meta=dset_meta)
+        rot_kpt_view = RotatedKeypointsView(scale=1.5, dset_meta=dset_meta)
+        arena_view = ArenaView(roi, scale=2.0, vmin=vmin, vmax=vmax, dset_meta=dset_meta)
+
+        video_pipe = PreviewVideoWriter(dest, fps=fps, vmin=vmin, vmax=vmax)
+
+        batches = list(gen_batch_sequence(h5['/frames'].shape[0], batch_size, 0, 0))
+
+        with tqdm(desc='Generating Frames', total=total_frames) as pbar:
+            for batch, batch_idxs in enumerate(batches):
+                batch_idxs = list(batch_idxs)
+
+                # load data from h5 file
+                masks = h5['/frames_mask'][batch_idxs, ...]
+                clean_frames = h5['/frames'][batch_idxs, ...]
+                centroids = np.stack((
+                    h5['/scalars/centroid_x_px'][batch_idxs],
+                    h5['/scalars/centroid_y_px'][batch_idxs]
+                ), axis=1)
+                angles = h5['/scalars/angle'][batch_idxs]
+                rot_keypoints = load_keypoint_data_from_h5(h5, coord_system='rotated', units='px')[batch_idxs]
+                ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')[batch_idxs]
+
+                # rotate frames and masks to origional coordinates and angles
+                raw_frames = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='uint8')
+                raw_masks = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='bool')
+                for i in range(clean_frames.shape[0]):
+                    raw_frames[i, ...] = reverse_crop_and_rotate_frame(clean_frames[i], roi_size, centroids[i], angles[i])
+                    raw_masks[i, ...] = reverse_crop_and_rotate_frame(masks[i].astype('uint8'), roi_size, centroids[i], angles[i]).astype('bool')
+
+                # generate movie chunks with instance data
+                field_video = arena_view.generate_frames(raw_frames=raw_frames, keypoints=ref_keypoints[:, None, ...], masks=raw_masks[:,None,...], boxes=None)
+                rc_kpts_video = rot_kpt_view.generate_frames(masks=masks, keypoints=rot_keypoints)
+                cln_depth_video = clean_frames_view.generate_frames(clean_frames=clean_frames, masks=masks)
+
+                # stack and write frames
+                proc_stack = stack_videos([cln_depth_video, rc_kpts_video], orientation='vertical')
+                out_video_combined = stack_videos([proc_stack, field_video], orientation='horizontal')
+                video_pipe.write_frames(batch_idxs, out_video_combined)
+                pbar.update(n=len(batch_idxs))
+
+        video_pipe.close()
+
+
 
 class BaseView():
     def __init__(self, scale: float = 1, dset_meta: Metadata = None) -> None:
@@ -303,8 +359,6 @@ class ArenaView(BaseView):
         video = np.zeros((rfs[0], int(rfs[1]*self.scale), int(rfs[2]*self.scale), 3), dtype='uint8')
 
         for i in range(rfs[0]):
-            #frame_instances = instances[i]["instances"].to('cpu')
-
             scaled_frames = scale_raw_frames(raw_frames[i,:,:,None].copy(), vmin=self.vmin, vmax=self.vmax)
             video[i,:,:,:] = draw_instances_data_fast(
                                 scaled_frames,

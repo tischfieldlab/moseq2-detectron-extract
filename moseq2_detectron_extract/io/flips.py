@@ -7,9 +7,10 @@ import h5py
 import numpy as np
 from detectron2.data.catalog import MetadataCatalog
 from tqdm import tqdm
-from moseq2_detectron_extract.io.util import gen_batch_sequence
+from moseq2_detectron_extract.io.annot import register_dataset_metadata
+from moseq2_detectron_extract.io.util import find_unused_dataset_path, gen_batch_sequence
 from moseq2_detectron_extract.io.video import PreviewVideoWriter
-from moseq2_detectron_extract.proc.keypoints import load_keypoint_data_from_h5
+from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict, load_keypoint_data_from_h5, rotate_points, rotate_points_batch
 from moseq2_detectron_extract.proc.proc import reverse_crop_and_rotate_frame, stack_videos
 from moseq2_detectron_extract.proc.roi import get_bbox_size
 from moseq2_detectron_extract.viz import (ArenaView, CleanedFramesView,
@@ -81,7 +82,7 @@ def verify_ranges(ranges: List[Tuple[int, int]], vmin: int=0, vmax: int=sys.maxs
             errors.append(f'Range ({start}, {stop}) stop cannot be greater than {vmax}')
 
     for r1, r2 in itertools.combinations(ranges, 2):
-        if max(r1[0], r2[0]) <= min(r1[1], r2[1]):
+        if max(r1[0], r2[0]) < min(r1[1], r2[1]):
             errors.append(f'Range ({r1[0]}, {r1[1]}) overlaps with range ({r2[0]}, {r2[1]})')
 
     if len(errors) > 0:
@@ -136,14 +137,7 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
             flip_mask = flip_mask == flip_class
 
         # find a path for flips that is not already in use
-        if flips_path in h5:
-            i = 1
-            while True:
-                new_flips_path = f'{flips_path}_{i}'
-                if new_flips_path not in h5:
-                    flips_path = new_flips_path
-                    break
-                i += 1
+        flips_path = find_unused_dataset_path(h5_file, flips_path)
 
         # create and set the flips dataset
         h5.create_dataset(flips_path, data=flip_mask, dtype='bool', compression='gzip')
@@ -151,11 +145,22 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
         h5[flips_path].attrs['description'] = f'Created by moseq2-detectron-extract, manual flips, on {datetime.now()}'
 
         # apply flips to the datasets
-        h5[frames_path][flip_mask, ...] = flip_horizontal(h5[frames_path][flip_mask, ...])
-        h5[frames_mask_path][flip_mask, ...] = flip_horizontal(h5[frames_mask_path][flip_mask, ...])
-        h5[angle_path][flip_mask] += np.pi
+        flip_locations = np.nonzero(flip_mask)
+        h5[frames_path][flip_locations] = flip_horizontal(h5[frames_path][flip_locations])
+        h5[frames_mask_path][flip_locations] = flip_horizontal(h5[frames_mask_path][flip_locations])
+        h5[angle_path][flip_locations] += 180
 
-        # TODO: flip also keypoints!
+        # Recompute keypoints
+        ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')
+        centroids = np.stack((
+            h5['/scalars/centroid_x_px'][()],
+            h5['/scalars/centroid_y_px'][()]
+        ), axis=1)
+        recomputed_keypoints = keypoints_to_dict(ref_keypoints, h5[frames_path][()], centroids, h5[angle_path][()], h5['/metadata/extraction/true_depth'][()])
+        # drop any z dimention keys, since they should not change, and the recomputation will be wrong!
+        recomputed_keypoints = {k: v for k, v in recomputed_keypoints.items() if '_z_' not in k}
+        for k, v in recomputed_keypoints.items():
+            h5[f'/keypoints/{k}'][...] = v
 
         h5.flush()
 
@@ -182,49 +187,3 @@ def flip_vertical(data: np.ndarray) -> np.ndarray:
     ndarray: data flipped vertically
     '''
     return np.flip(data, axis=-2)
-
-
-def preview_video_from_h5(h5_file: h5py.File, dest: str, dset_name: str = 'moseq', vmin=0, vmax=100, fps=30, batch_size=10, start=None, stop=None):
-
-    total_frames = h5_file['/frames'].shape[0]
-    roi = h5_file['/metadata/extraction/roi'][()]
-    roi_size = get_bbox_size(roi)
-
-    dset_meta = MetadataCatalog.get(dset_name)
-    clean_frames_view = CleanedFramesView(scale=1.5, dset_meta=dset_meta)
-    rot_kpt_view = RotatedKeypointsView(scale=1.5, dset_meta=dset_meta)
-    arena_view = ArenaView(roi, scale=2.0, vmin=vmin, vmax=vmax, dset_meta=dset_meta)
-
-    video_pipe = PreviewVideoWriter(dest, fps=fps, vmin=vmin, vmax=vmax)
-
-    batches = list(gen_batch_sequence(h5_file['/frames'].shape[0], batch_size, 0, 0))
-
-    for batch, batch_idxs in enumerate(tqdm(batches, desc='batches', total=len(batches))):
-        batch_idxs = list(batch_idxs)
-        #print(batch_idxs)
-        masks = h5_file['/frames_mask'][batch_idxs, ...]
-        clean_frames = h5_file['/frames'][batch_idxs, ...]
-        centroids = np.stack((
-            h5_file['/scalars/centroid_x_px'][batch_idxs],
-            h5_file['/scalars/centroid_y_px'][batch_idxs]
-        ), axis=1)
-        angles = h5_file['/scalars/angle'][batch_idxs]
-        rot_keypoints = load_keypoint_data_from_h5(h5_file, coord_system='rotated', units='px')[batch_idxs]
-        ref_keypoints = load_keypoint_data_from_h5(h5_file, coord_system='reference', units='px')[batch_idxs]
-        
-
-        raw_frames = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='uint8')
-        raw_masks = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='bool')
-        for i in range(clean_frames.shape[0]):
-            raw_frames[i, ...] = reverse_crop_and_rotate_frame(clean_frames[i], roi_size, centroids[i], angles[i])
-            raw_masks[i, ...] = reverse_crop_and_rotate_frame(masks[i].astype('uint8'), roi_size, centroids[i], angles[i]).astype('bool')
-
-        field_video = arena_view.generate_frames(raw_frames=raw_frames, keypoints=ref_keypoints[:, None, ...], masks=raw_masks, boxes=None)
-        rc_kpts_video = rot_kpt_view.generate_frames(masks=masks, keypoints=rot_keypoints)
-        cln_depth_video = clean_frames_view.generate_frames(clean_frames=clean_frames, masks=masks)
-
-        proc_stack = stack_videos([cln_depth_video, rc_kpts_video], orientation='vertical')
-        out_video_combined = stack_videos([proc_stack, field_video], orientation='horizontal')
-        video_pipe.write_frames(batch_idxs, out_video_combined)
-
-    video_pipe.close()

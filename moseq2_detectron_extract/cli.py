@@ -1,6 +1,7 @@
 import datetime
 import logging
 import os
+from pathlib import Path
 import shutil
 
 import click
@@ -16,7 +17,7 @@ from moseq2_detectron_extract.io.annot import (default_keypoint_names, load_anno
 from moseq2_detectron_extract.io.flips import flip_dataset, read_flips_file
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import (
-    attach_file_logger, click_monkey_patch_option_show_defaults,
+    attach_file_logger, backup_existing_file, click_monkey_patch_option_show_defaults,
     enable_profiling, ensure_dir, setup_logging)
 from moseq2_detectron_extract.model import Evaluator, Trainer
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
@@ -31,6 +32,7 @@ from moseq2_detectron_extract.model.util import (get_available_device_info,
                                                  get_system_versions)
 from moseq2_detectron_extract.proc.util import check_completion_status
 from moseq2_detectron_extract.quality import find_outliers_h5
+from moseq2_detectron_extract.viz import preview_video_from_h5
 
 # import warnings
 # warnings.filterwarnings('ignore', category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
@@ -415,16 +417,18 @@ def manual_flip(h5_file, flips_file, visualize, dest):
     flips = read_flips_file(flips_file)
 
     # create backup of h5 file
-    shutil.copy(h5_file, h5_file+'.BAK')
+    backup_existing_file(h5_file)
 
-    #apply flips
+    # apply flips
     flip_dataset(h5_file, flip_ranges=flips)
 
-    # TODO: add visualization!
-    #if visualize:
-    #    ensure_dir(dest)
-    #    vdest = os.path.join(dest, os.path.basename(h5_file).replace('.h5', '.mp4'))
-    #    make_results_video(h5_file, vdest)
+    # if requested, visualize the dataset
+    if visualize:
+        register_dataset_metadata('moseq')
+        ensure_dir(dest)
+        Path(h5_file)
+        vdest = os.path.join(dest, os.path.basename(h5_file).replace('.h5', '.mp4'))
+        preview_video_from_h5(h5_file, vdest)
 
 
 @cli.command(name='verify-flips', help='Verify flip files')
