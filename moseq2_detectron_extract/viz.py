@@ -1,3 +1,4 @@
+from concurrent.futures import ProcessPoolExecutor
 import itertools
 import random
 from typing import Iterable, Sequence, Tuple
@@ -336,6 +337,112 @@ def preview_video_from_h5(h5_file: str, dest: str, dset_name: str = 'moseq', vmi
                 pbar.update(n=len(batch_idxs))
 
         video_pipe.close()
+
+
+class H5ResultPreviewVideoGenerator():
+    def __init__(self, h5_file: str, dest: str, dset_name: str = 'moseq', vmin=0, vmax=100, fps=30, batch_size=500, start:int=None, stop:int=None) -> None:
+        self.h5_file = h5_file
+        self.dest = dest
+        self.dset_name = dset_name
+        self.vmin = vmin
+        self.vmax = vmax
+        self.fps = fps
+        self.batch_size = batch_size
+        self.start = start
+        self.stop = stop
+
+        self.frames_path = '/frames'
+        self.mask_path = '/frames_mask'
+        self.roi_path = '/metadata/extraction/roi'
+        self.centroid_x_path = '/scalars/centroid_x_px'
+        self.centroid_y_path = '/scalars/centroid_y_px'
+        self.angle_path = '/scalars/angle'
+
+        self._initialize()
+
+    def _initialize(self):
+        with(h5py.File(self.h5_file, 'r')) as h5:
+            if self.start is None:
+                self.start = 0
+
+            if self.stop is None:
+                self.stop = h5[self.frames_path].shape[0]
+
+            self.total_frames = h5[self.frames_path][self.start:self.stop].shape[0]
+            self.batches = list(gen_batch_sequence(self.total_frames, self.batch_size, 0, self.start))
+
+            self.roi = h5[self.roi_path][()]
+            self.roi_size = get_bbox_size(self.roi)
+
+            dset_meta = MetadataCatalog.get(self.dset_name)
+            self.clean_frames_view = CleanedFramesView(scale=1.5, dset_meta=dset_meta)
+            self.rot_kpt_view = RotatedKeypointsView(scale=1.5, dset_meta=dset_meta)
+            self.arena_view = ArenaView(self.roi, scale=2.0, vmin=self.vmin, vmax=self.vmax, dset_meta=dset_meta)
+
+    def _read_chunk(self, batch_idxs):
+        batch_idxs = list(batch_idxs)
+
+        with(h5py.File(self.h5_file, 'r')) as h5:
+            # load data from h5 file
+            masks = h5[self.mask_path][batch_idxs, ...]
+            clean_frames = h5[self.frames_path][batch_idxs, ...]
+            centroids = np.stack((
+                h5[self.centroid_x_path][batch_idxs],
+                h5[self.centroid_y_path][batch_idxs]
+            ), axis=1)
+            angles = h5[self.angle_path][batch_idxs]
+            rot_keypoints = load_keypoint_data_from_h5(h5, coord_system='rotated', units='px')[batch_idxs]
+            ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')[batch_idxs]
+
+            # rotate frames and masks to origional coordinates and angles
+            raw_frames = np.zeros((clean_frames.shape[0], self.roi_size[1], self.roi_size[0]), dtype='uint8')
+            raw_masks = np.zeros((clean_frames.shape[0], self.roi_size[1], self.roi_size[0]), dtype='bool')
+            for i in range(clean_frames.shape[0]):
+                raw_frames[i, ...] = reverse_crop_and_rotate_frame(clean_frames[i], self.roi_size, centroids[i], angles[i])
+                raw_masks[i, ...] = reverse_crop_and_rotate_frame(masks[i].astype('uint8'), self.roi_size, centroids[i], angles[i]).astype('bool')
+        return {
+            'batch_idxs': batch_idxs,
+            'masks': masks,
+            'clean_frames': clean_frames,
+            'centroids': centroids,
+            'angles': angles,
+            'rot_keypoints': rot_keypoints,
+            'ref_keypoints': ref_keypoints[:, None, ...],
+            'raw_frames': raw_frames,
+            'raw_masks': raw_masks[:,None,...]
+        }
+
+    def _write_chunk(self, video_pipe, data):
+        # generate movie chunks with instance data
+        field_video = self.arena_view.generate_frames(raw_frames=data['raw_frames'], keypoints=data['ref_keypoints'], masks=data['raw_masks'], boxes=None)
+        rc_kpts_video = self.rot_kpt_view.generate_frames(masks=data['masks'], keypoints=data['rot_keypoints'])
+        cln_depth_video = self.clean_frames_view.generate_frames(clean_frames=data['clean_frames'], masks=data['masks'])
+
+        # stack and write frames
+        proc_stack = stack_videos([cln_depth_video, rc_kpts_video], orientation='vertical')
+        out_video_combined = stack_videos([proc_stack, field_video], orientation='horizontal')
+        video_pipe.write_frames(data['batch_idxs'], out_video_combined)
+
+    def generate(self):
+        video_pipe = PreviewVideoWriter(self.dest, fps=self.fps, vmin=self.vmin, vmax=self.vmax)
+        pool = ProcessPoolExecutor(max_workers=2)
+
+        with tqdm(desc='Generating Frames', total=self.total_frames) as pbar:
+
+            for data in pool.map(self._read_chunk, self.batches):
+                #print(data['batch_idxs'])
+                self._write_chunk(video_pipe, data)
+                pbar.update(n=len(data['batch_idxs']))
+
+        # TODO: We really should be calling shutdown, but this seems to reliably cause an exception
+        # should be fixed on python=3.9, but for now lets just pretend we shutdown
+        # see: https://github.com/python/cpython/issues/83285
+        # pool.shutdown(wait=True)
+
+        video_pipe.close()
+
+
+
 
 
 

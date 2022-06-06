@@ -47,7 +47,7 @@ def read_flips_file(file_path: str) -> List[Tuple[int, int]]:
                     raise RuntimeError(f'File {file_path} line {lno + 1}: Expected only integer indicies! "{line}"') from e
 
                 if len(parts) != 2:
-                    raise RuntimeError(f'File {file_path} line {lno + 1}: Expected only 2 indicies, but recieved {len(parts)}! "{line}"')
+                    raise RuntimeError(f'File {file_path} line {lno + 1}: Expected exactly 2 indicies, but recieved {len(parts)}! "{line}"')
 
                 flips.append(tuple(parts[:2]))
 
