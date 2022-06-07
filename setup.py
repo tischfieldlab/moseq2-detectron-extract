@@ -27,6 +27,7 @@ setup(
         'bottleneck',
         'click',
         'click-option-group',
+        'elasticdeform',
         'FyeldGenerator',
         'h5py',
         'imageio',
