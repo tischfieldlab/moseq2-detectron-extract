@@ -10,7 +10,7 @@ from detectron2.engine.defaults import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
 from moseq2_detectron_extract.io.util import ensure_dir
 from moseq2_detectron_extract.model.augmentations import (
-    Albumentations, RandomFieldNoiseAugmentation, ScaleAugmentation)
+    Albumentations, RandomFieldNoiseAugmentation, ScaleAugmentation, ParticleNoiseAugmentation)
 from moseq2_detectron_extract.model.hooks import LossEvalHook, MemoryUsageHook
 from moseq2_detectron_extract.model.mapper import MoseqDatasetMapper
 
@@ -33,7 +33,8 @@ class Trainer(DefaultTrainer):
             RandomContrast(0.8, 1.2),
             Albumentations(GaussNoise()),
             # DoughnutNoiseAugmentation(),
-            RandomFieldNoiseAugmentation(mu=10, std_limit=(10.0, 20.0), power=(2.0, 3.0))
+            RandomFieldNoiseAugmentation(mu=10, std_limit=(10.0, 20.0), power=(2.0, 3.0)),
+            ParticleNoiseAugmentation()
         ]
         mapper = MoseqDatasetMapper(cfg, is_train=True, augmentations=augs)
         return build_detection_train_loader(cfg, mapper=mapper)
