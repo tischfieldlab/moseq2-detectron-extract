@@ -36,12 +36,12 @@ class Trainer(DefaultTrainer):
             RandomFieldNoiseAugmentation(mu=10, std_limit=(10.0, 20.0), power=(2.0, 3.0)),
             ParticleNoiseAugmentation()
         ]
-        mapper = MoseqDatasetMapper(cfg, is_train=True, augmentations=augs)
+        mapper = MoseqDatasetMapper(cfg, is_train=True, augmentations=augs, use_instance_mask=True, use_keypoint=True, recompute_boxes=True)
         return build_detection_train_loader(cfg, mapper=mapper)
 
     @classmethod
     def build_test_loader(cls, cfg: CfgNode, dataset_name: str):
-        mapper = MoseqDatasetMapper(cfg, is_train=False, augmentations=[])
+        mapper = MoseqDatasetMapper(cfg, is_train=False, augmentations=[], use_instance_mask=True, use_keypoint=True, recompute_boxes=False)
         return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
 
     @classmethod
