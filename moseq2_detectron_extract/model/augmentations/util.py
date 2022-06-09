@@ -2,6 +2,7 @@ import inspect
 import pprint
 from typing import Any, List, Tuple, Union
 
+import numpy as np
 from albumentations.core.transforms_interface import BasicTransform
 from detectron2.data.transforms import Augmentation, NoOpTransform, Transform
 
@@ -53,6 +54,42 @@ def create_circular_mask(height: int, width: int, center: Tuple[int, int]=None, 
 
     mask = dist_from_center <= radius
     return mask
+
+
+def create_doughnut_mask(height: int, width: int, center: Tuple[int, int]=None, radius: int=None, thickness: int=None):
+    ''' Generate a mask of size `height` and `width` with a positive doughnut shape with `radius` and position `center`
+
+    Parameters:
+    height (int): height of the generated mask
+    width (int): width of the generated mask
+    center (Tuple[int, int]): center of the circular positive region. If `None`, the circle is centered in the generated mask
+    radius (int): radius of the circular positive region. If `None`, the circle has the largest radius which allows the circle to fit inside the generated mask
+    thickness (int): thickness of the dougnut. If `None` half the radius will be used
+
+    Returns:
+    np.ndarray: mask of size `height` and `width`, containing a doughnut shaped positive region centered on `center` and with radius `radius` and thickness `thickness`
+    '''
+
+    if center is None:
+        # use the middle of the image
+        center = (int(width/2), int(height/2))
+
+    if radius is None:
+        # use the smallest distance between the center and image walls
+        radius = min(center[0], center[1], width-center[0], height-center[1])
+
+    if thickness is None:
+        # use half the radius
+        thickness = radius // 2
+
+    Y, X = np.ogrid[:height, :width]
+    dist_from_center = np.sqrt((X - center[0])**2 + (Y - center[1])**2)
+
+    donut = np.logical_and(
+                dist_from_center <= radius,
+                dist_from_center >= radius - thickness
+            )
+    return donut
 
 
 class AlbumentationsTransform(Transform):

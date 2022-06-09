@@ -59,13 +59,7 @@ class DoughnutNoiseAugmentation(Augmentation):
             sigma = var ** 0.5
             random_state = np.random.RandomState(random.randint(0, 2 ** 32 - 1))
 
-            xx, yy = np.mgrid[:image.shape[0], :image.shape[1]]
-            r_outer = np.max(image.shape[:2]) // 2
-            r_inner = r_outer - thickness
-            cx = image.shape[0] // 2
-            cy = image.shape[1] // 2
-            circle = (xx - cx) ** 2 + (yy - cy) ** 2
-            donut = np.logical_and(circle < r_outer ** 2, circle > r_inner ** 2)
+            donut = create_doughnut_mask(*image.shape[:2], thickness=thickness)
 
             im = np.zeros(shape=image.shape[:2], dtype=float)
             im[donut] = random_state.normal(self.mu, sigma, size=np.count_nonzero(donut))
