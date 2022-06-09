@@ -1,13 +1,17 @@
 
 import random
+from typing import Tuple
 
 import numpy as np
+import numpy.typing as npt
+
 from detectron2.data.transforms import (Augmentation, BlendTransform,
                                         NoOpTransform)
+from moseq2_detectron_extract.model.augmentations.random_field_noise import RandomFieldNoiseAugmentation
 from moseq2_detectron_extract.model.augmentations.util import RangeType, create_doughnut_mask, validate_range_arg
 
 
-class DoughnutNoiseAugmentation(Augmentation):
+class DoughnutWhiteNoiseAugmentation(Augmentation):
     ''' Augmentation to add doughnut shaped noise to an image
     '''
     def __init__(self, mu: float=0, var_limit: RangeType=(10.0, 50.0), thickness: RangeType=(0, 30),
@@ -47,5 +51,62 @@ class DoughnutNoiseAugmentation(Augmentation):
             if len(image.shape) == 3:
                 im = np.expand_dims(im, -1)
             return BlendTransform(im, src_weight=1, dst_weight=1)
+        else:
+            return NoOpTransform()
+
+
+class DoughnutGRFNoiseAugmentation(RandomFieldNoiseAugmentation):
+    ''' Augmentation to add doughnut shaped noise to an image
+    '''
+
+    def __init__(self, mu: float=0.0, std_limit: RangeType=(75.0, 100.0), power: RangeType=(2.5, 4.0), thickness: RangeType=(0, 30),
+                 intensity_max: RangeType=(30., 100.0), always_apply: bool=False, p: float=0.5):
+        ''' Apply Doughnut-shaped random noise to an image
+
+        Parameters:
+        mu (float): mean of the noise
+        std_limit (RangeType): std dev range for noise. If std_limit is a single number, the range will be (0, std_limit).
+        power (RangeType): exponent for the power spectrum
+        thickness (RangeType): the thickness of the doughnut ring
+        always_apply (bool): True to always apply the transform
+        p (float): probability of applying the transform.
+        '''
+        super().__init__(mu=mu, std_limit=std_limit, power=power, always_apply=always_apply, p=p)
+        self._init(locals())
+
+        self.thickness = validate_range_arg('thickness', thickness)
+        self.intensity_max = validate_range_arg('intensity_max', intensity_max)
+
+
+    def generate_doughnut_noise(self, size: Tuple[int, int]=(512, 512), dtype: npt.DTypeLike='uint8'):
+        # select random values for some parameters
+        thickness = self._rand_range(*self.thickness)
+        intensity_max = int(self._rand_range(*self.intensity_max))
+
+        donut = create_doughnut_mask(*size, thickness=thickness)
+        field = self.get_field(size)
+        field[~donut] = 0
+        field = np.abs(field)
+
+        # rescale intensity
+        vmin = field.min()
+        vmax = field.max()
+        dmin = 0
+        dmax = intensity_max
+        field = ((field - vmin) * ((dmax - dmin) / (vmax - vmin)) + dmin).astype(dtype)
+
+        return field
+
+
+    def get_transform(self, image: np.ndarray=None):
+        ''' Get the transform
+        '''
+        if (self._rand_range() < self.p_application) or self.always_apply:
+            noise_field = self.generate_doughnut_noise(size=image.shape[:2], dtype=image.dtype)
+
+            if len(image.shape) == 3:
+                noise_field = np.expand_dims(noise_field, -1)
+
+            return BlendTransform(noise_field, src_weight=1, dst_weight=1)
         else:
             return NoOpTransform()
