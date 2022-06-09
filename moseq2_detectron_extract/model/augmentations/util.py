@@ -3,9 +3,7 @@ import pprint
 from typing import List, Tuple, Union
 
 from albumentations.core.transforms_interface import BasicTransform
-from detectron2.data.transforms import Augmentation, Transform
-import numpy as np
-
+from detectron2.data.transforms import Augmentation, NoOpTransform, Transform
 
 RangeType = Union[int, float, Tuple[int, int], Tuple[float, float], List[int], List[float]]
 
@@ -39,26 +37,38 @@ def create_circular_mask(height: int, width: int, center: Tuple[int, int]=None, 
 class AlbumentationsTransform(Transform):
     ''' Transform wrapper for transforms implemented by Albumentations
         see: https://github.com/facebookresearch/detectron2/pull/3306
+        and: https://github.com/facebookresearch/detectron2/issues/3054
     '''
-    def __init__(self, aug, param):
+    def __init__(self, aug: BasicTransform, params):
         self.aug = aug
-        self.param = param
+        self.params = params
 
-    def apply_image(self, img):
+    def apply_coords(self, coords: np.ndarray) -> np.ndarray:
         try:
-            td_params = self.aug.get_params_dependent_on_targets({"image": img})
-        except Exception: # pylint: disable=broad-except
-            td_params = {}
-        return self.aug.apply(img, **self.param, **td_params)
+            return self.aug.apply_to_keypoints(coords, **self.params)
+        except AttributeError:
+            return coords
 
-    def apply_coords(self, coords):
-        return coords
+    def apply_image(self, image):
+        return self.aug.apply(image, **self.params)
+
+    def apply_box(self, box: np.ndarray) -> np.ndarray:
+        try:
+            return np.array(self.aug.apply_to_bboxes(box.tolist(), **self.params))
+        except AttributeError:
+            return box
+
+    def apply_segmentation(self, segmentation: np.ndarray) -> np.ndarray:
+        try:
+            return self.aug.apply_to_mask(segmentation, **self.params)
+        except AttributeError:
+            return segmentation
 
 
 class Albumentations(Augmentation):
     '''
     Wrap an augmentor form the albumentations library: https://github.com/albu/albumentations.
-    Coordinate augmentation is not supported by the library.
+    Image, Bounding Box, keypoints, and Segmentation are supported.
     Example:
     .. code-block:: python
         import detectron2.data.transforms.external as  A
@@ -81,8 +91,22 @@ class Albumentations(Augmentation):
         super().__init__()
         self._aug = augmentor
 
-    def get_transform(self):
-        return AlbumentationsTransform(self._aug, self._aug.get_params())
+    def get_transform(self, image):
+        do = self._aug.always_apply or self._rand_range() < self._aug.p
+        if do:
+            params = self._prepare_param(image)
+            return AlbumentationsTransform(self._aug, params)
+        else:
+            return NoOpTransform()
+
+    def _prepare_param(self, image):
+        params = self._aug.get_params()
+        if self._aug.targets_as_params:
+            targets_as_params = {"image": image}
+            params_dependent_on_targets = self._aug.get_params_dependent_on_targets(targets_as_params)
+            params.update(params_dependent_on_targets)
+        params = self._aug.update_params(params, **{"image": image})
+        return params
 
     def __repr__(self):
         """
