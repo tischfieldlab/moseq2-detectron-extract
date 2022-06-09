@@ -1,4 +1,3 @@
-import random
 from typing import Tuple
 
 import elasticdeform
@@ -42,10 +41,10 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
 
     def generate_particle(self, size: Tuple[int, int]=(512, 512), dtype: npt.DTypeLike='uint8'):
         ''' Generate a particle '''
-        radius = random.uniform(self.radius[0], self.radius[1])
-        points = int(random.uniform(self.points[0], self.points[1]))
-        center = (int(random.uniform(0, size[0])), int(random.uniform(0, size[1])))
-        intensity_max = int(random.uniform(self.intensity_max[0], self.intensity_max[1]))
+        radius = self._rand_range(*self.radius)
+        points = int(self._rand_range(*self.points))
+        center = (int(self._rand_range(size[0])), int(self._rand_range(0, size[1])))
+        intensity_max = int(self._rand_range(*self.intensity_max))
 
         particle = self.get_field(size)
 
@@ -66,8 +65,8 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
     def get_transform(self, image: np.ndarray=None):
         ''' Get the transform
         '''
-        if (random.random() < self.p_application) or self.always_apply:
-            n_particles = int(random.uniform(self.n_particles[0], self.n_particles[1]))
+        if (self._rand_range() < self.p_application) or self.always_apply:
+            n_particles = int(self._rand_range(*self.n_particles))
             field = np.zeros(image.shape[:2], dtype=image.dtype)
             for _ in range(n_particles):
                 field += self.generate_particle(size=image.shape[:2], dtype=image.dtype)

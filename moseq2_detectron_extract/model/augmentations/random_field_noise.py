@@ -1,4 +1,3 @@
-import random
 from functools import partial
 
 import numpy as np
@@ -70,8 +69,8 @@ class RandomFieldNoiseAugmentation(Augmentation):
         ''' Get the gaussian random field
         '''
         # select random values for some parameters
-        dist = partial(self.distrib, mu=self.mu, scale=random.uniform(self.std_limit[0], self.std_limit[1]))
-        power = self.pkgen(random.uniform(self.power[0], self.power[1]))
+        dist = partial(self.distrib, mu=self.mu, scale=self._rand_range(*self.std_limit))
+        power = self.pkgen(self._rand_range(*self.power))
 
         field = generate_field(dist, power, shape)
 
@@ -86,7 +85,7 @@ class RandomFieldNoiseAugmentation(Augmentation):
     def get_transform(self, image: np.ndarray=None):
         ''' Get the transform
         '''
-        if (random.random() < self.p_application) or self.always_apply:
+        if (self._rand_range() < self.p_application) or self.always_apply:
             field = self.get_field(image.shape[:2])
             field = np.abs(field)
 

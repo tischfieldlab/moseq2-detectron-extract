@@ -53,10 +53,10 @@ class DoughnutNoiseAugmentation(Augmentation):
     def get_transform(self, image: np.ndarray=None):
         ''' Get the transform
         '''
-        if (random.random() < self.p_application) or self.always_apply:
+        if (self._rand_range() < self.p_application) or self.always_apply:
             # select random values for some parameters
-            thickness = random.uniform(self.thickness[0], self.thickness[1])
-            var = random.uniform(self.var_limit[0], self.var_limit[1])
+            thickness = self._rand_range(*self.thickness)
+            var = self._rand_range(*self.var_limit)
             sigma = var ** 0.5
             random_state = np.random.RandomState(random.randint(0, 2 ** 32 - 1))
 
