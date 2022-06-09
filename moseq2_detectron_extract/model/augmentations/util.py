@@ -1,11 +1,30 @@
 import inspect
 import pprint
-from typing import List, Tuple, Union
+from typing import Any, List, Tuple, Union
 
 from albumentations.core.transforms_interface import BasicTransform
 from detectron2.data.transforms import Augmentation, NoOpTransform, Transform
 
 RangeType = Union[int, float, Tuple[int, int], Tuple[float, float], List[int], List[float]]
+
+def validate_range_arg(param_name: str, value: Any) -> Union[Tuple[int, int], Tuple[float, float]]:
+    ''' validate user supplied range arguments
+    '''
+    if isinstance(value, (tuple, list)):
+        if value[0] < 0:
+            raise ValueError(f"Lower {param_name} should be non negative.")
+        if value[1] < 0:
+            raise ValueError(f"Upper {param_name} should be non negative.")
+        return value
+    elif isinstance(value, (int, float)):
+        if value < 0:
+            raise ValueError(f"{param_name} should be non negative.")
+
+        return (0, value)
+    else:
+        raise TypeError(
+            f"Expected {param_name} type to be one of (int, float, tuple[int|float], list[int|float]), got {type(value)}"
+        )
 
 
 def create_circular_mask(height: int, width: int, center: Tuple[int, int]=None, radius: int=None) -> np.ndarray:

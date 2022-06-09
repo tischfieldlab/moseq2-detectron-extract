@@ -7,7 +7,7 @@ from detectron2.data.transforms import BlendTransform, NoOpTransform
 from moseq2_detectron_extract.model.augmentations.random_field_noise import \
     RandomFieldNoiseAugmentation
 from moseq2_detectron_extract.model.augmentations.util import (
-    RangeType, create_circular_mask)
+    RangeType, create_circular_mask, validate_range_arg)
 
 
 class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
@@ -33,10 +33,10 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
         self._init(locals())
 
         # params for particle generation
-        self.radius = self.validate_range_arg('radius', radius)
-        self.points = self.validate_range_arg('points', points)
-        self.n_particles = self.validate_range_arg('n_particles', n_particles)
-        self.intensity_max = self.validate_range_arg('intensity_max', intensity_max)
+        self.radius = validate_range_arg('radius', radius)
+        self.points = validate_range_arg('points', points)
+        self.n_particles = validate_range_arg('n_particles', n_particles)
+        self.intensity_max = validate_range_arg('intensity_max', intensity_max)
 
 
     def generate_particle(self, size: Tuple[int, int]=(512, 512), dtype: npt.DTypeLike='uint8'):

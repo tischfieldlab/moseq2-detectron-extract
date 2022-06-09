@@ -4,7 +4,7 @@ import numpy as np
 from detectron2.data.transforms import (Augmentation, BlendTransform,
                                         NoOpTransform)
 from FyeldGenerator import generate_field
-from moseq2_detectron_extract.model.augmentations.util import RangeType
+from moseq2_detectron_extract.model.augmentations.util import RangeType, validate_range_arg
 
 
 class RandomFieldNoiseAugmentation(Augmentation):
@@ -25,31 +25,11 @@ class RandomFieldNoiseAugmentation(Augmentation):
         super().__init__()
         self._init(locals())
         self.mu = mu
-        self.std_limit = self.validate_range_arg('std_limit', std_limit)
-        self.power = self.validate_range_arg('power', power)
-        self.weight = weight
+        self.std_limit = validate_range_arg('std_limit', std_limit)
+        self.power = validate_range_arg('power', power)
         self.always_apply = always_apply
         self.p_application = p
         self.eps = np.finfo(np.float64).eps
-
-    def validate_range_arg(self, param_name: str, value):
-        ''' validate user supplied range arguments
-        '''
-        if isinstance(value, (tuple, list)):
-            if value[0] < 0:
-                raise ValueError(f"Lower {param_name} should be non negative.")
-            if value[1] < 0:
-                raise ValueError(f"Upper {param_name} should be non negative.")
-            return value
-        elif isinstance(value, (int, float)):
-            if value < 0:
-                raise ValueError(f"{param_name} should be non negative.")
-
-            return (0, value)
-        else:
-            raise TypeError(
-                f"Expected {param_name} type to be one of (int, float, tuple[int|float], list[int|float]), got {type(value)}"
-            )
 
     def pkgen(self, n):
         ''' Helper that generates power-law power spectrum

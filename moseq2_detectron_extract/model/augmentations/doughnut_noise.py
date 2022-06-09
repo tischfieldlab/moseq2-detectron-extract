@@ -4,7 +4,7 @@ import random
 import numpy as np
 from detectron2.data.transforms import (Augmentation, BlendTransform,
                                         NoOpTransform)
-from moseq2_detectron_extract.model.augmentations.util import RangeType
+from moseq2_detectron_extract.model.augmentations.util import RangeType, create_doughnut_mask, validate_range_arg
 
 
 class DoughnutNoiseAugmentation(Augmentation):
@@ -25,9 +25,8 @@ class DoughnutNoiseAugmentation(Augmentation):
         super().__init__()
         self._init(locals())
         self.mu = mu
-        self.thickness = self.validate_range_arg('thickness', thickness)
-        self.var_limit = self.validate_range_arg('var_limit', var_limit)
-        self.weight = weight
+        self.thickness = validate_range_arg('thickness', thickness)
+        self.var_limit = validate_range_arg('var_limit', var_limit)
         self.always_apply = always_apply
         self.p_application = p
 
