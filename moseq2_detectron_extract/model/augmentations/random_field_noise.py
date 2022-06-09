@@ -10,15 +10,13 @@ from moseq2_detectron_extract.model.augmentations.util import RangeType, validat
 class RandomFieldNoiseAugmentation(Augmentation):
     ''' Augmentation to apply Gaussian Random Field type noise to an image
     '''
-    def __init__(self, mu: float=0, std_limit: RangeType=(10.0, 50.0), power: RangeType=(1.0, 3.0), weight: float=0.5,
-                 always_apply: bool=False, p: float=0.5):
+    def __init__(self, mu: float=0, std_limit: RangeType=(10.0, 50.0), power: RangeType=(1.0, 3.0), always_apply: bool=False, p: float=0.5):
         ''' Apply Gaussian Random Field type noise to an image
 
         Parameters:
         mu (float): mean of the noise
         std_limit (RangeType): std dev range for noise. If std_limit is a single number, the range will be (0, std_limit).
         power (RangeType): exponent for the power spectrum
-        weight (float): Weight of the underlying blend transformation
         always_apply (bool): True to always apply the transform
         p (float): probability of applying the transform.
         '''

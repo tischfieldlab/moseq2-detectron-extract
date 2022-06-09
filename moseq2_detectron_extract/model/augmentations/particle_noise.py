@@ -14,7 +14,7 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
     ''' Augmentation policy for generating particle noise
     '''
     def __init__(self, mu: float=0.0, std_limit: RangeType=(75.0, 100.0), power: RangeType=(2.5, 4.0), radius: RangeType=(3, 20),
-                 points: RangeType=(3, 20), n_particles: RangeType=(1,4), intensity_max: RangeType=(30., 100.0), weight: float=1.0,
+                 points: RangeType=(3, 20), n_particles: RangeType=(1,4), intensity_max: RangeType=(30., 100.0),
                  always_apply: bool=False, p: float=0.5):
         ''' Apply Gaussian Random Field type noise to an image
 
@@ -25,11 +25,10 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
         radius (RangeType): radius of the produced particles (prior to elastic deformation)
         points (RangeType): number of points to use during elastic deformation
         intensity_max (RangeType): rescale the intensity of generate particles to be less than this value
-        weight (float): Weight of the underlying blend transformation
         always_apply (bool): True to always apply the transform
         p (float): probability of applying the transform.
         '''
-        super().__init__(mu=mu, std_limit=std_limit, power=power, weight=weight, always_apply=always_apply, p=p)
+        super().__init__(mu=mu, std_limit=std_limit, power=power, always_apply=always_apply, p=p)
         self._init(locals())
 
         # params for particle generation
