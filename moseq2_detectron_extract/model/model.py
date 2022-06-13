@@ -26,15 +26,15 @@ class Trainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg: CfgNode):
         augs = [
+            RandomRotation([0, 360], expand=True, sample_style='range'),
             ScaleAugmentation(0.5, 1.2, 250, 250),
             FixedSizeCrop((250, 250), pad=True, pad_value=0),
-            RandomRotation([0, 360], expand=True, sample_style='range'),
             RandomBrightness(0.8, 1.2),
             RandomContrast(0.8, 1.2),
             Albumentations(GaussNoise()),
             # DoughnutNoiseAugmentation(),
-            RandomFieldNoiseAugmentation(mu=10, std_limit=(10.0, 20.0), power=(2.0, 3.0)),
-            ParticleNoiseAugmentation()
+            RandomFieldNoiseAugmentation(p=0.75),
+            ParticleNoiseAugmentation(p=0.75)
         ]
         mapper = MoseqDatasetMapper(cfg, is_train=True, augmentations=augs)
         return build_detection_train_loader(cfg, mapper=mapper)
