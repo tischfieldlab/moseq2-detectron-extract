@@ -59,7 +59,7 @@ class DoughnutGRFNoiseAugmentation(RandomFieldNoiseAugmentation):
     ''' Augmentation to add doughnut shaped noise to an image
     '''
 
-    def __init__(self, mu: float=0.0, std_limit: RangeType=(75.0, 100.0), power: RangeType=(2.5, 4.0), thickness: RangeType=(0, 30),
+    def __init__(self, mu: float=0.0, std_limit: RangeType=(75.0, 100.0), power: RangeType=(1.5, 2.5), thickness: RangeType=(0, 30),
                  intensity_max: RangeType=(30., 100.0), always_apply: bool=False, p: float=0.5):
         ''' Apply Doughnut-shaped random noise to an image
 
@@ -68,14 +68,14 @@ class DoughnutGRFNoiseAugmentation(RandomFieldNoiseAugmentation):
         std_limit (RangeType): std dev range for noise. If std_limit is a single number, the range will be (0, std_limit).
         power (RangeType): exponent for the power spectrum
         thickness (RangeType): the thickness of the doughnut ring
+        intensity_max (RangeType): rescale the intensity of generate particles to be less than this value
         always_apply (bool): True to always apply the transform
         p (float): probability of applying the transform.
         '''
-        super().__init__(mu=mu, std_limit=std_limit, power=power, always_apply=always_apply, p=p)
+        super().__init__(mu=mu, std_limit=std_limit, power=power, intensity_max=intensity_max, always_apply=always_apply, p=p)
         self._init(locals())
 
         self.thickness = validate_range_arg('thickness', thickness)
-        self.intensity_max = validate_range_arg('intensity_max', intensity_max)
 
 
     def generate_doughnut_noise(self, size: Tuple[int, int]=(512, 512), dtype: npt.DTypeLike='uint8'):
@@ -89,11 +89,7 @@ class DoughnutGRFNoiseAugmentation(RandomFieldNoiseAugmentation):
         field = np.abs(field)
 
         # rescale intensity
-        vmin = field.min()
-        vmax = field.max()
-        dmin = 0
-        dmax = intensity_max
-        field = ((field - vmin) * ((dmax - dmin) / (vmax - vmin)) + dmin).astype(dtype)
+        self.rescale_intensity(field, vmax=intensity_max)
 
         return field
 

@@ -4,6 +4,7 @@ import elasticdeform
 import numpy as np
 import numpy.typing as npt
 from detectron2.data.transforms import BlendTransform, NoOpTransform
+from moseq2_detectron_extract.model.augmentations.occlude_transform import MaxBlendTransform
 from moseq2_detectron_extract.model.augmentations.random_field_noise import \
     RandomFieldNoiseAugmentation
 from moseq2_detectron_extract.model.augmentations.util import (
@@ -14,7 +15,7 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
     ''' Augmentation policy for generating particle noise
     '''
     def __init__(self, mu: float=0.0, std_limit: RangeType=(75.0, 100.0), power: RangeType=(2.5, 4.0), radius: RangeType=(3, 20),
-                 points: RangeType=(3, 20), n_particles: RangeType=(1,4), intensity_max: RangeType=(30., 100.0),
+                 points: RangeType=(3, 20), n_particles: RangeType=(1,4), intensity_max: RangeType=(30., 250.0),
                  always_apply: bool=False, p: float=0.5):
         ''' Apply Gaussian Random Field type noise to an image
 
@@ -28,14 +29,13 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
         always_apply (bool): True to always apply the transform
         p (float): probability of applying the transform.
         '''
-        super().__init__(mu=mu, std_limit=std_limit, power=power, always_apply=always_apply, p=p)
+        super().__init__(mu=mu, std_limit=std_limit, power=power, intensity_max=intensity_max, always_apply=always_apply, p=p)
         self._init(locals())
 
         # params for particle generation
         self.radius = validate_range_arg('radius', radius)
         self.points = validate_range_arg('points', points)
         self.n_particles = validate_range_arg('n_particles', n_particles)
-        self.intensity_max = validate_range_arg('intensity_max', intensity_max)
 
 
     def generate_particle(self, size: Tuple[int, int]=(512, 512), dtype: npt.DTypeLike='uint8'):
@@ -43,7 +43,6 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
         radius = self._rand_range(*self.radius)
         points = int(self._rand_range(*self.points))
         center = (int(self._rand_range(size[0])), int(self._rand_range(0, size[1])))
-        intensity_max = int(self._rand_range(*self.intensity_max))
 
         particle = self.get_field(size)
 
@@ -52,12 +51,9 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
         particle = elasticdeform.deform_random_grid(particle, sigma=radius // 2, points=points)
         particle = np.abs(particle)
 
-        # rescale intensity
-        vmin = particle.min()
-        vmax = particle.max()
-        dmin = 0
-        dmax = intensity_max
-        particle = ((particle - vmin) * ((dmax - dmin) / (vmax - vmin)) + dmin).astype(dtype)
+        particle = np.abs(particle)
+        particle = self.rescale_intensity(particle, vmin=0, vmax=int(self._rand_range(*self.intensity_max)))
+        particle = particle.astype(dtype)
 
         return particle
 
@@ -73,6 +69,6 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
             if len(image.shape) == 3:
                 field = np.expand_dims(field, -1)
 
-            return BlendTransform(src_image=field, src_weight=1, dst_weight=1)
+            return MaxBlendTransform(src_image=field)
         else:
             return NoOpTransform()
