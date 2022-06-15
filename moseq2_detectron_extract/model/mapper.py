@@ -6,11 +6,13 @@ import numpy as np
 import torch
 from detectron2.data.dataset_mapper import DatasetMapper
 from moseq2_detectron_extract.io.image import read_image
+from moseq2_detectron_extract.proc.proc import colorize_video
 
 
 class MoseqDatasetMapper(DatasetMapper):
     ''' Custom dataset mapper for moseq data
     '''
+
 
     def __call__(self, dataset_dict: dict):
         '''
@@ -23,44 +25,32 @@ class MoseqDatasetMapper(DatasetMapper):
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
 
         # USER: Write your own image loading if it's not from a file
-        scale_factor = dataset_dict["rescale_intensity"] if "rescale_intensity" in dataset_dict else None
-        image = read_image(dataset_dict["file_name"], scale_factor=scale_factor, dtype='uint8')
-        image = image[:,:,0,None] # grayscale, first channel only, but keep the dimention
+        image = read_image(dataset_dict["file_name"], dtype='uint8')
+        # image = image[:,:,0] # grayscale, first channel only, but keep the dimention
+        
         utils.check_image_size(dataset_dict, image)
 
-        # USER: Remove if you don't do semantic/panoptic segmentation.
-        if "sem_seg_file_name" in dataset_dict:
-            sem_seg_gt = utils.read_image(dataset_dict.pop("sem_seg_file_name"), "L").squeeze(2)
-        else:
-            sem_seg_gt = None
 
-        aug_input = T.AugInput(image, sem_seg=sem_seg_gt)
-        if "rotate" in dataset_dict:
-            rotate = T.RandomRotation([dataset_dict['rotate']], expand=False, sample_style="choice")
-            transforms = T.AugmentationList(self.augmentations.augs + [rotate])(aug_input)
-        else:
-            transforms = self.augmentations(aug_input)
-        image, sem_seg_gt = aug_input.image, aug_input.sem_seg
+        aug_input = T.AugInput(image)
+        transforms = self.augmentations(aug_input)
+        image = aug_input.image
 
         if len(image.shape) == 2:
             # seems the augmentations can cause the last axis to drop
             # when only a single channel. Lets pop the data into a third dimention!
             image = image[:,:,None]
 
+        #print(image.shape)
+        image = np.expand_dims(image[:, :, 0], axis=0)
+        #print(image.shape)
+        image = colorize_video(image)[0]
+        #print(image.shape)
+
         image_shape = image.shape[:2]  # h, w
         # Pytorch's dataloader is efficient on torch.Tensor due to shared-memory,
         # but not efficient on large generic data structures due to the use of pickle & mp.Queue.
         # Therefore it's important to use torch.Tensor.
         dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
-        if sem_seg_gt is not None:
-            dataset_dict["sem_seg"] = torch.as_tensor(sem_seg_gt.astype("long"))
-
-        # USER: Remove if you don't use pre-computed proposals.
-        # Most users would not need this feature.
-        if self.proposal_topk is not None:
-            utils.transform_proposals(
-                dataset_dict, image_shape, transforms, proposal_topk=self.proposal_topk
-            )
 
         if not self.is_train:
             # USER: Modify this if you want to keep them for some reason.
