@@ -115,13 +115,13 @@ def add_dataset_cfg(cfg: CfgNode, train_dset_name: str="moseq_train", test_dset_
         0.026, # TailTip
     ]
 
-    if recompute_pixel_stats:
-        px_mean, px_stdev = get_dataset_statistics(DatasetCatalog.get(train_dset_name))
-        cfg.MODEL.PIXEL_MEAN = [float(pm) for pm in px_mean]
-        cfg.MODEL.PIXEL_STD = [float(ps) for ps in px_stdev]
-    else:
-        # use premeasured
-        cfg.MODEL.PIXEL_MEAN = [1.8554014629469981]
-        cfg.MODEL.PIXEL_STD = [6.392353752797691]
+    # if recompute_pixel_stats:
+    #     px_mean, px_stdev = get_dataset_statistics(DatasetCatalog.get(train_dset_name))
+    #     cfg.MODEL.PIXEL_MEAN = [float(pm) for pm in px_mean]
+    #     cfg.MODEL.PIXEL_STD = [float(ps) for ps in px_stdev]
+    # else:
+    #     # use premeasured
+    #     cfg.MODEL.PIXEL_MEAN = [1.8554014629469981]
+    #     cfg.MODEL.PIXEL_STD = [6.392353752797691]
 
     return cfg
