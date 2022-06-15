@@ -58,5 +58,5 @@ class ScaleAugmentation(Augmentation):
         ])
 
     def get_transform(self, image: np.ndarray) -> Transform:
-        random_scale = np.random.uniform(self.min_scale, self.max_scale)
+        random_scale = self._rand_range(self.min_scale, self.max_scale)
         return self._get_resize(image, random_scale)
