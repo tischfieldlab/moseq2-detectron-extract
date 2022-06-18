@@ -27,7 +27,6 @@ class MoseqDatasetMapper(DatasetMapper):
         # USER: Write your own image loading if it's not from a file
         image = read_image(dataset_dict["file_name"], dtype='uint8')
         # image = image[:,:,0] # grayscale, first channel only, but keep the dimention
-        
         utils.check_image_size(dataset_dict, image)
 
 
@@ -43,7 +42,7 @@ class MoseqDatasetMapper(DatasetMapper):
         #print(image.shape)
         image = np.expand_dims(image[:, :, 0], axis=0)
         #print(image.shape)
-        image = colorize_video(image)[0]
+        image = colorize_video(image, vmin=0, vmax=255, cmap='jet')[0]
         #print(image.shape)
 
         image_shape = image.shape[:2]  # h, w

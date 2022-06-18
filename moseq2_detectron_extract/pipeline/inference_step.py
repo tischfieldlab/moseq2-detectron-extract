@@ -9,7 +9,7 @@ from moseq2_detectron_extract.model.config import get_base_config
 from moseq2_detectron_extract.model.util import (get_last_checkpoint,
                                                  get_specific_checkpoint)
 from moseq2_detectron_extract.pipeline.pipeline_step import ProcessPipelineStep
-from moseq2_detectron_extract.proc.proc import scale_raw_frames
+from moseq2_detectron_extract.proc.proc import colorize_video, scale_raw_frames
 
 # pylint: disable=attribute-defined-outside-init
 
@@ -21,6 +21,7 @@ class InferenceStep(ProcessPipelineStep):
         warnings.filterwarnings("ignore", category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
 
         self.scale = partial(scale_raw_frames, vmin=self.config['min_height'], vmax=self.config['max_height'])
+        self.colorize = partial(colorize_video, vmin=self.config['min_height'], vmax=self.config['max_height'], cmap='jet')
 
         self.write_message('Loading model....')
         model_path: str = self.config['model']
@@ -62,7 +63,8 @@ class InferenceStep(ProcessPipelineStep):
         # Do the inference
         outputs = []
         for i in batches:
-            frames = self.scale(raw_frames[i:i+batch_size,:,:,None])
+            #frames = self.scale(raw_frames[i:i+batch_size,:,:,None])
+            frames = self.colorize(raw_frames[i:i+batch_size, :, :])
             pred = self.predictor(frames)
             outputs.extend([{ 'instances': p['instances'].to('cpu') } for p in pred])
             self.update_progress(frames.shape[0])
