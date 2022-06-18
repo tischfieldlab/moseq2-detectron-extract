@@ -224,6 +224,9 @@ def scale_raw_frames(frames: np.ndarray, vmin: float, vmax: float, dtype: npt.DT
         dmin = np.finfo(dtype).min
         dmax = np.finfo(dtype).max
 
+    frames[frames < vmin] = vmin
+    frames[frames > vmax] = vmax
+
     return ((frames - vmin) * ((dmax - dmin) / (vmax - vmin)) + dmin).astype(dtype)
 
 
