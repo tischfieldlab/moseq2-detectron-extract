@@ -1,9 +1,13 @@
 import time
 from functools import partial
+
+import numpy as np
 from moseq2_detectron_extract.io.session import Session, Stream
 from moseq2_detectron_extract.pipeline.pipeline_step import ProducerPipelineStep
+from moseq2_detectron_extract.proc.fast_hha_encode import HHAEncoder
 
 from moseq2_detectron_extract.proc.proc import prep_raw_frames
+from moseq2_detectron_extract.proc.roi import apply_roi
 
 # pylint: disable=attribute-defined-outside-init
 
@@ -24,14 +28,19 @@ class ProduceFramesStep(ProducerPipelineStep):
         self.iterator = self.session.iterate(self.config['chunk_size'], self.config['chunk_overlap'])
         self.iterator.attach_filter(stream=Stream.DEPTH, filterer=self.prep_frames)
         self.enumerator = enumerate(self.iterator)
+        self.encoder = HHAEncoder(apply_roi(self.session.bground_im[None,:,:], self.session.roi)[0])
 
     def process(self, data) -> None:
         try:
             i, (frame_idxs, raw_frames) = next(self.enumerator)
             offset = self.config['chunk_overlap'] if i > 0 else 0
+            hha = np.zeros((*raw_frames.shape, 3), dtype=np.uint8)
+            for j in range(raw_frames.shape[0]):
+                hha[i] = self.encoder.encode(raw_frames[j])
             data = {
                 'batch': i,
                 'chunk': raw_frames,
+                'hha_chunk': hha,
                 'frame_idxs': frame_idxs,
                 'offset': offset
             }

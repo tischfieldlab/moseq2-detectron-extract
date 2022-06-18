@@ -55,14 +55,16 @@ class InferenceStep(ProcessPipelineStep):
 
     def process(self, data):
 
-        raw_frames = data['chunk']
+        #raw_frames = data['chunk']
+        raw_frames = data['hha_chunk']
         batch_size = min(self.config['batch_size'], raw_frames.shape[0])
         batches = range(0, raw_frames.shape[0], batch_size)
 
         # Do the inference
         outputs = []
         for i in batches:
-            frames = self.scale(raw_frames[i:i+batch_size,:,:,None])
+            #frames = self.scale(raw_frames[i:i+batch_size,:,:,None])
+            frames = raw_frames[i:i+batch_size,:,:,None]
             pred = self.predictor(frames)
             outputs.extend([{ 'instances': p['instances'].to('cpu') } for p in pred])
             self.update_progress(frames.shape[0])
