@@ -48,7 +48,8 @@ def get_base_config() -> CfgNode:
     cfg.DATALOADER.NUM_WORKERS = 4
 
     # Some information about the input images
-    cfg.INPUT.FORMAT = "L"
+    #cfg.INPUT.FORMAT = "L"
+    cfg.INPUT.FORMAT = "BGR"
     cfg.INPUT.MIN_SIZE_TRAIN = (240,)
     cfg.INPUT.MAX_SIZE_TRAIN = 250
     cfg.INPUT.MIN_SIZE_TEST = 240
@@ -68,7 +69,7 @@ def get_base_config() -> CfgNode:
     cfg.SOLVER.AMP.ENABLED = True
 
 
-    cfg.OUTPUT_DIR = './models/output_4'
+    cfg.OUTPUT_DIR = './models'
     cfg.VIS_PERIOD = 100
     cfg.CUDNN_BENCHMARK = True
 

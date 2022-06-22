@@ -4,6 +4,9 @@ import os
 from functools import partial
 import warnings
 
+from matplotlib import pyplot as plt
+from numpy import block
+
 from moseq2_detectron_extract.model import Predictor
 from moseq2_detectron_extract.model.config import get_base_config
 from moseq2_detectron_extract.model.util import (get_last_checkpoint,
@@ -64,7 +67,7 @@ class InferenceStep(ProcessPipelineStep):
         outputs = []
         for i in batches:
             #frames = self.scale(raw_frames[i:i+batch_size,:,:,None])
-            frames = raw_frames[i:i+batch_size,:,:,None]
+            frames = raw_frames[i:i+batch_size,:,:,:]
             pred = self.predictor(frames)
             outputs.extend([{ 'instances': p['instances'].to('cpu') } for p in pred])
             self.update_progress(frames.shape[0])

@@ -360,7 +360,9 @@ def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, 
                             replace_data_path,
                             mask_format=cfg.INPUT.MASK_FORMAT,
                             register=True,
+                            split=False,
                             show_info=True)
+    cfg.DATASETS.TEST = ('moseq_train',)
 
     logging.info('Exporting model....')
     export_model(cfg, model_dir, run_eval=eval_model)

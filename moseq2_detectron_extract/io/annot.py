@@ -81,7 +81,7 @@ default_keypoint_connection_rules: KeypointConnections = [
 
 
 def load_annotations_helper(annot_files: Iterable[str], replace_paths: Iterable[Tuple[str, str]]=None,
-                            mask_format: str='polygon', register: bool=True, show_info: bool=True):
+                            mask_format: str='polygon', register: bool=True, split: bool=True, show_info: bool=True):
     ''' Utility "do-it-all function for the common task of loading and processing annotations
 
     Parameters:
@@ -89,6 +89,7 @@ def load_annotations_helper(annot_files: Iterable[str], replace_paths: Iterable[
     replace_paths (Iterable[Tuple[str, str]]): search and replacement pairs for fixing filename paths in annotations
     mask_format (str): format that masks should be loaded as
     register (bool): if True, register loaded annotations with detectron2 dataset register
+    split (bool): if True, and `register` is True, split the dataset into train/test
     show_info (bool): if True, show information about the dataset
 
     Returns:
@@ -112,7 +113,7 @@ def load_annotations_helper(annot_files: Iterable[str], replace_paths: Iterable[
         show_dataset_info(annotations)
 
     if register:
-        register_datasets(annotations, default_keypoint_names)
+        register_datasets(annotations, split=split)
 
     return annotations
 
@@ -258,7 +259,7 @@ def register_datasets(annotations: MutableSequence[DataItem], split: bool=True) 
             DatasetCatalog.register(f"moseq_{dset_type}", split_annot[i])
             register_dataset_metadata(f"moseq_{dset_type}")
     else:
-        DatasetCatalog.register("moseq_train", annotations)
+        DatasetCatalog.register("moseq_train", lambda: annotations)
         register_dataset_metadata("moseq_train")
 
 
