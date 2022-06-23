@@ -20,7 +20,7 @@ class Predictor:
         self.model = model
         self.is_torchscript = is_torchscript
         self.exit_stack = ExitStack()
-        self.exit_stack .enter_context(torch.no_grad())
+        self.exit_stack.enter_context(torch.no_grad())
 
     @property
     def device(self):

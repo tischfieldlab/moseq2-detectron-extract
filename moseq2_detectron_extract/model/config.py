@@ -38,11 +38,11 @@ def get_base_config() -> CfgNode:
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
 
     # faster, and good enough for this toy dataset (default: 512)
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256
+    #cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256
 
-    cfg.MODEL.ROI_BOX_HEAD.SMOOTH_L1_BETA = 0.5
+    #cfg.MODEL.ROI_BOX_HEAD.SMOOTH_L1_BETA = 0.5
 
-    cfg.MODEL.RPN.POST_NMS_TOPK_TRAIN = 1500
+    #cfg.MODEL.RPN.POST_NMS_TOPK_TRAIN = 1500
 
     # 4 workers for the data loader
     cfg.DATALOADER.NUM_WORKERS = 4
@@ -80,10 +80,10 @@ def get_base_config() -> CfgNode:
 
     # emperically tuned parameters
     cfg.MODEL.BACKBONE.FREEZE_AT = 0
-    cfg.MODEL.FPN.NORM = 'GN'
-    cfg.MODEL.FPN.FUSE_TYPE = 'avg'
-    cfg.MODEL.ROI_KEYPOINT_HEAD.POOLER_RESOLUTION = 7
-    cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION = 0.5
+    #cfg.MODEL.FPN.NORM = 'GN'
+    #cfg.MODEL.FPN.FUSE_TYPE = 'avg'
+    #cfg.MODEL.ROI_KEYPOINT_HEAD.POOLER_RESOLUTION = 7
+    #cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION = 0.5
 
     return cfg
 
