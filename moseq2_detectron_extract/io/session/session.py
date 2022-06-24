@@ -2,15 +2,15 @@ import logging
 import os
 import tarfile
 from enum import Enum
-from typing import IO, Callable, Iterable, List, Sequence, Tuple, TypedDict, Union
+from typing import IO, Iterable, List, Sequence, Tuple, Union
 
 import numpy as np
 from moseq2_detectron_extract.io.image import read_tiff_image, write_image
+from moseq2_detectron_extract.io.session.iterators import SessionFramesIndexer, SessionFramesIterator, SessionFramesSampler
 from moseq2_detectron_extract.io.util import (ProgressFileObject,
-                                              gen_batch_sequence,
                                               load_metadata, load_timestamps)
 from moseq2_detectron_extract.io.video import get_movie_info, load_movie_data
-from moseq2_detectron_extract.proc.roi import get_bground_im_file, get_roi
+from moseq2_detectron_extract.proc.roi import apply_roi, get_bground_im_file, get_roi
 from moseq2_detectron_extract.proc.util import select_strel
 
 
@@ -39,6 +39,7 @@ class Session(object):
         self._first_frame: Union[None, np.ndarray] = None
         self._bground_im: Union[None, np.ndarray] = None
         self._roi: Union[None, np.ndarray] = None
+        self._roi_bground_im: Union[None, np.ndarray] = None
 
     def __init_session(self, input_file: str):
         self.dirname = os.path.dirname(input_file)
@@ -248,6 +249,7 @@ class Session(object):
         self._first_frame = first_frame
         self._bground_im = bground_im
         self._roi = roi
+        self._roi_bground_im = apply_roi(np.copy(bground_im)[None, :, :], roi)[0]
 
         return first_frame, bground_im, roi, true_depth
 
@@ -285,6 +287,15 @@ class Session(object):
         '''
         if self._roi is not None:
             return self._roi
+        raise RuntimeError('You must first call Session.find_roi() to use this property!')
+
+
+    @property
+    def roi_bground_im(self) -> np.ndarray:
+        ''' Gets the background image with the ROI applied for this session. Necessitates calling Session.find_roi() first
+        '''
+        if self._roi_bground_im is not None:
+            return self._roi_bground_im
         raise RuntimeError('You must first call Session.find_roi() to use this property!')
 
 
@@ -327,197 +338,3 @@ class Session(object):
 
     def __repr__(self) -> str:
         return f'{self.__class__.__name__}("{self.session_path}", frame_trim=({self.frame_trim[0]}, {self.frame_trim[1]}))'
-
-
-class _FilterItem(TypedDict):
-    filter: Callable[[np.ndarray], np.ndarray]
-    streams: Iterable[Stream]
-
-class SessionFramesIterator(object):
-    ''' Iterator that iterates over Session frames in order
-    '''
-    def __init__(self, session: Session, chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
-        ''' Iterator that iterates over Session frames
-
-        Parameters:
-            session (Session): Session over which this iterator should iterate
-            chunk_size (int): each iteration should produce `chunk_size` frames
-            chunk_overlap (int): iterations should overlap but this number of frames
-        '''
-        self.session = session
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-        self.batches = list(self.generate_samples())
-        self.current = 0
-        self.streams = list(set(streams))
-        self.filters: List[_FilterItem] = []
-        self.ts_map = TimestampMapper()
-        for stream in streams:
-            self.ts_map.add_timestamps(stream, session.load_timestamps(stream))
-
-    @property
-    def nframes(self) -> int:
-        ''' Get the total number of frames this iterator will produce (batches * chunk_size)
-        '''
-        return sum([len(batch) for batch in self.batches])
-
-    @property
-    def nbatches(self) -> int:
-        ''' Get the total number of batches produced by this iterator
-            Same as calling len(iterator)
-        '''
-        return len(self.batches)
-
-
-
-    def attach_filter(self, stream: Union[Stream, Iterable[Stream]], filterer: Callable[[np.ndarray], np.ndarray]):
-        ''' Attach a filter to this frames iterator. A filter is simply a callable accepting a
-            numpy array of data, performs some operation upon it, and returns and output array.
-            Multiple filters can be attached, and they are called in the order in which they were
-            attachd. You may also specify the streams upon which the filter should apply.
-
-        Parameters:
-        filterer (Callable[[np.ndarray], np.ndarray]): callable used to filter data
-        streams (Iterable[Stream]): streams for which this filter should apply
-        '''
-        streams: List[Stream]
-        if isinstance(stream, Stream):
-            streams = [stream]
-        else:
-            streams = list(stream)
-
-        self.filters.append({
-            'filter': filterer,
-            'streams': streams
-        })
-
-    def __apply_filters(self, data: np.ndarray, stream: Stream) -> np.ndarray:
-        for filt in self.filters:
-            if stream in filt['streams']:
-                data = filt['filter'](data)
-        return data
-
-    def generate_samples(self):
-        ''' Generate the sequence of batches of frames indices
-
-        Default is to linear read. Override this if you want to change behaviour
-
-        Returns
-        list<(range|list<int>)>
-        '''
-        return gen_batch_sequence(self.session.nframes, self.chunk_size, self.chunk_overlap, self.session.first_frame_idx)
-
-
-    def __len__(self):
-        return len(self.batches)
-
-
-    def __iter__(self):
-        return self
-
-
-    def __next__(self):
-        if self.current >= len(self):
-            raise StopIteration
-        else:
-            frame_range = self.batches[self.current]
-        self.current += 1
-
-        frame_idxs = list(frame_range)
-
-        out_data = [frame_idxs]
-
-        for stream in self.streams:
-            if stream == Stream.DEPTH:
-                data = load_movie_data(self.session.depth_file, frame_idxs, tar_object=self.session.tar)
-            elif stream == Stream.RGB:
-                # rgb_idxs = self.ts_map.map_index(Stream.RGB, Stream.Depth, frame_idxs)
-                data = load_movie_data(self.session.rgb_file, frame_idxs, pixel_format='rgb24', tar_object=self.session.tar)
-            else:
-                raise ValueError(f'Unsupported stream "{stream}"')
-
-            data = self.__apply_filters(data, stream)
-            out_data.append(data)
-
-        return tuple(out_data)
-
-
-class SessionFramesSampler(SessionFramesIterator):
-    ''' Iterator which randomly samples `num_frames` indices
-    '''
-    def __init__(self, session: Session, num_samples: int, chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
-        self.num_samples = int(num_samples)
-        super().__init__(session, chunk_size, chunk_overlap, streams)
-
-
-    def generate_samples(self):
-        '''Generate a sequence with overlap
-        '''
-        offset = self.session.first_frame_idx
-        seq = range(offset, self.session.nframes)
-        seq = np.random.choice(seq, self.num_samples, replace=False)
-        for i in range(offset, len(seq)-self.chunk_overlap, self.chunk_size-self.chunk_overlap):
-            yield seq[i:i+self.chunk_size]
-
-
-class SessionFramesIndexer(SessionFramesIterator):
-    ''' Iterator which iterates from a fixed sequence of indices
-    '''
-    def __init__(self, session: Session, frame_idxs: Sequence[int], chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
-        self.frame_idxs = frame_idxs
-        super().__init__(session, chunk_size, chunk_overlap, streams)
-
-
-    def generate_samples(self):
-        '''Generate a sequence with overlap
-        '''
-        offset = self.session.first_frame_idx
-        for i in range(offset, len(self.frame_idxs)-self.chunk_overlap, self.chunk_size-self.chunk_overlap):
-            yield self.frame_idxs[i:i+self.chunk_size]
-
-
-
-class TimestampMapper():
-    ''' Map timestamps between various data streams
-    '''
-    def __init__(self) -> None:
-        self.timestamp_map: dict = {}
-
-
-    def add_timestamps(self, name: str, timestamps: np.ndarray):
-        ''' Add timestampes to this mapper
-        '''
-        self.timestamp_map[name] = np.asarray(timestamps)
-
-
-    def map_index(self, query: str, reference: str, index: Union[int, Sequence[int]]):
-        ''' map a query index to a timestamp
-        '''
-        if isinstance(index, int):
-            index = [index]
-
-        out = []
-        for idx in index:
-            reference_time = self.timestamp_map[reference][idx]
-            out.append(self.nearest(self.timestamp_map[query], reference_time))
-        return out
-
-
-    def map_time(self, query: str, reference: str, index: Union[int, Sequence[int]]):
-        ''' map a query timestamp to an index
-        '''
-        if isinstance(index, int):
-            index = [index]
-
-        out = []
-        for idx in index:
-            reference_time = self.timestamp_map[reference][idx]
-            query_idx = self.nearest(self.timestamp_map[query], reference_time)
-            out.append(self.timestamp_map[query][query_idx])
-        return out
-
-
-    def nearest(self, data, value):
-        ''' get a value from data which is nearest to value
-        '''
-        return np.abs(data - value).argmin()
