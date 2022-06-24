@@ -10,19 +10,25 @@ from moseq2_detectron_extract.proc.roi import plane_ransac
 class HHAEncoder(object):
     ''' Class providing HHA encoding of depth images
     '''
-    def __init__(self, background: np.ndarray, gradient_filter: Optional[int]=None, gradient_step: Optional[int]=3, fix_rotation: bool=False):
+    def __init__(self, background: np.ndarray, gradient_filter: Optional[int]=None, gradient_step: Optional[int]=3, fix_rotation: bool=False, mode='mda'):
         ''' Initialize this encoder
 
         Parameters:
         background (np.ndarray): background image
         gradient_filter (int): If not None, apply sobel filtering to gradient for normal calculation, should be an odd integer
         fix_rotation (bool): If true, attempt to correct normals relative to axis
+        mode (str): mode of the encoded images, specify the channels (and order) you would like the encoded image to have. select from:
+            'm' - magnitude of the normal in the third axis
+            'a' - angle of the normal relative to the second axis
+            'd' - depth
+            'h' - height
         '''
         self.background = background
         self.gradient_filter = gradient_filter
         self.gradient_step = gradient_step
         self.fix_rotation = fix_rotation
         self.R = None
+        self.mode = mode
 
     def rotation_matrix_from_vectors(self, vec1, vec2):
         ''' Find the rotation matrix that aligns vec1 to vec2
@@ -101,28 +107,28 @@ class HHAEncoder(object):
         '''
         return self.background - frame
 
-    def encode(self, frame: np.ndarray, mode='mda') -> np.ndarray:
+    def encode(self, frame: np.ndarray) -> np.ndarray:
         ''' Encode a depth frame
         '''
-        if 'm' in mode or 'a' in mode:
+        if 'm' in self.mode or 'a' in self.mode:
             angles, magnitudes = self.compute_normals(frame)
 
         data = []
-        for m in mode:
-            if m == 'm': # magnitudes
+        for mode in self.mode:
+            if mode == 'm': # magnitudes
                 magnitudes = scale_raw_frames(magnitudes, 0, 1)
                 data.append(magnitudes)
 
-            elif m == 'a': # angles
+            elif mode == 'a': # angles
                 angles = scale_raw_frames(angles, 0, 180)
                 data.append(angles)
 
-            elif m == 'd': # depth
+            elif mode == 'd': # depth
                 depth = self.compute_height(-frame)
                 depth = scale_raw_frames(depth, 0, 100)
                 data.append(depth)
 
-            elif m == 'h': #height
+            elif mode == 'h': #height
                 height = self.compute_hdisparity(frame)
                 height = scale_raw_frames(height, 0, 100)
                 data.append(height)
