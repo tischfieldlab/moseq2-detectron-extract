@@ -1,18 +1,27 @@
+from concurrent.futures import ProcessPoolExecutor
+import itertools
 import random
 from typing import Iterable, Sequence, Tuple
 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
-import skimage
-from detectron2.data.catalog import MetadataCatalog
+import skimage.transform
+from detectron2.data.catalog import MetadataCatalog, Metadata
 from detectron2.data.detection_utils import convert_image_to_rgb
 from detectron2.structures import Instances
 from detectron2.utils.visualizer import ColorMode, Visualizer
 from skimage.util.dtype import img_as_bool
+from tqdm import tqdm
+import h5py
 
 from moseq2_detectron_extract.io.annot import KeypointConnections, DataItem
 from moseq2_detectron_extract.io.image import read_image
+from moseq2_detectron_extract.io.util import gen_batch_sequence
+from moseq2_detectron_extract.io.video import PreviewVideoWriter
+from moseq2_detectron_extract.proc.keypoints import load_keypoint_data_from_h5
+from moseq2_detectron_extract.proc.proc import colorize_video, reverse_crop_and_rotate_frame, scale_raw_frames, stack_videos
+from moseq2_detectron_extract.proc.roi import get_bbox_size, get_roi_contour
 
 
 def visualize_annotations(annotations: Iterable[DataItem], metadata, num: int=5):
@@ -126,8 +135,43 @@ def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names:
     ''' Draw `instances` on `frame`
 
     Parameters:
-    frame (np.ndarray): grayscale frame to draw instances on, of shape (height, width)
+    frame (np.ndarray): grayscale frame to draw instances on, of shape (height, width, 1)
     instances (Instances): Detectron2 instances
+    keypoint_names (Sequence[str]): names of the keypoints to draw
+    keypoint_connection_rules (KeypointConnections): rules describing how keypoints are connected
+    keypoint_colors (Sequence[Tuple[int, int, int]]): Colors to use for drawing keypoints, each a tuple of ints in the range 0-255 specifying color in RGB
+    roi_contour (Iterable[np.ndarray]): Contours of the roi, found via `cv2.findContours()`
+    scale (float): size scale factor to scale frame and instances by
+    radius (int): radius of the circles drawn for keypoints
+    thickness (int): thickness of the lines drawn for keypoint connections
+
+    Returns:
+    np.ndarray, frame with instances drawn
+    '''
+    return draw_instances_data_fast(frame,
+                                    instances.pred_keypoints.cpu().numpy(),
+                                    instances.pred_masks.cpu().numpy(),
+                                    instances.pred_boxes.tensor.to('cpu').numpy(),
+                                    keypoint_names=keypoint_names,
+                                    keypoint_connection_rules=keypoint_connection_rules,
+                                    keypoint_colors=keypoint_colors,
+                                    roi_contour=roi_contour,
+                                    scale=scale,
+                                    radius=radius,
+                                    thickness=thickness)
+
+
+
+def draw_instances_data_fast(frame: np.ndarray, keypoints: np.ndarray, masks: np.ndarray, boxes: np.ndarray, keypoint_names: Sequence[str],
+    keypoint_connection_rules: KeypointConnections, keypoint_colors: Sequence[Tuple[int, int, int]],
+    roi_contour: Iterable[np.ndarray]=None, scale: float=2.0, radius: int=3, thickness: int=2) -> np.ndarray:
+    ''' Draw `instances` on `frame`
+
+    Parameters:
+    frame (np.ndarray): grayscale frame to draw instances on, of shape (height, width, 1)
+    keypoints (np.ndarray): keypoint data, of shape (ninstances, nkeypoints, 3 [x, y, s])
+    masks (np.ndarray): mask data, of shape (ninstances, height, width)
+    boxes (np.ndarray): bounding box data, of shape (ninstances, 4)
     keypoint_names (Sequence[str]): names of the keypoints to draw
     keypoint_connection_rules (KeypointConnections): rules describing how keypoints are connected
     keypoint_colors (Sequence[Tuple[int, int, int]]): Colors to use for drawing keypoints, each a tuple of ints in the range 0-255 specifying color in RGB
@@ -146,19 +190,28 @@ def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names:
 
     im = cv2.resize(im, (int(im.shape[1] * scale), int(im.shape[0] * scale)))
 
-    for i in range(len(instances)):
+    if masks is None:
+        masks = []
+
+    if keypoints is None:
+        keypoints = []
+
+    if boxes is None:
+        boxes = []
+
+    for mask, kpts, box in itertools.zip_longest(masks, keypoints, boxes, fillvalue=None):
         # draw mask
-        mask = instances.pred_masks[i].cpu().numpy()
-        im = draw_mask(im, mask)
+        if mask is not None:
+            im = draw_mask(im, mask)
 
         # draw box
-        box = instances.pred_boxes.tensor.to('cpu').numpy()[i]
-        box *= scale
-        im = cv2.rectangle(im, tuple(box[0:2].astype(int)), tuple(box[2:4].astype(int)), (0,255,0))
+        if box is not None:
+            box *= scale
+            im = cv2.rectangle(im, tuple(box[0:2].astype(int)), tuple(box[2:4].astype(int)), (0,255,0))
 
         # keypoints
-        kpts = instances.pred_keypoints[i, :, :].cpu().numpy()
-        im = draw_keypoints(im, kpts, keypoint_names, keypoint_connection_rules, keypoint_colors, scale=scale, radius=radius, thickness=thickness)
+        if kpts is not None:
+            im = draw_keypoints(im, kpts, keypoint_names, keypoint_connection_rules, keypoint_colors, scale=scale, radius=radius, thickness=thickness)
 
     return im
 
@@ -169,7 +222,7 @@ def draw_mask(im: np.ndarray, mask: np.ndarray, alpha: float=0.3, color: Tuple[i
     Parameters:
     im (np.ndarray): image to draw mask upon, of shape (height, width, 3)
     mask (np.ndarray): mask to draw
-    alpha (float): alpha leve to use when drawing mask. 0=Transparent, 1=Opaque
+    alpha (float): alpha level to use when drawing mask. 0=Transparent, 1=Opaque
     color (Tuple[int, int, int]): color to draw the mask, tuple of ints in range [0-255] in RGB order
 
     Returns:
@@ -233,3 +286,230 @@ def draw_contour(im: np.ndarray, contour: Iterable[np.ndarray], color: Tuple[int
     np.ndarray, image with contours drawn
     '''
     return cv2.drawContours(im, contour, -1, color, thickness, cv2.LINE_AA)
+
+
+def preview_video_from_h5(h5_file: str, dest: str, dset_name: str = 'moseq', vmin=0, vmax=100, fps=30, batch_size=10, start=None, stop=None):
+    with(h5py.File(h5_file, 'r')) as h5:
+        total_frames = h5['/frames'].shape[0]
+        roi = h5['/metadata/extraction/roi'][()]
+        roi_size = get_bbox_size(roi)
+
+        dset_meta = MetadataCatalog.get(dset_name)
+        clean_frames_view = CleanedFramesView(scale=1.5, dset_meta=dset_meta)
+        rot_kpt_view = RotatedKeypointsView(scale=1.5, dset_meta=dset_meta)
+        arena_view = ArenaView(roi, scale=2.0, vmin=vmin, vmax=vmax, dset_meta=dset_meta)
+
+        video_pipe = PreviewVideoWriter(dest, fps=fps, vmin=vmin, vmax=vmax)
+
+        batches = list(gen_batch_sequence(h5['/frames'].shape[0], batch_size, 0, 0))
+
+        with tqdm(desc='Generating Frames', total=total_frames) as pbar:
+            for batch, batch_idxs in enumerate(batches):
+                batch_idxs = list(batch_idxs)
+
+                # load data from h5 file
+                masks = h5['/frames_mask'][batch_idxs, ...]
+                clean_frames = h5['/frames'][batch_idxs, ...]
+                centroids = np.stack((
+                    h5['/scalars/centroid_x_px'][batch_idxs],
+                    h5['/scalars/centroid_y_px'][batch_idxs]
+                ), axis=1)
+                angles = h5['/scalars/angle'][batch_idxs]
+                rot_keypoints = load_keypoint_data_from_h5(h5, coord_system='rotated', units='px')[batch_idxs]
+                ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')[batch_idxs]
+
+                # rotate frames and masks to origional coordinates and angles
+                raw_frames = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='uint8')
+                raw_masks = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='bool')
+                for i in range(clean_frames.shape[0]):
+                    raw_frames[i, ...] = reverse_crop_and_rotate_frame(clean_frames[i], roi_size, centroids[i], angles[i])
+                    raw_masks[i, ...] = reverse_crop_and_rotate_frame(masks[i].astype('uint8'), roi_size, centroids[i], angles[i]).astype('bool')
+
+                # generate movie chunks with instance data
+                field_video = arena_view.generate_frames(raw_frames=raw_frames, keypoints=ref_keypoints[:, None, ...], masks=raw_masks[:,None,...], boxes=None)
+                rc_kpts_video = rot_kpt_view.generate_frames(masks=masks, keypoints=rot_keypoints)
+                cln_depth_video = clean_frames_view.generate_frames(clean_frames=clean_frames, masks=masks)
+
+                # stack and write frames
+                proc_stack = stack_videos([cln_depth_video, rc_kpts_video], orientation='vertical')
+                out_video_combined = stack_videos([proc_stack, field_video], orientation='horizontal')
+                video_pipe.write_frames(batch_idxs, out_video_combined)
+                pbar.update(n=len(batch_idxs))
+
+        video_pipe.close()
+
+
+class H5ResultPreviewVideoGenerator():
+    def __init__(self, h5_file: str, dest: str, dset_name: str = 'moseq', vmin=0, vmax=100, fps=30, batch_size=500, start:int=None, stop:int=None) -> None:
+        self.h5_file = h5_file
+        self.dest = dest
+        self.dset_name = dset_name
+        self.vmin = vmin
+        self.vmax = vmax
+        self.fps = fps
+        self.batch_size = batch_size
+        self.start = start
+        self.stop = stop
+
+        self.frames_path = '/frames'
+        self.mask_path = '/frames_mask'
+        self.roi_path = '/metadata/extraction/roi'
+        self.centroid_x_path = '/scalars/centroid_x_px'
+        self.centroid_y_path = '/scalars/centroid_y_px'
+        self.angle_path = '/scalars/angle'
+
+        self._initialize()
+
+    def _initialize(self):
+        with(h5py.File(self.h5_file, 'r')) as h5:
+            if self.start is None:
+                self.start = 0
+
+            if self.stop is None:
+                self.stop = h5[self.frames_path].shape[0]
+
+            self.total_frames = h5[self.frames_path][self.start:self.stop].shape[0]
+            self.batches = list(gen_batch_sequence(self.total_frames, self.batch_size, 0, self.start))
+
+            self.roi = h5[self.roi_path][()]
+            self.roi_size = get_bbox_size(self.roi)
+
+            dset_meta = MetadataCatalog.get(self.dset_name)
+            self.clean_frames_view = CleanedFramesView(scale=1.5, dset_meta=dset_meta)
+            self.rot_kpt_view = RotatedKeypointsView(scale=1.5, dset_meta=dset_meta)
+            self.arena_view = ArenaView(self.roi, scale=2.0, vmin=self.vmin, vmax=self.vmax, dset_meta=dset_meta)
+
+    def _read_chunk(self, batch_idxs):
+        batch_idxs = list(batch_idxs)
+
+        with(h5py.File(self.h5_file, 'r')) as h5:
+            # load data from h5 file
+            masks = h5[self.mask_path][batch_idxs, ...]
+            clean_frames = h5[self.frames_path][batch_idxs, ...]
+            centroids = np.stack((
+                h5[self.centroid_x_path][batch_idxs],
+                h5[self.centroid_y_path][batch_idxs]
+            ), axis=1)
+            angles = h5[self.angle_path][batch_idxs]
+            rot_keypoints = load_keypoint_data_from_h5(h5, coord_system='rotated', units='px')[batch_idxs]
+            ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')[batch_idxs]
+
+            # rotate frames and masks to origional coordinates and angles
+            raw_frames = np.zeros((clean_frames.shape[0], self.roi_size[1], self.roi_size[0]), dtype='uint8')
+            raw_masks = np.zeros((clean_frames.shape[0], self.roi_size[1], self.roi_size[0]), dtype='bool')
+            for i in range(clean_frames.shape[0]):
+                raw_frames[i, ...] = reverse_crop_and_rotate_frame(clean_frames[i], self.roi_size, centroids[i], angles[i])
+                raw_masks[i, ...] = reverse_crop_and_rotate_frame(masks[i].astype('uint8'), self.roi_size, centroids[i], angles[i]).astype('bool')
+        return {
+            'batch_idxs': batch_idxs,
+            'masks': masks,
+            'clean_frames': clean_frames,
+            'centroids': centroids,
+            'angles': angles,
+            'rot_keypoints': rot_keypoints,
+            'ref_keypoints': ref_keypoints[:, None, ...],
+            'raw_frames': raw_frames,
+            'raw_masks': raw_masks[:,None,...]
+        }
+
+    def _write_chunk(self, video_pipe, data):
+        # generate movie chunks with instance data
+        field_video = self.arena_view.generate_frames(raw_frames=data['raw_frames'], keypoints=data['ref_keypoints'], masks=data['raw_masks'], boxes=None)
+        rc_kpts_video = self.rot_kpt_view.generate_frames(masks=data['masks'], keypoints=data['rot_keypoints'])
+        cln_depth_video = self.clean_frames_view.generate_frames(clean_frames=data['clean_frames'], masks=data['masks'])
+
+        # stack and write frames
+        proc_stack = stack_videos([cln_depth_video, rc_kpts_video], orientation='vertical')
+        out_video_combined = stack_videos([proc_stack, field_video], orientation='horizontal')
+        video_pipe.write_frames(data['batch_idxs'], out_video_combined)
+
+    def generate(self):
+        video_pipe = PreviewVideoWriter(self.dest, fps=self.fps, vmin=self.vmin, vmax=self.vmax)
+        pool = ProcessPoolExecutor(max_workers=2)
+
+        with tqdm(desc='Generating Frames', total=self.total_frames) as pbar:
+
+            for data in pool.map(self._read_chunk, self.batches):
+                #print(data['batch_idxs'])
+                self._write_chunk(video_pipe, data)
+                pbar.update(n=len(data['batch_idxs']))
+
+        # TODO: We really should be calling shutdown, but this seems to reliably cause an exception
+        # should be fixed on python=3.9, but for now lets just pretend we shutdown
+        # see: https://github.com/python/cpython/issues/83285
+        # pool.shutdown(wait=True)
+
+        video_pipe.close()
+
+
+
+
+
+
+class BaseView():
+    def __init__(self, scale: float = 1, dset_meta: Metadata = None) -> None:
+        self.is_setup = False
+        self.scale = scale
+        self.dset_meta = dset_meta
+
+
+class ArenaView(BaseView):
+    def __init__(self, roi: np.ndarray, scale: float = 2, vmin: float = 0.0, vmax: float = 100.0, dset_meta: Metadata = None) -> None:
+        super().__init__(scale=scale, dset_meta=dset_meta)
+        self.vmin = vmin
+        self.vmax = vmax
+        self.contour = get_roi_contour(roi, crop=True)
+
+
+    def generate_frames(self, raw_frames: np.ndarray, keypoints: np.ndarray, masks: np.ndarray, boxes: np.ndarray):
+        rfs = raw_frames.shape
+        video = np.zeros((rfs[0], int(rfs[1]*self.scale), int(rfs[2]*self.scale), 3), dtype='uint8')
+
+        for i in range(rfs[0]):
+            scaled_frames = scale_raw_frames(raw_frames[i,:,:,None].copy(), vmin=self.vmin, vmax=self.vmax)
+            video[i,:,:,:] = draw_instances_data_fast(
+                                scaled_frames,
+                                keypoints=keypoints[i] if keypoints is not None else None,
+                                masks=masks[i] if masks is not None else None,
+                                boxes=boxes[i] if boxes is not None else None,
+                                roi_contour=self.contour,
+                                scale=self.scale,
+                                keypoint_names=self.dset_meta.keypoint_names,
+                                keypoint_connection_rules=self.dset_meta.keypoint_connection_rules,
+                                keypoint_colors=self.dset_meta.keypoint_colors,
+                                thickness=1)
+        return video
+
+
+
+class RotatedKeypointsView(BaseView):
+    def __init__(self, scale: float = 1.5, dset_meta: Metadata = None) -> None:
+        super().__init__(scale=scale, dset_meta=dset_meta)
+
+    def generate_frames(self, masks: np.ndarray, keypoints: np.ndarray) -> np.ndarray:
+        width = int(masks.shape[2] * 1.5)
+        height = int(masks.shape[1] * 1.5)
+        video = np.zeros((masks.shape[0], height, width, 3), dtype='uint8')
+        origin = (int(width // 2), int(height // 2))
+
+        for i in range(masks.shape[0]):
+            video[i,:,:,:] = draw_mask(video[i,:,:,:], masks[i], alpha=0.7)
+            video[i,:,:,:] = draw_keypoints(video[i,:,:,:],
+                                            keypoints[i],
+                                            origin=origin,
+                                            keypoint_names=self.dset_meta.keypoint_names,
+                                            keypoint_connection_rules=self.dset_meta.keypoint_connection_rules,
+                                            keypoint_colors=self.dset_meta.keypoint_colors,
+                                            scale=1.5,
+                                            radius=3,
+                                            thickness=1)
+
+        return video
+
+class CleanedFramesView(BaseView):
+    def __init__(self, scale: float = 1.5, dset_meta: Metadata = None) -> None:
+        super().__init__(scale=scale, dset_meta=dset_meta)
+
+    def generate_frames(self, clean_frames: np.ndarray, masks: np.ndarray) -> np.ndarray:
+        cleaned_depth = colorize_video(scale_depth_frames(clean_frames * masks, scale=1.5))
+        return cleaned_depth

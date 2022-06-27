@@ -1,6 +1,7 @@
 import datetime
 import logging
 import os
+from pathlib import Path
 import shutil
 
 import click
@@ -16,8 +17,8 @@ from moseq2_detectron_extract.io.annot import (default_keypoint_names, load_anno
 from moseq2_detectron_extract.io.flips import flip_dataset, read_flips_file
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import (
-    attach_file_logger, click_monkey_patch_option_show_defaults,
-    enable_profiling, ensure_dir, setup_logging)
+    attach_file_logger, backup_existing_file, click_monkey_patch_option_show_defaults,
+    enable_profiling, ensure_dir, find_unused_file_path, setup_logging)
 from moseq2_detectron_extract.model import Evaluator, Trainer
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config,
@@ -31,6 +32,7 @@ from moseq2_detectron_extract.model.util import (get_available_device_info,
                                                  get_system_versions)
 from moseq2_detectron_extract.proc.util import check_completion_status
 from moseq2_detectron_extract.quality import find_outliers_h5
+from moseq2_detectron_extract.viz import H5ResultPreviewVideoGenerator, preview_video_from_h5
 
 # import warnings
 # warnings.filterwarnings('ignore', category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
@@ -383,7 +385,7 @@ def find_outliers(result_h5, window, threshold):
 
 @cli.command(name='system-info', short_help='Show relevant system information')
 def system_info():
-    ''' Show relevant system information
+    ''' Show relevant system information, including framework versions and system devices
     '''
     setup_logging()
     logging.info('')
@@ -403,34 +405,53 @@ def system_info():
 
 
 
-@cli.command(name='manual-flip', help='Apply flips from manual annotations')
+@cli.command(name='manual-flip', short_help='Apply manually annotated flips to an extraction result')
 @click.argument('h5_file', nargs=1, type=click.Path(exists=True))
 @click.argument('flips_file', nargs=1, type=click.Path(exists=True))
-@click.option('--visualize', is_flag=True, help='Visualize the newly flipped dataset')
-@click.option('--dest', type=click.Path(), help='Directory to save visualization results')
-def manual_flip(h5_file, flips_file, visualize, dest):
-    ''' Manually flip frames according to flips file '''
+@click.option('--visualize/--no-visualize', default=True, help='Visualize the newly flipped dataset')
+def manual_flip(h5_file, flips_file, visualize):
+    ''' Manually flip frames according to flips file
+    
+    Will backup the h5 file before applying manual flip corrections. This process will correct depth
+    frames, masks, angles, and keypoints by rotating these properties 180 degrees from the existing angle.
+
+    By default, a movie visualization of the corrected data is generated. It attempts to emulate the video
+    produced by the `extract` command, but anything outside of the copped depth region cannot be reconstructed.
+    '''
     setup_logging()
+
+    h5_path = Path(h5_file)
+    assert h5_path.exists()
+
     # read flips file
     flips = read_flips_file(flips_file)
 
     # create backup of h5 file
-    shutil.copy(h5_file, h5_file+'.BAK')
+    backup_existing_file(h5_path)
 
-    #apply flips
-    flip_dataset(h5_file, flip_ranges=flips)
+    # apply flips
+    flip_dataset(h5_path, flip_ranges=flips)
 
-    # TODO: add visualization!
-    #if visualize:
-    #    ensure_dir(dest)
-    #    vdest = os.path.join(dest, os.path.basename(h5_file).replace('.h5', '.mp4'))
-    #    make_results_video(h5_file, vdest)
+    # if requested, visualize the dataset
+    if visualize:
+        register_dataset_metadata('moseq')
+        vdest = find_unused_file_path(h5_path.with_name(f'{h5_path.stem}.manual_fliped.mp4'))
+
+        H5ResultPreviewVideoGenerator(h5_file, vdest).generate()
+        # preview_video_from_h5(h5_file, vdest)
 
 
-@cli.command(name='verify-flips', help='Verify flip files')
+@cli.command(name='verify-flips', short_help='Verify flip files')
 @click.argument('flip_file', nargs=-1, type=click.Path(exists=True))
 def verify_flips(flip_file):
-    ''' Verify flip ranges in a flip file '''
+    ''' Verify flip ranges in a flip file
+
+        \b
+        Ensures files can be properly parsed and several
+        additional checks on the parsed ranges:
+        - checks that stop is less than start
+        - checks ranges for overlaps
+    '''
     setup_logging()
     logging.info(f'\nChecking {len(flip_file)} flip files for errors:\n\n')
     error_count = 0

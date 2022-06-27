@@ -1,19 +1,30 @@
-from datetime import datetime
 import itertools
 import sys
+from datetime import datetime
+from typing import List, Tuple
 
 import h5py
 import numpy as np
+from detectron2.data.catalog import MetadataCatalog
+from tqdm import tqdm
+from moseq2_detectron_extract.io.annot import register_dataset_metadata
+from moseq2_detectron_extract.io.util import find_unused_dataset_path, gen_batch_sequence
+from moseq2_detectron_extract.io.video import PreviewVideoWriter
+from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict, load_keypoint_data_from_h5, rotate_points, rotate_points_batch
+from moseq2_detectron_extract.proc.proc import reverse_crop_and_rotate_frame, stack_videos
+from moseq2_detectron_extract.proc.roi import get_bbox_size
+from moseq2_detectron_extract.viz import (ArenaView, CleanedFramesView,
+                                          RotatedKeypointsView)
 
 
-def read_flips_file(file_path):
+def read_flips_file(file_path: str) -> List[Tuple[int, int]]:
     ''' Read a file containing flip annotations and return a list of flips
 
     Parameters:
     file_path (string): path to the filps file to parse
 
     Returns:
-    ranges (list of list): list of flip ranges
+    ranges (List[Tuple[int, int]]): list of flip ranges
 
     '''
     flips = []
@@ -25,15 +36,20 @@ def read_flips_file(file_path):
                     # ignore comment lines
                     continue
 
+                if '#' in line:
+                    # ignore data after an inline comment
+                    comment_parts = line.split('#')
+                    line = comment_parts[0]
+
                 try:
                     parts = [int(i.strip()) for i in line.split('-')]
                 except ValueError as e:
                     raise RuntimeError(f'File {file_path} line {lno + 1}: Expected only integer indicies! "{line}"') from e
 
                 if len(parts) != 2:
-                    raise RuntimeError(f'File {file_path} line {lno + 1}: Expected only 2 indicies, but recieved {len(parts)}! "{line}"')
+                    raise RuntimeError(f'File {file_path} line {lno + 1}: Expected exactly 2 indicies, but recieved {len(parts)}! "{line}"')
 
-                flips.append(parts[:2])
+                flips.append(tuple(parts[:2]))
 
     try:
         verify_ranges(flips)
@@ -43,7 +59,7 @@ def read_flips_file(file_path):
     return flips
 
 
-def verify_ranges(ranges, vmin=0, vmax=sys.maxsize):
+def verify_ranges(ranges: List[Tuple[int, int]], vmin: int=0, vmax: int=sys.maxsize) -> bool:
     ''' Verify that ranges is within bounds and there are no overlapping intervals
 
     Raises `RuntimeError` if any violations are found, otherwise return `True`
@@ -66,7 +82,7 @@ def verify_ranges(ranges, vmin=0, vmax=sys.maxsize):
             errors.append(f'Range ({start}, {stop}) stop cannot be greater than {vmax}')
 
     for r1, r2 in itertools.combinations(ranges, 2):
-        if max(r1[0], r2[0]) <= min(r1[1], r2[1]):
+        if max(r1[0], r2[0]) < min(r1[1], r2[1]):
             errors.append(f'Range ({r1[0]}, {r1[1]}) overlaps with range ({r2[0]}, {r2[1]})')
 
     if len(errors) > 0:
@@ -75,8 +91,8 @@ def verify_ranges(ranges, vmin=0, vmax=sys.maxsize):
     return True
 
 
-def flip_dataset(h5_file, flip_mask=None, flip_ranges=None, frames_path='/frames', frames_mask_path='/frames_mask',
-                 angle_path='/scalars/angle', flips_path='/metadata/extraction/flips', flip_class=1):
+def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[Tuple[int, int]] = None, frames_path: str = '/frames', frames_mask_path: str = '/frames_mask',
+                 angle_path: str = '/scalars/angle', flips_path: str = '/metadata/extraction/flips', flip_class: int = 1):
     ''' Flip a dataset according to either `flip_mask` xor `flip_ranges`
 
     If `flip_ranges` is provided, it is converted to a `flip_mask` first. You cannot provide both `flip_mask` and `flip_ranges`,
@@ -93,8 +109,8 @@ def flip_dataset(h5_file, flip_mask=None, flip_ranges=None, frames_path='/frames
 
     Parameters:
         h5_file (string): Path to the h5 file to flip
-        flip_mask (ndarray): mask of indicies to flip
-        flip_ranges (list<list<int>>): list of frame ranges to flip
+        flip_mask (np.ndarray): mask of indicies to flip
+        flip_ranges (List[Tuple[int, int]]): list of frame ranges to flip
         frames_path (str): Path to the frames dataset within the h5 file
         frames_mask_path (str): Path to the frames_mask dataset within the h5 file
         angle_path (str): Path to the angle dataset within the h5 file
@@ -121,14 +137,7 @@ def flip_dataset(h5_file, flip_mask=None, flip_ranges=None, frames_path='/frames
             flip_mask = flip_mask == flip_class
 
         # find a path for flips that is not already in use
-        if flips_path in h5:
-            i = 1
-            while True:
-                new_flips_path = f'{flips_path}_{i}'
-                if new_flips_path not in h5:
-                    flips_path = new_flips_path
-                    break
-                i += 1
+        flips_path = find_unused_dataset_path(h5_file, flips_path)
 
         # create and set the flips dataset
         h5.create_dataset(flips_path, data=flip_mask, dtype='bool', compression='gzip')
@@ -136,11 +145,22 @@ def flip_dataset(h5_file, flip_mask=None, flip_ranges=None, frames_path='/frames
         h5[flips_path].attrs['description'] = f'Created by moseq2-detectron-extract, manual flips, on {datetime.now()}'
 
         # apply flips to the datasets
-        h5[frames_path][flip_mask, ...] = flip_horizontal(h5[frames_path][flip_mask, ...])
-        h5[frames_mask_path][flip_mask, ...] = flip_horizontal(h5[frames_mask_path][flip_mask, ...])
-        h5[angle_path][flip_mask] += np.pi
+        flip_locations = np.nonzero(flip_mask)
+        h5[frames_path][flip_locations] = flip_horizontal(h5[frames_path][flip_locations])
+        h5[frames_mask_path][flip_locations] = flip_horizontal(h5[frames_mask_path][flip_locations])
+        h5[angle_path][flip_locations] += 180
 
-        # TODO: flip also keypoints!
+        # Recompute keypoints
+        ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')
+        centroids = np.stack((
+            h5['/scalars/centroid_x_px'][()],
+            h5['/scalars/centroid_y_px'][()]
+        ), axis=1)
+        recomputed_keypoints = keypoints_to_dict(ref_keypoints, h5[frames_path][()], centroids, h5[angle_path][()], h5['/metadata/extraction/true_depth'][()])
+        # drop any z dimention keys, since they should not change, and the recomputation will be wrong!
+        recomputed_keypoints = {k: v for k, v in recomputed_keypoints.items() if '_z_' not in k}
+        for k, v in recomputed_keypoints.items():
+            h5[f'/keypoints/{k}'][...] = v
 
         h5.flush()
 

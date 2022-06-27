@@ -5,6 +5,7 @@ import io
 import json
 import logging
 import os
+import shutil
 import sys
 import traceback
 import warnings
@@ -185,7 +186,7 @@ def setup_logging(name: str=None, level: Union[str, int]=logging.INFO, add_defer
     Parameters:
     name (str|None): Name of the Logger instance to operate on
     level (str|int): Set logging level to this level
-    add_defered_file_handler (bool): If true, add a handler to buffer log recors in memory.
+    add_defered_file_handler (bool): If true, add a handler to buffer log records in memory.
         Use in combination with `attach_file_logger()` to later point these buffered records to a file
     '''
     logging.captureWarnings(True)
@@ -339,3 +340,68 @@ class ProgressFileObject(io.FileIO):
             self.progress.close()
         return super().close()
 #end class ProgressFileObject
+
+
+def backup_existing_file(origional_path: str) -> str:
+    ''' Backup a file, ensuring no filename clashes
+
+    Given a path, while that path exists, we append an incrementing suffix
+    until the path no longer exists on the file system. The file is then
+    copied to the new path. The new path is returned.
+
+    Parameters:
+    origional_path (str): name of the file that should be backed up
+
+    Returns
+    str - new file path
+    '''
+
+    counter = 0
+    new_path = origional_path
+    base, ext = os.path.splitext(origional_path)
+    while os.path.exists(new_path):
+        counter += 1
+        new_path = f'{base}.backup-{counter}{ext}'
+
+    shutil.copy2(origional_path, new_path)
+    return new_path
+
+
+def find_unused_file_path(path: str) -> str:
+    ''' Find an unused file path on the filesystem
+
+    Parameters:
+    path (str): path to a file to find an unused version of
+    '''
+    if not os.path.exists(path):
+        return path
+
+    name, ext = os.path.splitext(path)
+    i = 1
+    new_fname = f"{name}-{i}{ext}"
+    while os.path.exists(new_fname):
+        i += 1
+        new_fname = f"{name}-{i}{ext}"
+    return new_fname
+
+
+def find_unused_dataset_path(h5_file: str, path: str) -> str:
+    ''' Find an unused dataset path in an h5 file
+
+    Parameters:
+    h5_file (str): Path to an h5 file to interrogate
+    path (str): dataset path to find an unused name for
+
+    Returns:
+    potential name for a dataset which does not yet exist in `h5_file`
+    '''
+    new_path = path
+    with h5py.File(h5_file, mode='r') as h5:
+        if new_path in h5:
+            i = 1
+            while True:
+                new_path = f'{path}_{i}'
+                if new_path not in h5:
+                    break
+                i += 1
+    return new_path
