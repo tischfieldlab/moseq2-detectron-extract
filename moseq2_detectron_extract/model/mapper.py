@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from detectron2.data.dataset_mapper import DatasetMapper
 from moseq2_detectron_extract.io.image import read_image
-from moseq2_detectron_extract.proc.proc import colorize_video
 
 
 class MoseqDatasetMapper(DatasetMapper):
@@ -28,7 +27,7 @@ class MoseqDatasetMapper(DatasetMapper):
         file_name = str(dataset_dict["file_name"]).replace('_depth_', '_mda_')
         image = read_image(file_name, dtype='uint8')
         # image = image[:,:,0] # grayscale, first channel only, but keep the dimention
-        
+
         utils.check_image_size(dataset_dict, image)
 
 

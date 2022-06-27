@@ -1,18 +1,11 @@
-
-
 from functools import partial
-from typing import Callable, Iterable, TypedDict
 
 import numpy as np
 from moseq2_detectron_extract.proc.fast_hha_encode import HHAEncoder
 from moseq2_detectron_extract.proc.proc import prep_raw_frames
 
-from .session import Stream
 
 
-class _FilterItem(TypedDict):
-    filter: Callable[[np.ndarray], np.ndarray]
-    streams: Iterable[Stream]
 
 class CommonFilters():
     ''' Class containing several common methods for filtering moseq data

@@ -339,7 +339,7 @@ def dataset_info(annot_file, replace_data_path):
 @click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
 @click.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to compile model for.')
 @click.option('--eval-model', is_flag=True, help='Run COCO evaluation metrics on supplied annotations.')
-@click.option('--instance-threshold', default=0.05, type=click.FloatRange(min=0.0, max=1.0), help='Minimum score threshold to filter inference results')
+@click.option('--instance-threshold', default=0.0, type=click.FloatRange(min=0.0, max=1.0), help='Minimum score threshold to filter inference results')
 @click.option('--expected-instances', default=1, type=click.IntRange(min=1), help='Maximum number of instances expected in each frame')
 def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, eval_model, instance_threshold, expected_instances):
     ''' CLI entrypoint for compiling a model to torchscript '''

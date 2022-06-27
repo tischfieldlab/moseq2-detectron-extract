@@ -4,7 +4,7 @@ from albumentations.augmentations.transforms import GaussNoise
 from detectron2.config.config import CfgNode
 from detectron2.data import (build_detection_test_loader,
                              build_detection_train_loader)
-from detectron2.data.transforms import (FixedSizeCrop, RandomBrightness,
+from detectron2.data.transforms import (FixedSizeCrop, RandomBrightness, RandomSaturation, RandomLighting,
                                         RandomContrast, RandomRotation)
 from detectron2.engine.defaults import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
@@ -31,6 +31,8 @@ class Trainer(DefaultTrainer):
             FixedSizeCrop((250, 250), pad=True, pad_value=0),
             RandomBrightness(0.8, 1.2),
             RandomContrast(0.8, 1.2),
+            RandomSaturation(0.8, 1.2),
+            RandomLighting(1),
             Albumentations(GaussNoise()),
             # DoughnutNoiseAugmentation(),
             #RandomFieldNoiseAugmentation(p=0.75),

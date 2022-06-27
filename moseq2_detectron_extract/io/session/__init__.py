@@ -1,2 +1,2 @@
-from .session import Session, Stream
+from .session import Session, Stream, SessionFramesIterator
 from .filters import CommonFilters
