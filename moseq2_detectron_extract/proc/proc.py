@@ -325,8 +325,8 @@ def reverse_crop_and_rotate_frame(frame: np.ndarray, dest_size: Tuple[int, int],
     ''' Attempts to reverse the process of `crop_and_rotate_frame()`.
 
     Parameters:
-    frame (np.ndarray): Cropped and rotated frame to reverse crop/rotate process, of shape (x, y)
-    dest_size (Tuple[int, int]): size of the output image, (x, y)
+    frame (np.ndarray): Cropped and rotated frame to reverse crop/rotate process, of shape (y, x)
+    dest_size (Tuple[int, int]): size of the output image, (width, height)
     center (Tuple[float, float]): center coordinates in real space (not cropped/rotated), (x, y)
     angle (float): angle by which to rotate, in degrees
 
@@ -334,11 +334,11 @@ def reverse_crop_and_rotate_frame(frame: np.ndarray, dest_size: Tuple[int, int],
     np.ndarray: reverse copped and rotated frames
     '''
     if np.isnan(angle) or np.any(np.isnan(center)):
-        return np.zeros_like(frame, shape=dest_size) # pylint: disable=unexpected-keyword-arg
+        return np.zeros_like(frame, shape=(dest_size[1], dest_size[0])) # pylint: disable=unexpected-keyword-arg
 
     frame = frame.copy()
     src_shape = frame.shape
-    src_center = (src_shape[0] // 2, src_shape[1] // 2)
+    src_center = (src_shape[1] // 2, src_shape[0] // 2)
 
     rot_mat = cv2.getRotationMatrix2D(src_center, -angle, 1)
     frame = cv2.warpAffine(frame, rot_mat, (dest_size[0], dest_size[1]))
