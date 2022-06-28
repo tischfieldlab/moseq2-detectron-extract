@@ -261,7 +261,7 @@ def get_bbox_size(roi: np.ndarray) -> Tuple[int, int]:
     roi (np.ndarray): 2D mask representing region of interest
 
     Returns:
-    Tuple[int, int]: size of the masked region of the form (width, height) ((y_min, x_min), (y_max, x_max)).
+    Tuple[int, int]: size of the masked region of the form (width, height).
     If no elements of the roi contain non-zero values, `None` will be returned.
     '''
     bbox = get_bbox(roi)
