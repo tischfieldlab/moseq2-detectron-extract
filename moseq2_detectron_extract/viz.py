@@ -288,61 +288,63 @@ def draw_contour(im: np.ndarray, contour: Iterable[np.ndarray], color: Tuple[int
     return cv2.drawContours(im, contour, -1, color, thickness, cv2.LINE_AA)
 
 
-def preview_video_from_h5(h5_file: str, dest: str, dset_name: str = 'moseq', vmin=0, vmax=100, fps=30, batch_size=10, start=None, stop=None):
-    with(h5py.File(h5_file, 'r')) as h5:
-        total_frames = h5['/frames'].shape[0]
-        roi = h5['/metadata/extraction/roi'][()]
-        roi_size = get_bbox_size(roi)
+# def preview_video_from_h5(h5_file: str, dest: str, dset_name: str = 'moseq', vmin=0, vmax=100, fps=30, batch_size=10, start=None, stop=None):
+#     with(h5py.File(h5_file, 'r')) as h5:
+#         total_frames = h5['/frames'].shape[0]
+#         roi = h5['/metadata/extraction/roi'][()]
+#         roi_size = get_bbox_size(roi)
 
-        dset_meta = MetadataCatalog.get(dset_name)
-        clean_frames_view = CleanedFramesView(scale=1.5, dset_meta=dset_meta)
-        rot_kpt_view = RotatedKeypointsView(scale=1.5, dset_meta=dset_meta)
-        arena_view = ArenaView(roi, scale=2.0, vmin=vmin, vmax=vmax, dset_meta=dset_meta)
+#         dset_meta = MetadataCatalog.get(dset_name)
+#         clean_frames_view = CleanedFramesView(scale=1.5, dset_meta=dset_meta)
+#         rot_kpt_view = RotatedKeypointsView(scale=1.5, dset_meta=dset_meta)
+#         arena_view = ArenaView(roi, scale=2.0, vmin=vmin, vmax=vmax, dset_meta=dset_meta)
 
-        video_pipe = PreviewVideoWriter(dest, fps=fps, vmin=vmin, vmax=vmax)
+#         video_pipe = PreviewVideoWriter(dest, fps=fps, vmin=vmin, vmax=vmax)
 
-        batches = list(gen_batch_sequence(h5['/frames'].shape[0], batch_size, 0, 0))
+#         batches = list(gen_batch_sequence(h5['/frames'].shape[0], batch_size, 0, 0))
 
-        with tqdm(desc='Generating Frames', total=total_frames) as pbar:
-            for batch, batch_idxs in enumerate(batches):
-                batch_idxs = list(batch_idxs)
+#         with tqdm(desc='Generating Frames', total=total_frames) as pbar:
+#             for batch, batch_idxs in enumerate(batches):
+#                 batch_idxs = list(batch_idxs)
 
-                # load data from h5 file
-                masks = h5['/frames_mask'][batch_idxs, ...]
-                clean_frames = h5['/frames'][batch_idxs, ...]
-                centroids = np.stack((
-                    h5['/scalars/centroid_x_px'][batch_idxs],
-                    h5['/scalars/centroid_y_px'][batch_idxs]
-                ), axis=1)
-                angles = h5['/scalars/angle'][batch_idxs]
-                rot_keypoints = load_keypoint_data_from_h5(h5, coord_system='rotated', units='px')[batch_idxs]
-                ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')[batch_idxs]
+#                 # load data from h5 file
+#                 masks = h5['/frames_mask'][batch_idxs, ...]
+#                 clean_frames = h5['/frames'][batch_idxs, ...]
+#                 centroids = np.stack((
+#                     h5['/scalars/centroid_x_px'][batch_idxs],
+#                     h5['/scalars/centroid_y_px'][batch_idxs]
+#                 ), axis=1)
+#                 angles = h5['/scalars/angle'][batch_idxs]
+#                 rot_keypoints = load_keypoint_data_from_h5(h5, coord_system='rotated', units='px')[batch_idxs]
+#                 ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')[batch_idxs]
 
-                # rotate frames and masks to origional coordinates and angles
-                raw_frames = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='uint8')
-                raw_masks = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='bool')
-                for i in range(clean_frames.shape[0]):
-                    raw_frames[i, ...] = reverse_crop_and_rotate_frame(clean_frames[i], roi_size, centroids[i], angles[i])
-                    raw_masks[i, ...] = reverse_crop_and_rotate_frame(masks[i].astype('uint8'), roi_size, centroids[i], angles[i]).astype('bool')
+#                 # rotate frames and masks to origional coordinates and angles
+#                 raw_frames = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='uint8')
+#                 raw_masks = np.zeros((clean_frames.shape[0], roi_size[1], roi_size[0]), dtype='bool')
+#                 for i in range(clean_frames.shape[0]):
+#                     raw_frames[i, ...] = reverse_crop_and_rotate_frame(clean_frames[i], roi_size, centroids[i], angles[i])
+#                     raw_masks[i, ...] = reverse_crop_and_rotate_frame(masks[i].astype('uint8'), roi_size, centroids[i], angles[i]).astype('bool')
 
-                # generate movie chunks with instance data
-                field_video = arena_view.generate_frames(raw_frames=raw_frames, keypoints=ref_keypoints[:, None, ...], masks=raw_masks[:,None,...], boxes=None)
-                rc_kpts_video = rot_kpt_view.generate_frames(masks=masks, keypoints=rot_keypoints)
-                cln_depth_video = clean_frames_view.generate_frames(clean_frames=clean_frames, masks=masks)
+#                 # generate movie chunks with instance data
+#                 field_video = arena_view.generate_frames(raw_frames=raw_frames, keypoints=ref_keypoints[:, None, ...], masks=raw_masks[:,None,...], boxes=None)
+#                 rc_kpts_video = rot_kpt_view.generate_frames(masks=masks, keypoints=rot_keypoints)
+#                 cln_depth_video = clean_frames_view.generate_frames(clean_frames=clean_frames, masks=masks)
 
-                # stack and write frames
-                proc_stack = stack_videos([cln_depth_video, rc_kpts_video], orientation='vertical')
-                out_video_combined = stack_videos([proc_stack, field_video], orientation='horizontal')
-                video_pipe.write_frames(batch_idxs, out_video_combined)
-                pbar.update(n=len(batch_idxs))
+#                 # stack and write frames
+#                 proc_stack = stack_videos([cln_depth_video, rc_kpts_video], orientation='vertical')
+#                 out_video_combined = stack_videos([proc_stack, field_video], orientation='horizontal')
+#                 video_pipe.write_frames(batch_idxs, out_video_combined)
+#                 pbar.update(n=len(batch_idxs))
 
-        video_pipe.close()
+#         video_pipe.close()
 
 
 class H5ResultPreviewVideoGenerator():
-    def __init__(self, h5_file: str, dest: str, dset_name: str = 'moseq', vmin=0, vmax=100, fps=30, batch_size=500, start:int=None, stop:int=None) -> None:
+    ''' Generates a "result preview video" from an extracted h5 result file
+    '''
+    def __init__(self, h5_file: str, dset_name: str = 'moseq', vmin: float = 0., vmax: float = 100., fps: int = 30,
+                 batch_size: int = 500, start: int = None, stop: int = None) -> None:
         self.h5_file = h5_file
-        self.dest = dest
         self.dset_name = dset_name
         self.vmin = vmin
         self.vmax = vmax
@@ -351,6 +353,16 @@ class H5ResultPreviewVideoGenerator():
         self.start = start
         self.stop = stop
 
+        # These members will be set after a call to `self._initialize()`
+        self.total_frames: int = None
+        self.batches: list = None
+        self.roi: np.ndarray = None
+        self.roi_size: Tuple[int, int] = None
+        self.clean_frames_view: CleanedFramesView = None
+        self.rot_kpt_view: RotatedKeypointsView = None
+        self.arena_view: ArenaView = None
+
+        # these are paths to the datasets inside the h5 file
         self.frames_path = '/frames'
         self.mask_path = '/frames_mask'
         self.roi_path = '/metadata/extraction/roi'
@@ -358,9 +370,9 @@ class H5ResultPreviewVideoGenerator():
         self.centroid_y_path = '/scalars/centroid_y_px'
         self.angle_path = '/scalars/angle'
 
-        self._initialize()
-
-    def _initialize(self):
+    def _initialize(self) -> dict:
+        ''' Fetch some initial information from the h5 file and return as a dict
+        '''
         with(h5py.File(self.h5_file, 'r')) as h5:
             if self.start is None:
                 self.start = 0
@@ -379,7 +391,9 @@ class H5ResultPreviewVideoGenerator():
             self.rot_kpt_view = RotatedKeypointsView(scale=1.5, dset_meta=dset_meta)
             self.arena_view = ArenaView(self.roi, scale=2.0, vmin=self.vmin, vmax=self.vmax, dset_meta=dset_meta)
 
-    def _read_chunk(self, batch_idxs):
+    def _read_chunk(self, batch_idxs: Iterable[int]) -> dict:
+        ''' read a chunk from the h5 file, defined by batch_idxs, and return data as a dict
+        '''
         batch_idxs = list(batch_idxs)
 
         with(h5py.File(self.h5_file, 'r')) as h5:
@@ -398,8 +412,9 @@ class H5ResultPreviewVideoGenerator():
             raw_frames = np.zeros((clean_frames.shape[0], self.roi_size[1], self.roi_size[0]), dtype='uint8')
             raw_masks = np.zeros((clean_frames.shape[0], self.roi_size[1], self.roi_size[0]), dtype='bool')
             for i in range(clean_frames.shape[0]):
-                raw_frames[i, ...] = reverse_crop_and_rotate_frame(clean_frames[i], self.roi_size, centroids[i], angles[i])
-                raw_masks[i, ...] = reverse_crop_and_rotate_frame(masks[i].astype('uint8'), self.roi_size, centroids[i], angles[i]).astype('bool')
+                raw_frames[i] = reverse_crop_and_rotate_frame(clean_frames[i], self.roi_size, centroids[i], angles[i])
+                raw_masks[i] = reverse_crop_and_rotate_frame(masks[i].astype('uint8'), self.roi_size, centroids[i], angles[i]).astype('bool')
+
         return {
             'batch_idxs': batch_idxs,
             'masks': masks,
@@ -409,10 +424,12 @@ class H5ResultPreviewVideoGenerator():
             'rot_keypoints': rot_keypoints,
             'ref_keypoints': ref_keypoints[:, None, ...],
             'raw_frames': raw_frames,
-            'raw_masks': raw_masks[:,None,...]
+            'raw_masks': raw_masks[:, None, ...]
         }
 
-    def _write_chunk(self, video_pipe, data):
+    def _write_chunk(self, video_pipe: PreviewVideoWriter, data: dict) -> None:
+        ''' Compile a chunk, `data`, into final frames, and send to the video writer, `video_pipe`, to be written to disk
+        '''
         # generate movie chunks with instance data
         field_video = self.arena_view.generate_frames(raw_frames=data['raw_frames'], keypoints=data['ref_keypoints'], masks=data['raw_masks'], boxes=None)
         rc_kpts_video = self.rot_kpt_view.generate_frames(masks=data['masks'], keypoints=data['rot_keypoints'])
@@ -423,8 +440,14 @@ class H5ResultPreviewVideoGenerator():
         out_video_combined = stack_videos([proc_stack, field_video], orientation='horizontal')
         video_pipe.write_frames(data['batch_idxs'], out_video_combined)
 
-    def generate(self):
-        video_pipe = PreviewVideoWriter(self.dest, fps=self.fps, vmin=self.vmin, vmax=self.vmax)
+    def generate(self, dest: str) -> None:
+        ''' Commence generation of the video
+
+        Parameters:
+        dest (str): destination for the video file
+        '''
+        self._initialize()
+        video_pipe = PreviewVideoWriter(dest, fps=self.fps, vmin=self.vmin, vmax=self.vmax)
         pool = ProcessPoolExecutor(max_workers=2)
 
         with tqdm(desc='Generating Frames', total=self.total_frames) as pbar:
@@ -447,6 +470,8 @@ class H5ResultPreviewVideoGenerator():
 
 
 class BaseView():
+    ''' Base class for a view
+    '''
     def __init__(self, scale: float = 1, dset_meta: Metadata = None) -> None:
         self.is_setup = False
         self.scale = scale
@@ -454,6 +479,8 @@ class BaseView():
 
 
 class ArenaView(BaseView):
+    ''' A view showing the arena depth image plus any instance annotations
+    '''
     def __init__(self, roi: np.ndarray, scale: float = 2, vmin: float = 0.0, vmax: float = 100.0, dset_meta: Metadata = None) -> None:
         super().__init__(scale=scale, dset_meta=dset_meta)
         self.vmin = vmin
@@ -462,6 +489,8 @@ class ArenaView(BaseView):
 
 
     def generate_frames(self, raw_frames: np.ndarray, keypoints: np.ndarray, masks: np.ndarray, boxes: np.ndarray):
+        ''' Generate frames for this view
+        '''
         rfs = raw_frames.shape
         video = np.zeros((rfs[0], int(rfs[1]*self.scale), int(rfs[2]*self.scale), 3), dtype='uint8')
 
@@ -483,10 +512,14 @@ class ArenaView(BaseView):
 
 
 class RotatedKeypointsView(BaseView):
+    ''' A view showing cropped and rotated masks and keypoints
+    '''
     def __init__(self, scale: float = 1.5, dset_meta: Metadata = None) -> None:
         super().__init__(scale=scale, dset_meta=dset_meta)
 
     def generate_frames(self, masks: np.ndarray, keypoints: np.ndarray) -> np.ndarray:
+        ''' Generate frames for this view
+        '''
         width = int(masks.shape[2] * 1.5)
         height = int(masks.shape[1] * 1.5)
         video = np.zeros((masks.shape[0], height, width, 3), dtype='uint8')
@@ -507,9 +540,13 @@ class RotatedKeypointsView(BaseView):
         return video
 
 class CleanedFramesView(BaseView):
+    ''' A view showing cleaned, cropped, and rotated depth frames
+    '''
     def __init__(self, scale: float = 1.5, dset_meta: Metadata = None) -> None:
         super().__init__(scale=scale, dset_meta=dset_meta)
 
     def generate_frames(self, clean_frames: np.ndarray, masks: np.ndarray) -> np.ndarray:
+        ''' Generate frames for this view
+        '''
         cleaned_depth = colorize_video(scale_depth_frames(clean_frames * masks, scale=1.5))
         return cleaned_depth
