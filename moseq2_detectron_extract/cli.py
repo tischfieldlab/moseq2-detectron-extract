@@ -2,7 +2,6 @@ import datetime
 import logging
 import os
 from pathlib import Path
-import shutil
 
 import click
 from click_option_group import optgroup
@@ -32,7 +31,7 @@ from moseq2_detectron_extract.model.util import (get_available_device_info,
                                                  get_system_versions)
 from moseq2_detectron_extract.proc.util import check_completion_status
 from moseq2_detectron_extract.quality import find_outliers_h5
-from moseq2_detectron_extract.viz import H5ResultPreviewVideoGenerator, preview_video_from_h5
+from moseq2_detectron_extract.viz import H5ResultPreviewVideoGenerator
 
 # import warnings
 # warnings.filterwarnings('ignore', category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
@@ -411,7 +410,7 @@ def system_info():
 @click.option('--visualize/--no-visualize', default=True, help='Visualize the newly flipped dataset')
 def manual_flip(h5_file, flips_file, visualize):
     ''' Manually flip frames according to flips file
-    
+
     Will backup the h5 file before applying manual flip corrections. This process will correct depth
     frames, masks, angles, and keypoints by rotating these properties 180 degrees from the existing angle.
 
@@ -419,26 +418,31 @@ def manual_flip(h5_file, flips_file, visualize):
     produced by the `extract` command, but anything outside of the copped depth region cannot be reconstructed.
     '''
     setup_logging()
+    logging.info('')
 
     h5_path = Path(h5_file)
     assert h5_path.exists()
 
     # read flips file
     flips = read_flips_file(flips_file)
+    logging.info(f'Read {len(flips)} flip ranges, comprising {sum([stop - start for start, stop in flips])} total frames')
 
     # create backup of h5 file
-    backup_existing_file(h5_path)
+    h5_back_path = backup_existing_file(h5_path)
+    logging.info(f'Successfully backed up h5 file: {h5_path} -> {h5_back_path}')
 
     # apply flips
+    logging.info('Applying filps to dataset....')
     flip_dataset(h5_path, flip_ranges=flips)
+    logging.info('Flips successfully applied')
 
     # if requested, visualize the dataset
     if visualize:
         register_dataset_metadata('moseq')
         vdest = find_unused_file_path(h5_path.with_name(f'{h5_path.stem}.manual_fliped.mp4'))
+        logging.info(f'Generating preview video: {vdest}')
 
-        H5ResultPreviewVideoGenerator(h5_file, vdest).generate()
-        # preview_video_from_h5(h5_file, vdest)
+        H5ResultPreviewVideoGenerator(h5_file).generate(vdest)
 
 
 @cli.command(name='verify-flips', short_help='Verify flip files')
