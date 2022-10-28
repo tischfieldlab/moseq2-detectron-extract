@@ -1,3 +1,4 @@
+from functools import reduce
 import itertools
 import sys
 from datetime import datetime
@@ -138,14 +139,34 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
             flip_mask = (flip_mask == flip_class)
 
         # find a path for flips that is not already in use
-        flips_path = find_unused_dataset_path(h5_file, flips_path)
+        new_flips_path = find_unused_dataset_path(h5_file, flips_path)
 
-        # create and set the flips dataset
-        h5.create_dataset(flips_path, data=flip_mask, dtype='bool', compression='gzip')
-        h5[flips_path].attrs['description'] = 'Manualally applied flips, False=no flip, True=flip'
-        h5[flips_path].attrs['creation'] = f'Created by moseq2-detectron-extract, manually applied flips, on {datetime.now()}'
+        if new_flips_path == f'{flips_path}_0':
+            # There have not been any manual flips applied before
+            
+            # move OG `flips` to `new_flips_path`
+            og_flips_path = new_flips_path
+            h5.copy(flips_path, og_flips_path)
 
+            # get next flips path and write current manual flips to next flips path
+            new_flips_path = find_unused_dataset_path(h5_file, flips_path)
+            h5.create_dataset(new_flips_path, data=flip_mask, dtype='bool', compression='gzip')
+            h5[new_flips_path].attrs['description'] = 'Manualally applied flips, False=no flip, True=flip'
+            h5[new_flips_path].attrs['creation'] = f'Created by moseq2-detectron-extract, manually applied flips, on {datetime.now()}'
+
+            # recompute `flips` as xor origional flips + new flips and write to `flips_path`
+            h5[flips_path] = recompute_flips(h5, flips_path=flips_path)
+
+        else:
+            # Manual flips have been applied before
         
+            # create and set the manual flips dataset
+            h5.create_dataset(new_flips_path, data=flip_mask, dtype='bool', compression='gzip')
+            h5[new_flips_path].attrs['description'] = 'Manualally applied flips, False=no flip, True=flip'
+            h5[new_flips_path].attrs['creation'] = f'Created by moseq2-detectron-extract, manually applied flips, on {datetime.now()}'
+
+            # recompute `flips` as xor origional flips + new flips and write to `flips_path`
+            h5[flips_path] = recompute_flips(h5, flips_path=flips_path)
 
         # apply flips to the datasets
         flip_locations = np.nonzero(flip_mask)
@@ -166,6 +187,29 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
             h5[f'/keypoints/{k}'][...] = v
 
         h5.flush()
+
+
+def recompute_flips(h5: h5py.File, flips_path: str = '/metadata/extraction/flips') -> np.ndarray:
+    ''' Recompute final flips by iteratively taking the logical XOR of each flip modification
+
+    Parameters:
+    h5 (h5py.File): HDF5 file to operate upon
+    flips_path (str): name of the canonical flips dataset
+
+    Returns:
+    np.ndarray - xor reduced flips
+    '''
+    # split into something like ['/metadata/extraction', 'flips']
+    base_group, base_name = flips_path.rsplit('/', 1)[0]
+
+    # Get a sorted list of keys with a suffix matching flips name
+    keys = sorted([f'{base_group}/{k}' for k in list(h5[base_group].keys()) if k.startswith(f'{base_name}_')])
+
+    # pull data for each of the keys
+    data = [h5[k][()] for k in keys]
+
+    # compute final flips as a XOR reduction starting from first flips (extraction) to the last (manual)
+    return reduce(np.logical_xor, data, np.zeros_like(data[0]))
 
 
 def flip_horizontal(data: np.ndarray) -> np.ndarray:
