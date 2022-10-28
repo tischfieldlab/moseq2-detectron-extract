@@ -343,7 +343,7 @@ class H5ResultPreviewVideoGenerator():
     ''' Generates a "result preview video" from an extracted h5 result file
     '''
     def __init__(self, h5_file: str, dset_name: str = 'moseq', vmin: float = 0., vmax: float = 100., fps: int = 30,
-                 batch_size: int = 500, start: int = None, stop: int = None) -> None:
+                 batch_size: int = 100, start: int = None, stop: int = None) -> None:
         self.h5_file = h5_file
         self.dset_name = dset_name
         self.vmin = vmin

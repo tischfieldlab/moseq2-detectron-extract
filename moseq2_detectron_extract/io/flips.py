@@ -91,9 +91,10 @@ def verify_ranges(ranges: List[Tuple[int, int]], vmin: int=0, vmax: int=sys.maxs
     return True
 
 
-def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[Tuple[int, int]] = None, frames_path: str = '/frames', frames_mask_path: str = '/frames_mask',
-                 angle_path: str = '/scalars/angle', flips_path: str = '/metadata/extraction/flips', flip_class: int = 1):
-    ''' Flip a dataset according to either `flip_mask` xor `flip_ranges`
+def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[Tuple[int, int]] = None, frames_path: str = '/frames',
+                 frames_mask_path: str = '/frames_mask', angle_path: str = '/scalars/angle', flips_path: str = '/metadata/extraction/flips',
+                 flip_class: int = 1):
+    ''' Flip a dataset according to either `flip_mask` XOR `flip_ranges`
 
     If `flip_ranges` is provided, it is converted to a `flip_mask` first. You cannot provide both `flip_mask` and `flip_ranges`,
     only one or the other. The value of `flip_ranges` is expected to be a list of lists of `start` and `stop` indicies which form slices,
@@ -134,15 +135,17 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
             for start, stop in flip_ranges:
                 flip_mask[start:stop] = flip_class
         else:
-            flip_mask = flip_mask == flip_class
+            flip_mask = (flip_mask == flip_class)
 
         # find a path for flips that is not already in use
         flips_path = find_unused_dataset_path(h5_file, flips_path)
 
         # create and set the flips dataset
         h5.create_dataset(flips_path, data=flip_mask, dtype='bool', compression='gzip')
-        h5[flips_path].attrs['description'] = 'Output from flip classifier, false=no flip, true=flip'
-        h5[flips_path].attrs['description'] = f'Created by moseq2-detectron-extract, manual flips, on {datetime.now()}'
+        h5[flips_path].attrs['description'] = 'Manualally applied flips, False=no flip, True=flip'
+        h5[flips_path].attrs['creation'] = f'Created by moseq2-detectron-extract, manually applied flips, on {datetime.now()}'
+
+        
 
         # apply flips to the datasets
         flip_locations = np.nonzero(flip_mask)

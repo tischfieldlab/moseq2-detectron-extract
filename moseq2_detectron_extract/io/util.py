@@ -398,7 +398,7 @@ def find_unused_dataset_path(h5_file: str, path: str) -> str:
     new_path = path
     with h5py.File(h5_file, mode='r') as h5:
         if new_path in h5:
-            i = 1
+            i = 0
             while True:
                 new_path = f'{path}_{i}'
                 if new_path not in h5:
