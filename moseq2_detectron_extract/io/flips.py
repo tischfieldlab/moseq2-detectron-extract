@@ -159,7 +159,7 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
 
         else:
             # Manual flips have been applied before
-        
+
             # create and set the manual flips dataset
             h5.create_dataset(new_flips_path, data=flip_mask, dtype='bool', compression='gzip')
             h5[new_flips_path].attrs['description'] = 'Manualally applied flips, False=no flip, True=flip'
@@ -172,7 +172,7 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
         flip_locations = np.nonzero(flip_mask)
         h5[frames_path][flip_locations] = flip_horizontal(h5[frames_path][flip_locations])
         h5[frames_mask_path][flip_locations] = flip_horizontal(h5[frames_mask_path][flip_locations])
-        h5[angle_path][flip_locations] += 180
+        h5[angle_path][flip_locations] += np.pi
 
         # Recompute keypoints
         ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')
