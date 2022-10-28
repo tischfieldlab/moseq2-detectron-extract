@@ -6,16 +6,8 @@ from typing import List, Tuple
 
 import h5py
 import numpy as np
-from detectron2.data.catalog import MetadataCatalog
-from tqdm import tqdm
-from moseq2_detectron_extract.io.annot import register_dataset_metadata
-from moseq2_detectron_extract.io.util import find_unused_dataset_path, gen_batch_sequence
-from moseq2_detectron_extract.io.video import PreviewVideoWriter
-from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict, load_keypoint_data_from_h5, rotate_points, rotate_points_batch
-from moseq2_detectron_extract.proc.proc import reverse_crop_and_rotate_frame, stack_videos
-from moseq2_detectron_extract.proc.roi import get_bbox_size
-from moseq2_detectron_extract.viz import (ArenaView, CleanedFramesView,
-                                          RotatedKeypointsView)
+from moseq2_detectron_extract.io.util import find_unused_dataset_path
+from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict, load_keypoint_data_from_h5
 
 
 def read_flips_file(file_path: str) -> List[Tuple[int, int]]:
@@ -143,7 +135,7 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
 
         if new_flips_path == f'{flips_path}_0':
             # There have not been any manual flips applied before
-            
+
             # move OG `flips` to `new_flips_path`
             og_flips_path = new_flips_path
             h5.copy(flips_path, og_flips_path)
@@ -183,8 +175,8 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
         recomputed_keypoints = keypoints_to_dict(ref_keypoints, h5[frames_path][()], centroids, h5[angle_path][()], h5['/metadata/extraction/true_depth'][()])
         # drop any z dimention keys, since they should not change, and the recomputation will be wrong!
         recomputed_keypoints = {k: v for k, v in recomputed_keypoints.items() if '_z_' not in k}
-        for k, v in recomputed_keypoints.items():
-            h5[f'/keypoints/{k}'][...] = v
+        for key, value in recomputed_keypoints.items():
+            h5[f'/keypoints/{key}'][...] = value
 
         h5.flush()
 
