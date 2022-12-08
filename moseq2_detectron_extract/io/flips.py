@@ -1,3 +1,4 @@
+from functools import reduce
 import itertools
 import sys
 from datetime import datetime
@@ -5,16 +6,8 @@ from typing import List, Tuple
 
 import h5py
 import numpy as np
-from detectron2.data.catalog import MetadataCatalog
-from tqdm import tqdm
-from moseq2_detectron_extract.io.annot import register_dataset_metadata
-from moseq2_detectron_extract.io.util import find_unused_dataset_path, gen_batch_sequence
-from moseq2_detectron_extract.io.video import PreviewVideoWriter
-from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict, load_keypoint_data_from_h5, rotate_points, rotate_points_batch
-from moseq2_detectron_extract.proc.proc import reverse_crop_and_rotate_frame, stack_videos
-from moseq2_detectron_extract.proc.roi import get_bbox_size
-from moseq2_detectron_extract.viz import (ArenaView, CleanedFramesView,
-                                          RotatedKeypointsView)
+from moseq2_detectron_extract.io.util import find_unused_dataset_path
+from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict, load_keypoint_data_from_h5
 
 
 def read_flips_file(file_path: str) -> List[Tuple[int, int]]:
@@ -91,9 +84,10 @@ def verify_ranges(ranges: List[Tuple[int, int]], vmin: int=0, vmax: int=sys.maxs
     return True
 
 
-def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[Tuple[int, int]] = None, frames_path: str = '/frames', frames_mask_path: str = '/frames_mask',
-                 angle_path: str = '/scalars/angle', flips_path: str = '/metadata/extraction/flips', flip_class: int = 1):
-    ''' Flip a dataset according to either `flip_mask` xor `flip_ranges`
+def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[Tuple[int, int]] = None, frames_path: str = '/frames',
+                 frames_mask_path: str = '/frames_mask', angle_path: str = '/scalars/angle', flips_path: str = '/metadata/extraction/flips',
+                 flip_class: int = 1):
+    ''' Flip a dataset according to either `flip_mask` XOR `flip_ranges`
 
     If `flip_ranges` is provided, it is converted to a `flip_mask` first. You cannot provide both `flip_mask` and `flip_ranges`,
     only one or the other. The value of `flip_ranges` is expected to be a list of lists of `start` and `stop` indicies which form slices,
@@ -134,21 +128,43 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
             for start, stop in flip_ranges:
                 flip_mask[start:stop] = flip_class
         else:
-            flip_mask = flip_mask == flip_class
+            flip_mask = (flip_mask == flip_class)
 
         # find a path for flips that is not already in use
-        flips_path = find_unused_dataset_path(h5_file, flips_path)
+        new_flips_path = find_unused_dataset_path(h5_file, flips_path)
 
-        # create and set the flips dataset
-        h5.create_dataset(flips_path, data=flip_mask, dtype='bool', compression='gzip')
-        h5[flips_path].attrs['description'] = 'Output from flip classifier, false=no flip, true=flip'
-        h5[flips_path].attrs['description'] = f'Created by moseq2-detectron-extract, manual flips, on {datetime.now()}'
+        if new_flips_path == f'{flips_path}_0':
+            # There have not been any manual flips applied before
+
+            # move OG `flips` to `new_flips_path`
+            og_flips_path = new_flips_path
+            h5.copy(flips_path, og_flips_path)
+
+            # get next flips path and write current manual flips to next flips path
+            new_flips_path = find_unused_dataset_path(h5_file, flips_path)
+            h5.create_dataset(new_flips_path, data=flip_mask, dtype='bool', compression='gzip')
+            h5[new_flips_path].attrs['description'] = 'Manualally applied flips, False=no flip, True=flip'
+            h5[new_flips_path].attrs['creation'] = f'Created by moseq2-detectron-extract, manually applied flips, on {datetime.now()}'
+
+            # recompute `flips` as xor origional flips + new flips and write to `flips_path`
+            h5[flips_path] = recompute_flips(h5, flips_path=flips_path)
+
+        else:
+            # Manual flips have been applied before
+
+            # create and set the manual flips dataset
+            h5.create_dataset(new_flips_path, data=flip_mask, dtype='bool', compression='gzip')
+            h5[new_flips_path].attrs['description'] = 'Manualally applied flips, False=no flip, True=flip'
+            h5[new_flips_path].attrs['creation'] = f'Created by moseq2-detectron-extract, manually applied flips, on {datetime.now()}'
+
+            # recompute `flips` as xor origional flips + new flips and write to `flips_path`
+            h5[flips_path] = recompute_flips(h5, flips_path=flips_path)
 
         # apply flips to the datasets
         flip_locations = np.nonzero(flip_mask)
         h5[frames_path][flip_locations] = flip_horizontal(h5[frames_path][flip_locations])
         h5[frames_mask_path][flip_locations] = flip_horizontal(h5[frames_mask_path][flip_locations])
-        h5[angle_path][flip_locations] += 180
+        h5[angle_path][flip_locations] += np.pi
 
         # Recompute keypoints
         ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')
@@ -159,10 +175,33 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
         recomputed_keypoints = keypoints_to_dict(ref_keypoints, h5[frames_path][()], centroids, h5[angle_path][()], h5['/metadata/extraction/true_depth'][()])
         # drop any z dimention keys, since they should not change, and the recomputation will be wrong!
         recomputed_keypoints = {k: v for k, v in recomputed_keypoints.items() if '_z_' not in k}
-        for k, v in recomputed_keypoints.items():
-            h5[f'/keypoints/{k}'][...] = v
+        for key, value in recomputed_keypoints.items():
+            h5[f'/keypoints/{key}'][...] = value
 
         h5.flush()
+
+
+def recompute_flips(h5: h5py.File, flips_path: str = '/metadata/extraction/flips') -> np.ndarray:
+    ''' Recompute final flips by iteratively taking the logical XOR of each flip modification
+
+    Parameters:
+    h5 (h5py.File): HDF5 file to operate upon
+    flips_path (str): name of the canonical flips dataset
+
+    Returns:
+    np.ndarray - xor reduced flips
+    '''
+    # split into something like ['/metadata/extraction', 'flips']
+    base_group, base_name = flips_path.rsplit('/', 1)[0]
+
+    # Get a sorted list of keys with a suffix matching flips name
+    keys = sorted([f'{base_group}/{k}' for k in list(h5[base_group].keys()) if k.startswith(f'{base_name}_')])
+
+    # pull data for each of the keys
+    data = [h5[k][()] for k in keys]
+
+    # compute final flips as a XOR reduction starting from first flips (extraction) to the last (manual)
+    return reduce(np.logical_xor, data, np.zeros_like(data[0]))
 
 
 def flip_horizontal(data: np.ndarray) -> np.ndarray:

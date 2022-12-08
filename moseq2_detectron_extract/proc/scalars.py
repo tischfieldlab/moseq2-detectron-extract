@@ -94,7 +94,7 @@ def compute_scalars(frames: np.ndarray, track_features: dict, min_height: float=
     features['length_mm'] = features['length_px'] * px_to_mm[:, 0]
     features['area_mm'] = features['area_px'] * px_to_mm.mean(axis=1)
 
-    features['angle'] = track_features['orientation']
+    features['angle'] = np.deg2rad(track_features['orientation'])
 
     nmask = np.sum(masked_frames, axis=(1, 2))
 
