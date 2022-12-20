@@ -2,12 +2,13 @@ from functools import partial
 from typing import Tuple
 
 import numpy as np
-import numpy.typing as npt
-from detectron2.data.transforms import (Augmentation, BlendTransform,
-                                        NoOpTransform)
+from detectron2.data.transforms import Augmentation, NoOpTransform
 from FyeldGenerator import generate_field
-from moseq2_detectron_extract.model.augmentations.occlude_transform import MaxBlendTransform, ThresholdBlendTransform
-from moseq2_detectron_extract.model.augmentations.util import RangeType, validate_range_arg
+
+from moseq2_detectron_extract.model.augmentations.occlude_transform import \
+    ThresholdBlendTransform
+from moseq2_detectron_extract.model.augmentations.util import (
+    RangeType, validate_range_arg)
 
 
 class RandomFieldNoiseAugmentation(Augmentation):

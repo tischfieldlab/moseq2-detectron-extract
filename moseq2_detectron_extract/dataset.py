@@ -3,7 +3,7 @@ import logging
 import os
 from copy import deepcopy
 from functools import partial
-from typing import Dict, Iterable, List, Literal, Sequence
+from typing import Optional, Dict, Iterable, List, Literal, Sequence
 
 import numpy as np
 import tqdm
@@ -24,7 +24,7 @@ SampleMethod = Literal['random', 'uniform', 'kmeans', 'list']
 
 
 def generate_dataset_for_sessions(input_files: Sequence[str], streams: Sequence[Stream], num_samples: int,  sample_method: SampleMethod, roi_params: dict,
-                      output_dir: str, indices: Sequence[int]=None, min_height: int=0, max_height: int=100, chunk_size: int=1000) -> List[dict]:
+                      output_dir: str, indices: Optional[Sequence[int]]=None, min_height: int=0, max_height: int=100, chunk_size: int=1000) -> List[dict]:
     ''' Generate a dataset for multiple sessions
 
     Parameters:
@@ -71,7 +71,7 @@ def generate_dataset_for_sessions(input_files: Sequence[str], streams: Sequence[
 
 
 def generate_dataset_for_session(in_file: str, streams: Iterable[Stream], n_samples: int, sample_method: SampleMethod, output_dir: str,
-                                 roi_params: dict, indices: Sequence[int]=None, min_height=0, max_height=0, chunk_size=1000):
+                                 roi_params: dict, indices: Optional[Sequence[int]]=None, min_height=0, max_height=0, chunk_size=1000):
     ''' Generate a dataset for a single session
 
     Parameters:
@@ -132,7 +132,7 @@ def generate_dataset_for_session(in_file: str, streams: Iterable[Stream], n_samp
     return session_data
 
 
-def prepare_session_iterator(session: Session, streams: Iterable[Stream], sample_method: SampleMethod, n_samples: int, indices: Sequence[int]=None,
+def prepare_session_iterator(session: Session, streams: Iterable[Stream], sample_method: SampleMethod, n_samples: int, indices: Optional[Sequence[int]]=None,
                              chunk_size: int=1000) -> SessionFramesIterator:
     ''' Prepare a session iterator
 
@@ -234,7 +234,7 @@ def write_label_studio_tasks(tasks: List[dict], dest: str):
 
 
 
-def select_frames_kmeans(frames_iterator: SessionFramesIterator, num_frames_to_pick: int, num_clusters: int=None,
+def select_frames_kmeans(frames_iterator: SessionFramesIterator, num_frames_to_pick: int, num_clusters: Optional[int]=None,
                          scale: float=4, kmeans_batchsize: int=100, kmeans_max_iter: int=50) -> List[int]:
     ''' Select frames from a session using k-means clustering to pick dissimilar frames
 
@@ -275,9 +275,7 @@ def select_frames_kmeans(frames_iterator: SessionFramesIterator, num_frames_to_p
         kmeans.fit(data)
         pbar.update(1)
 
-    num_frames_per_cluster = num_frames_to_pick // num_clusters
-    if num_frames_per_cluster < 1:
-        num_frames_per_cluster = 1
+    num_frames_per_cluster = max(num_frames_to_pick // num_clusters, 1)
 
     selected_frames = []
     for cluster_id in range(num_clusters):  # pick one frame per cluster

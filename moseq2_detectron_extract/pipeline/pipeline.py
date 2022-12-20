@@ -73,11 +73,8 @@ class Pipeline:
         ''' Check if the pipline appears to be healthy
         '''
         in_shutdown_mode = self.shutdown_event.is_set()
-        any_consumers_not_complete = any([not step.is_complete.is_set() for step in self.steps])
-        if not in_shutdown_mode and any_consumers_not_complete:
-            return True
-        else:
-            return False
+        any_consumers_not_complete = any(not step.is_complete.is_set() for step in self.steps)
+        return bool(not in_shutdown_mode and any_consumers_not_complete)
 
 
     def start(self):

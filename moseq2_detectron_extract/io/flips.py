@@ -2,7 +2,7 @@ from functools import reduce
 import itertools
 import sys
 from datetime import datetime
-from typing import List, Tuple
+from typing import Optional, List, Tuple
 
 import h5py
 import numpy as np
@@ -84,7 +84,7 @@ def verify_ranges(ranges: List[Tuple[int, int]], vmin: int=0, vmax: int=sys.maxs
     return True
 
 
-def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[Tuple[int, int]] = None, frames_path: str = '/frames',
+def flip_dataset(h5_file: str, flip_mask: Optional[np.ndarray] = None, flip_ranges: Optional[List[Tuple[int, int]]] = None, frames_path: str = '/frames',
                  frames_mask_path: str = '/frames_mask', angle_path: str = '/scalars/angle', flips_path: str = '/metadata/extraction/flips',
                  flip_class: int = 1):
     ''' Flip a dataset according to either `flip_mask` XOR `flip_ranges`

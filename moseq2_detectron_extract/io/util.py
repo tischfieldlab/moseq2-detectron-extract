@@ -133,7 +133,7 @@ def ensure_dir(path: str) -> str:
     return path
 
 
-def dict_to_h5(h5_file: h5py.File, data: dict, root: str='/', annotations: dict=None) -> None:
+def dict_to_h5(h5_file: h5py.File, data: dict, root: str='/', annotations: Optional[dict]=None) -> None:
     ''' Save an dict to an h5 file, mounting at root. Keys are mapped to group names recursively.
 
     Parameters:
@@ -176,7 +176,7 @@ def dict_to_h5(h5_file: h5py.File, data: dict, root: str='/', annotations: dict=
                 h5_file[dest].attrs['description'] = annotations[key]
 
 
-def setup_logging(name: str=None, level: Union[str, int]=logging.INFO, add_defered_file_handler: bool=False):
+def setup_logging(name: Optional[str]=None, level: Union[str, int]=logging.INFO, add_defered_file_handler: bool=False):
     ''' Setup the logging module
     A) set logging level to `level` (default logging.INFO)
     b) optionally attach a memory handler, if add_defered_file_handler is True (enables adding a file handler later without losing records)
@@ -212,7 +212,7 @@ def setup_logging(name: str=None, level: Union[str, int]=logging.INFO, add_defer
     logger.addHandler(stream_handler)
 
 
-def attach_file_logger(log_filename: str, logger: logging.Logger=None):
+def attach_file_logger(log_filename: str, logger: Optional[logging.Logger]=None):
     ''' Attach a logging.FileHandler to an existing logging.MemoryHandler
 
     Parameters:

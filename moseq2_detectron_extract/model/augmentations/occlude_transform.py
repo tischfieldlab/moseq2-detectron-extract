@@ -1,8 +1,11 @@
+from abc import ABCMeta
+
 import numpy as np
 from detectron2.data import transforms as T
 
 
-class BaseImageBlendTransform(T.Transform):
+class BaseImageBlendTransform(T.Transform, metaclass=ABCMeta):
+    """Base class for a blending transform for images"""
     def apply_coords(self, coords: np.ndarray) -> np.ndarray:
         """
         Apply no transform on the coordinates.

@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Iterable, List
+from typing import Optional, Iterable, List
 
 import h5py
 import numpy as np
@@ -12,7 +12,7 @@ from moseq2_detectron_extract.proc.keypoints import (
 from moseq2_detectron_extract.proc.proc import flips_from_keypoints
 
 
-def find_outliers_h5(result_h5: str, dest: str=None, keypoint_names: List[str]=None, jump_win: int=6, jump_thresh: float=10.0) -> List[int]:
+def find_outliers_h5(result_h5: str, dest: Optional[str]=None, keypoint_names: Optional[List[str]]=None, jump_win: int=6, jump_thresh: float=10.0) -> List[int]:
     ''' Find outliers from a h5 results file
 
     Parameters:

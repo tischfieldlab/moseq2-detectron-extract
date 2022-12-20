@@ -21,7 +21,7 @@ class Stream(str, Enum):
     RGB = 'rgb'
 
 
-class Session(object):
+class Session():
     ''' Represents a (possibly compressed) Moseq Session
     '''
 
@@ -155,9 +155,7 @@ class Session(object):
                     correction_factor = corr_factor
                     break
 
-        if timestamp_path is None:
-            raise ValueError('Could not locate timestamp file!')
-        else:
+        if timestamp_path is not None:
             timestamps = load_timestamps(timestamp_path, col=0)
 
             if timestamps is not None:
@@ -166,6 +164,9 @@ class Session(object):
             timestamps *= correction_factor
 
             return timestamps
+
+        else:
+            raise ValueError('Could not locate timestamp file!')
 
 
     def find_roi(self, bg_roi_dilate: Tuple[int, int]=(10,10), bg_roi_shape='ellipse', bg_roi_index: int=0, bg_roi_weights=(1, .1, 1),
@@ -333,7 +334,7 @@ class _FilterItem(TypedDict):
     filter: Callable[[np.ndarray], np.ndarray]
     streams: Iterable[Stream]
 
-class SessionFramesIterator(object):
+class SessionFramesIterator():
     ''' Iterator that iterates over Session frames in order
     '''
     def __init__(self, session: Session, chunk_size: int, chunk_overlap: int, streams: Iterable[Stream]):
@@ -419,8 +420,8 @@ class SessionFramesIterator(object):
     def __next__(self):
         if self.current >= len(self):
             raise StopIteration
-        else:
-            frame_range = self.batches[self.current]
+
+        frame_range = self.batches[self.current]
         self.current += 1
 
         frame_idxs = list(frame_range)

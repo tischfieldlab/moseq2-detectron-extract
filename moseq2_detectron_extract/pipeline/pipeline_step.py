@@ -1,21 +1,20 @@
 import logging
-from threading import Thread
 import traceback
+from multiprocessing.synchronize import Event as EventClass
 from queue import Empty
-from typing import List, Union, cast
+from threading import Thread
+from typing import Optional, List, Union, cast
 
 import torch
-from torch.multiprocessing import Event, Process, Queue, SimpleQueue
-from multiprocessing.synchronize import Event as EventClass
+from torch.multiprocessing import Event, Process, Queue
 
 
-
-class PipelineStep(object):
+class PipelineStep():
     '''  Represents a single step in a Pipeline
         Takes a single input queue to work on and adds results to one or more output queues
     '''
 
-    def __init__(self, config: dict, name: str=None, **kwargs) -> None:
+    def __init__(self, config: dict, name: Optional[str]=None, **kwargs) -> None:
         super().__init__()
         self.is_producer = False
         self.shutdown_event: Union[EventClass, None] = None
@@ -81,7 +80,7 @@ class PipelineStep(object):
     def is_output_empty(self) -> bool:
         ''' Tell if the outputs have been consumed
         '''
-        return all([q.empty() for q in self.out_queue])
+        return all(q.empty() for q in self.out_queue)
 
     def signal_shutdown(self):
         ''' Signal that this step should stop processing data and shutdown
@@ -182,7 +181,7 @@ class ProcessPipelineStep(PipelineStep, Process):
 class ProducerPipelineStep(ThreadPipelineStep):
     ''' Pipeline step who only produces
     '''
-    def __init__(self, config: dict, name: str = None, **kwargs) -> None:
+    def __init__(self, config: dict, name: Optional[str] = None, **kwargs) -> None:
         super().__init__(config, name, **kwargs)
         self.is_producer = True
         self.daemon = True
