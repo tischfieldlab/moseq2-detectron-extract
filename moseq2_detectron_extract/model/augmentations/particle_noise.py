@@ -3,7 +3,7 @@ from typing import Tuple
 import elasticdeform
 import numpy as np
 import numpy.typing as npt
-from detectron2.data.transforms import BlendTransform, NoOpTransform
+from detectron2.data.transforms import NoOpTransform
 from moseq2_detectron_extract.model.augmentations.occlude_transform import MaxBlendTransform
 from moseq2_detectron_extract.model.augmentations.random_field_noise import \
     RandomFieldNoiseAugmentation

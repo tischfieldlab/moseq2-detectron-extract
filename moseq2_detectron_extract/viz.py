@@ -97,13 +97,12 @@ def scale_depth_frames(frames: np.ndarray, scale: float=2.0) -> np.ndarray:
         # single frame
         return cv2.resize(frames, (int(frames.shape[1] * scale), int(frames.shape[0] * scale)))
 
-    else:
-        #batch of frames
-        width, height = (int(frames.shape[2] * scale), int(frames.shape[1] * scale))
-        out = np.zeros_like(frames, shape=(frames.shape[0], width, height)) # pylint: disable=unexpected-keyword-arg
-        for i in range(frames.shape[0]):
-            out[i] = cv2.resize(frames[i], (width, height))
-        return out
+    #batch of frames
+    width, height = (int(frames.shape[2] * scale), int(frames.shape[1] * scale))
+    out = np.zeros_like(frames, shape=(frames.shape[0], width, height)) # pylint: disable=unexpected-keyword-arg
+    for i in range(frames.shape[0]):
+        out[i] = cv2.resize(frames[i], (width, height))
+    return out
 
 
 def scale_color_frames(frames: np.ndarray, scale: float=2.0) -> np.ndarray:
@@ -120,13 +119,12 @@ def scale_color_frames(frames: np.ndarray, scale: float=2.0) -> np.ndarray:
         # single frame
         return cv2.resize(frames, (int(frames.shape[1] * scale), int(frames.shape[0] * scale)))
 
-    else:
-        #batch of frames
-        width, height = (int(frames.shape[2] * scale), int(frames.shape[1] * scale))
-        out = np.zeros_like(frames, shape=(frames.shape[0], width, height, 3))  # pylint: disable=unexpected-keyword-arg
-        for i in range(frames.shape[0]):
-            out[i] = cv2.resize(frames[i], (width, height))
-        return out
+    #batch of frames
+    width, height = (int(frames.shape[2] * scale), int(frames.shape[1] * scale))
+    out = np.zeros_like(frames, shape=(frames.shape[0], width, height, 3))  # pylint: disable=unexpected-keyword-arg
+    for i in range(frames.shape[0]):
+        out[i] = cv2.resize(frames[i], (width, height))
+    return out
 
 
 def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names: Sequence[str],
@@ -326,7 +324,10 @@ def draw_contour(im: np.ndarray, contour: Iterable[np.ndarray], color: Tuple[int
 #                     raw_masks[i, ...] = reverse_crop_and_rotate_frame(masks[i].astype('uint8'), roi_size, centroids[i], angles[i]).astype('bool')
 
 #                 # generate movie chunks with instance data
-#                 field_video = arena_view.generate_frames(raw_frames=raw_frames, keypoints=ref_keypoints[:, None, ...], masks=raw_masks[:,None,...], boxes=None)
+#                 field_video = arena_view.generate_frames(raw_frames=raw_frames,
+#                                                          keypoints=ref_keypoints[:, None, ...],
+#                                                          masks=raw_masks[:,None,...],
+#                                                          boxes=None)
 #                 rc_kpts_video = rot_kpt_view.generate_frames(masks=masks, keypoints=rot_keypoints)
 #                 cln_depth_video = clean_frames_view.generate_frames(clean_frames=clean_frames, masks=masks)
 

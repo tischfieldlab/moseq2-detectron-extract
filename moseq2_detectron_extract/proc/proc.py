@@ -70,7 +70,7 @@ def reduce_axis_size(data: Sequence[np.ndarray], axis: int) -> int:
     if len(data) <= 0:
         raise ValueError('Need a list with at least one array!')
 
-    sizes = set([d.shape[axis] for d in data])
+    sizes = {d.shape[axis] for d in data}
     if len(sizes) == 1:
         return int(sizes.pop())
     else:
@@ -90,7 +90,7 @@ def reduce_dtypes(data: Sequence[np.ndarray]) -> npt.DTypeLike:
     if len(data) <= 0:
         raise ValueError('Need a list with at least one array!')
 
-    dtypes = set([d.dtype for d in data])
+    dtypes = {d.dtype for d in data}
     if len(dtypes) == 1:
         return dtypes.pop()
     else:
@@ -260,7 +260,7 @@ def get_frame_features(frames: np.ndarray, frame_threshold: float=10, mask: np.n
         'axis_length': np.empty((nframes, 2)),
     }
 
-    for k, _ in features.items():
+    for k in features.keys():
         features[k][:] = np.nan
 
     features['contour'] = []
@@ -629,8 +629,8 @@ def iterative_filter_angles(angles: np.ndarray, window: int=3, tolerance: float=
         if np.allclose(curr, last):
             # logging.debug(f'Converged after {iterations} iterations')
             break
-        else:
-            last = curr
+
+        last = curr
     flips = np.isclose(np.abs(curr - angles), 180)
     return curr, flips
 

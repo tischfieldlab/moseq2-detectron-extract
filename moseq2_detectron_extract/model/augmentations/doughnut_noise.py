@@ -79,6 +79,7 @@ class DoughnutGRFNoiseAugmentation(RandomFieldNoiseAugmentation):
 
 
     def generate_doughnut_noise(self, size: Tuple[int, int]=(512, 512), dtype: npt.DTypeLike='uint8'):
+        '''Generate noise in a doughnut shape'''
         # select random values for some parameters
         thickness = self._rand_range(*self.thickness)
         intensity_max = int(self._rand_range(*self.intensity_max))

@@ -67,7 +67,8 @@ def create_doughnut_mask(height: int, width: int, center: Tuple[int, int]=None, 
     thickness (int): thickness of the dougnut. If `None` half the radius will be used
 
     Returns:
-    np.ndarray: mask of size `height` and `width`, containing a doughnut shaped positive region centered on `center` and with radius `radius` and thickness `thickness`
+    np.ndarray: mask of size `height` and `width`, containing a doughnut shaped positive region
+    centered on `center` and with radius `radius` and thickness `thickness`
     '''
 
     if center is None:

@@ -275,9 +275,7 @@ def select_frames_kmeans(frames_iterator: SessionFramesIterator, num_frames_to_p
         kmeans.fit(data)
         pbar.update(1)
 
-    num_frames_per_cluster = num_frames_to_pick // num_clusters
-    if num_frames_per_cluster < 1:
-        num_frames_per_cluster = 1
+    num_frames_per_cluster = max(num_frames_to_pick // num_clusters, 1)
 
     selected_frames = []
     for cluster_id in range(num_clusters):  # pick one frame per cluster

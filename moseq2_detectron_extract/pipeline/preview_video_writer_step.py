@@ -24,7 +24,7 @@ class PreviewVideoWriterStep(ProcessPipelineStep):
 
     def initialize(self):
         preview_video_dest = os.path.join(self.config['output_dir'], f"results_{self.config['bg_roi_index']:02d}.mp4")
-        
+
         self.clean_frames_view = CleanedFramesView(scale=1.5, dset_meta=self.dset_meta)
         self.rot_kpt_view = RotatedKeypointsView(scale=1.5, dset_meta=self.dset_meta)
         self.arena_view = ArenaView(self.config['roi'], scale=2.0, vmin=self.config['min_height'], vmax=self.config['max_height'], dset_meta=self.dset_meta)
