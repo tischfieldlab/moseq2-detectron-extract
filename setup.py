@@ -48,7 +48,8 @@ setup(
         'dev': [
             'pytest',
             'pytest-pep8',
-            'pytest-cov'
+            'pytest-cov',
+            'mypy'
         ]
     },
     python_requires='>=3.8',
