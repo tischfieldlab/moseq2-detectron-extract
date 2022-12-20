@@ -82,11 +82,11 @@ class RandomFieldNoiseAugmentation(Augmentation):
         dmax = image.max()
         return ((image - dmin) * ((vmax - vmin) / (dmax - dmin)) + vmin).astype(dtype)
 
-    def get_transform(self, image: np.ndarray=None):
+    def get_transform(self, image: np.ndarray):
         ''' Get the transform
         '''
         if (self._rand_range() < self.p_application) or self.always_apply:
-            field = self.get_field(shape=image.shape[:2])
+            field = self.get_field(shape=(image.shape[0], image.shape[1]))
 
             field = np.abs(field)
             field = self.rescale_intensity(field, vmin=0, vmax=int(self._rand_range(*self.intensity_max)))

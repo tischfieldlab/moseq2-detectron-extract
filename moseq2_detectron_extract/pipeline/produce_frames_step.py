@@ -36,6 +36,7 @@ class ProduceFramesStep(ProducerPipelineStep):
                 'offset': offset
             }
 
+            assert self.shutdown_event is not None
             while not self.shutdown_event.is_set() and not self.is_output_empty():
                 # we only want to produce a new batch once the cosumer has taken
                 time.sleep(0.1)

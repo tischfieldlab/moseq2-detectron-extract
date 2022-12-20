@@ -6,7 +6,7 @@ from typing import List, Union, cast
 
 import torch
 from torch.multiprocessing import Event, Process, Queue, SimpleQueue
-
+from multiprocessing.synchronize import Event as EventClass
 
 
 
@@ -16,13 +16,13 @@ class PipelineStep(object):
     '''
 
     def __init__(self, config: dict, name: str=None, **kwargs) -> None:
-        super().__init__(name=name, **kwargs)
+        super().__init__()
         self.is_producer = False
-        self.shutdown_event: Event = None
-        self.progress: Queue = None
-        self.in_queue: SimpleQueue = None
-        self.out_queue: List[SimpleQueue] = []
-        self.is_complete = Event()
+        self.shutdown_event: Union[EventClass, None] = None
+        self.progress: Union[Queue, None] = None
+        self.in_queue: Union[Queue, None] = None
+        self.out_queue: List[Queue] = []
+        self.is_complete: EventClass = Event()
 
         self.config = config
 
@@ -38,6 +38,7 @@ class PipelineStep(object):
             Parameters:
             total (int): new total value for progress
         '''
+        assert self.progress is not None
         self.progress.put({'total': total})
 
     def update_progress(self, incremental_progress: int=1):
@@ -46,6 +47,7 @@ class PipelineStep(object):
             Parameters:
             n (int): incremental progress made
         '''
+        assert self.progress is not None
         self.progress.put({'update': incremental_progress})
 
     def write_message(self, message: str, level=logging.INFO, raise_exc=False):
@@ -54,6 +56,7 @@ class PipelineStep(object):
             Parameters:
             message (str): message to write
         '''
+        assert self.progress is not None
         self.progress.put({
             'message': message,
             'level': level,
@@ -63,6 +66,7 @@ class PipelineStep(object):
     def flush_progress(self):
         ''' Flush any progress made on the reciever side
         '''
+        assert self.progress is not None
         self.progress.put({'flush': True})
 
     def set_outputs(self, data):
@@ -103,6 +107,8 @@ class PipelineStep(object):
             # Run some setup
             torch.multiprocessing.set_sharing_strategy('file_system')
             self.reset_progress(self.total_items)
+            assert self.in_queue is not None
+            assert self.shutdown_event is not None
 
             # Allow the step to initalize itself
             self.initialize()

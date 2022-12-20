@@ -24,11 +24,11 @@ from moseq2_detectron_extract.proc.proc import colorize_video, reverse_crop_and_
 from moseq2_detectron_extract.proc.roi import get_bbox_size, get_roi_contour
 
 
-def visualize_annotations(annotations: Iterable[DataItem], metadata, num: int=5):
+def visualize_annotations(annotations: Sequence[DataItem], metadata, num: int=5):
     ''' Visualize annotatated segmentation masks and keypoints
 
     Parameters:
-    annotations (Iterable[DataItem]): Annotated data to visualize
+    annotations (Sequence[DataItem]): Annotated data to visualize
     metadata: dataset metadata
     num (int): Number of items to visualize
 
@@ -354,13 +354,13 @@ class H5ResultPreviewVideoGenerator():
         self.stop = stop
 
         # These members will be set after a call to `self._initialize()`
-        self.total_frames: int = None
-        self.batches: list = None
-        self.roi: np.ndarray = None
-        self.roi_size: Tuple[int, int] = None
-        self.clean_frames_view: CleanedFramesView = None
-        self.rot_kpt_view: RotatedKeypointsView = None
-        self.arena_view: ArenaView = None
+        self.total_frames: int
+        self.batches: list
+        self.roi: np.ndarray
+        self.roi_size: Tuple[int, int]
+        self.clean_frames_view: CleanedFramesView
+        self.rot_kpt_view: RotatedKeypointsView
+        self.arena_view: ArenaView
 
         # these are paths to the datasets inside the h5 file
         self.frames_path = '/frames'
@@ -370,8 +370,8 @@ class H5ResultPreviewVideoGenerator():
         self.centroid_y_path = '/scalars/centroid_y_px'
         self.angle_path = '/scalars/angle'
 
-    def _initialize(self) -> dict:
-        ''' Fetch some initial information from the h5 file and return as a dict
+    def _initialize(self) -> None:
+        ''' Fetch some initial information from the h5 file and load it into this instance
         '''
         with(h5py.File(self.h5_file, 'r')) as h5:
             if self.start is None:
@@ -472,7 +472,7 @@ class H5ResultPreviewVideoGenerator():
 class BaseView():
     ''' Base class for a view
     '''
-    def __init__(self, scale: float = 1, dset_meta: Metadata = None) -> None:
+    def __init__(self, dset_meta: Metadata, scale: float = 1,) -> None:
         self.is_setup = False
         self.scale = scale
         self.dset_meta = dset_meta
@@ -481,14 +481,14 @@ class BaseView():
 class ArenaView(BaseView):
     ''' A view showing the arena depth image plus any instance annotations
     '''
-    def __init__(self, roi: np.ndarray, scale: float = 2, vmin: float = 0.0, vmax: float = 100.0, dset_meta: Metadata = None) -> None:
+    def __init__(self, roi: np.ndarray, dset_meta: Metadata, scale: float = 2, vmin: float = 0.0, vmax: float = 100.0) -> None:
         super().__init__(scale=scale, dset_meta=dset_meta)
         self.vmin = vmin
         self.vmax = vmax
         self.contour = get_roi_contour(roi, crop=True)
 
 
-    def generate_frames(self, raw_frames: np.ndarray, keypoints: np.ndarray, masks: np.ndarray, boxes: np.ndarray):
+    def generate_frames(self, raw_frames: np.ndarray, keypoints: np.ndarray = None, masks: np.ndarray = None, boxes: np.ndarray = None):
         ''' Generate frames for this view
         '''
         rfs = raw_frames.shape
@@ -514,7 +514,7 @@ class ArenaView(BaseView):
 class RotatedKeypointsView(BaseView):
     ''' A view showing cropped and rotated masks and keypoints
     '''
-    def __init__(self, scale: float = 1.5, dset_meta: Metadata = None) -> None:
+    def __init__(self, dset_meta: Metadata, scale: float = 1.5) -> None:
         super().__init__(scale=scale, dset_meta=dset_meta)
 
     def generate_frames(self, masks: np.ndarray, keypoints: np.ndarray) -> np.ndarray:
@@ -542,7 +542,7 @@ class RotatedKeypointsView(BaseView):
 class CleanedFramesView(BaseView):
     ''' A view showing cleaned, cropped, and rotated depth frames
     '''
-    def __init__(self, scale: float = 1.5, dset_meta: Metadata = None) -> None:
+    def __init__(self, dset_meta: Metadata, scale: float = 1.5) -> None:
         super().__init__(scale=scale, dset_meta=dset_meta)
 
     def generate_frames(self, clean_frames: np.ndarray, masks: np.ndarray) -> np.ndarray:

@@ -3,7 +3,7 @@ import logging
 import os
 from copy import deepcopy
 from functools import partial
-from typing import Iterable, List, Literal
+from typing import Dict, Iterable, List, Literal, Sequence
 
 import numpy as np
 import tqdm
@@ -23,8 +23,8 @@ from moseq2_detectron_extract.proc.roi import apply_roi
 SampleMethod = Literal['random', 'uniform', 'kmeans', 'list']
 
 
-def generate_dataset_for_sessions(input_files: Iterable[str], streams: Iterable[Stream], num_samples: int,  sample_method: SampleMethod, roi_params: dict,
-                      output_dir: str, indices: Iterable[int]=None, min_height: int=0, max_height: int=100, chunk_size: int=1000) -> List[dict]:
+def generate_dataset_for_sessions(input_files: Sequence[str], streams: Sequence[Stream], num_samples: int,  sample_method: SampleMethod, roi_params: dict,
+                      output_dir: str, indices: Sequence[int]=None, min_height: int=0, max_height: int=100, chunk_size: int=1000) -> List[dict]:
     ''' Generate a dataset for multiple sessions
 
     Parameters:
@@ -71,7 +71,7 @@ def generate_dataset_for_sessions(input_files: Iterable[str], streams: Iterable[
 
 
 def generate_dataset_for_session(in_file: str, streams: Iterable[Stream], n_samples: int, sample_method: SampleMethod, output_dir: str,
-                                 roi_params: dict, indices: List[int]=None, min_height=0, max_height=0, chunk_size=1000):
+                                 roi_params: dict, indices: Sequence[int]=None, min_height=0, max_height=0, chunk_size=1000):
     ''' Generate a dataset for a single session
 
     Parameters:
@@ -132,7 +132,7 @@ def generate_dataset_for_session(in_file: str, streams: Iterable[Stream], n_samp
     return session_data
 
 
-def prepare_session_iterator(session: Session, streams: Iterable[Stream], sample_method: SampleMethod, n_samples: int, indices: Iterable[int]=None,
+def prepare_session_iterator(session: Session, streams: Iterable[Stream], sample_method: SampleMethod, n_samples: int, indices: Sequence[int]=None,
                              chunk_size: int=1000) -> SessionFramesIterator:
     ''' Prepare a session iterator
 
@@ -152,7 +152,7 @@ def prepare_session_iterator(session: Session, streams: Iterable[Stream], sample
 
     if sample_method == 'random':
         if indices is not None:
-            seq = np.random.choice(indices, n_samples, replace=False)
+            seq = list(np.random.choice(indices, n_samples, replace=False))
             iterator = session.index(seq, chunk_size=chunk_size, streams=streams)
         else:
             iterator = session.sample(n_samples, chunk_size=chunk_size, streams=streams)
@@ -162,6 +162,7 @@ def prepare_session_iterator(session: Session, streams: Iterable[Stream], sample
         iterator = session.index(np.arange(step, session.nframes, step), chunk_size=chunk_size, streams=streams)
 
     elif sample_method == 'list':
+        assert indices is not None
         iterator = session.index(indices, chunk_size=chunk_size, streams=streams)
 
     else:
@@ -181,7 +182,7 @@ def produce_frames(iterator: SessionFramesIterator, dest_directory: str) -> List
     Returns:
     List[dict] - data about the frames which were produced
     '''
-    session_data = {}
+    session_data: Dict = {}
     # Iterate Frames and write images
     for data in tqdm.tqdm(iterator, desc='Processing batches', leave=False):
         frame_idxs = data[0]

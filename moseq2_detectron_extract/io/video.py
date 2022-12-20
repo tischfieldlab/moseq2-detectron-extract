@@ -108,12 +108,15 @@ def read_frames_raw(filename: Union[str, tarfile.TarInfo], frames: FramesSelecti
 
     out_buffer = np.empty((len(frames), frame_dims[1], frame_dims[0]), dtype=np.dtype(dtype))
     if isinstance(tar_object, tarfile.TarFile):
-        with tar_object.extractfile(filename) as frames_file:
-            for blk in blocks:
-                frames_file.seek(blk['seek_point'])
-                chunk = frames_file.read(blk['read_bytes'])
-                chunk = np.frombuffer(chunk, dtype=np.dtype(dtype)).reshape(blk['dims'])
-                out_buffer[blk['idxs'], ...] = chunk
+        frames_file = tar_object.extractfile(filename)
+        if frames_file is None:
+            raise FileNotFoundError(f"Could not open tar member: {filename.name if isinstance(filename, tarfile.TarInfo) else filename}")
+        for blk in blocks:
+            frames_file.seek(blk['seek_point'])
+            chunk = frames_file.read(blk['read_bytes'])
+            chunk = np.frombuffer(chunk, dtype=np.dtype(dtype)).reshape(blk['dims'])
+            out_buffer[blk['idxs'], ...] = chunk
+        frames_file.close()
     elif isinstance(filename, str):
         with open(filename, "rb") as frames_file:
             for blk in blocks:

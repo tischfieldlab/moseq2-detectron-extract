@@ -35,7 +35,6 @@ class WorkerStats(TypedDict):
 class ProcessProgress(threading.Thread):
     ''' Class to track progress in multiprocessing workers
     '''
-    __QUEUE_TYPE = Queue
 
     def __init__(self, problem_queue: Queue) -> None:
         super().__init__(name='progress', daemon=True)
@@ -59,7 +58,7 @@ class ProcessProgress(threading.Thread):
         Returns:
         Queue - used to send messages for this progress
         '''
-        queue = self.__QUEUE_TYPE()
+        queue: Queue = Queue()
         if self.get_tqdm(name) is not None:
             raise KeyError(f'Progress with name "{name}" has already been added! Names should be unique!')
         prog = {
@@ -88,7 +87,7 @@ class ProcessProgress(threading.Thread):
                 return worker['tqdm']
         return None
 
-    def get_stats(self, name: str) -> WorkerStats:
+    def get_stats(self, name: str) -> Union[WorkerStats, None]:
         ''' Get statistics for a worker, including:
             - the total number of items
             - number of completed items
@@ -98,7 +97,7 @@ class ProcessProgress(threading.Thread):
         name (str): name of the progress queue to find
 
         Returns:
-        WorkerStats - stats about the worker
+        WorkerStats - stats about the worker, if worker with `name` not found, None is returned
         '''
         for worker in self.workers:
             if worker['name'] == name:

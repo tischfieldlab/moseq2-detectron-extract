@@ -1,6 +1,6 @@
 from threading import Timer
 import time
-from typing import Callable, List, Union
+from typing import Callable, List, Union, cast
 import torch
 
 from torch.multiprocessing import Queue, Event
@@ -12,23 +12,22 @@ from moseq2_detectron_extract.pipeline.progress import ProcessProgress, WorkerEr
 class Pipeline:
     ''' a multiprocessing pipeline composed of PipelineSteps
     '''
-    __QUEUE_TYPE = Queue
     STOP_WAIT_SECS = 3
 
     def __init__(self) -> None:
         torch.multiprocessing.set_sharing_strategy('file_system')
-        self.problem_queue = Queue()
+        self.problem_queue: Queue = Queue()
         self.progress = ProcessProgress(self.problem_queue)
         self.steps: List[Union[ThreadPipelineStep, ProcessPipelineStep]] = []
         self.shutdown_event = Event()
-        self.timers = []
+        self.timers: List[RepeatTimer] = []
 
 
     def link(self, producer: PipelineStep, *consumers: PipelineStep):
         ''' Link the outputs of produce to the inputs of consumer
         '''
         for consumer in consumers:
-            _queue = self.__QUEUE_TYPE()
+            _queue: Queue = Queue()
             producer.out_queue.append(_queue)
             consumer.in_queue = _queue
 
@@ -48,7 +47,7 @@ class Pipeline:
         The pipeline step
         '''
         # create the pipeline step
-        step: PipelineStep = klass(name=name, **kwargs)
+        step = cast(Union[ThreadPipelineStep, ProcessPipelineStep], klass(name=name, **kwargs))
         step.shutdown_event = self.shutdown_event
 
         # create progress, which also serves as a message pump, and attach to step
