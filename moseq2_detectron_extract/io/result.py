@@ -125,3 +125,32 @@ def write_extracted_chunk_to_h5(h5_file: h5py.File, results: dict) -> None:
     # Writing keypoints dataset
     for kp in results['keypoints'].keys():
         h5_file[f'keypoints/{kp}'][frame_range] = results['keypoints'][kp][offset:]
+
+
+def copy_frame(h5_file: h5py.File, src_frame: int, dst_frame: int) -> None:
+    ''' Copy data from `scr_frame` and write to `dst_frame`
+
+    Parameters:
+    h5_file (h5py.File): results file to operate upon
+    scr_frame (int): index of the frame to copy
+    dst_frame (int): index of the destination frame
+    '''
+
+    # copy over extracted frames and masks
+    h5_file['frames'][dst_frame] = h5_file['frames'][src_frame]
+    h5_file['frames_mask'][dst_frame] = h5_file['frames_mask'][src_frame]
+
+    # copy over scalars and keypoints
+    bases = [
+        '/scalars',
+        '/keypoints/reference',
+        '/keypoints/rotated'
+    ]
+    for base in bases:
+        for key in h5_file[base].keys():
+            h5_file[f'{base}/{key}'][dst_frame] = h5_file[f'{base}/{key}'][src_frame]
+
+    # copy over flips
+    flip_keys = [f'/metadata/extraction/{key}' for key in h5_file['/metadata/extraction'].keys() if key.startswith('flips')]
+    for key in flip_keys:
+        h5_file[key][dst_frame] = h5_file[key][src_frame]
