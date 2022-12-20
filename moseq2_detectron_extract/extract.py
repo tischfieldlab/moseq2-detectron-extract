@@ -146,8 +146,11 @@ def log_processing_status(pipeline: Pipeline):
         producer_progress = pipeline.progress.get_stats(pipeline.steps[0].name)
         complete_progress = pipeline.progress.get_stats(pipeline.steps[-1].name)
 
-        sec_elapsed = producer_progress['elapsed']
-        total_frames = producer_progress['total']
+        assert producer_progress is not None
+        assert complete_progress is not None
+
+        sec_elapsed = producer_progress['elapsed'] or 0
+        total_frames = producer_progress['total'] or 0
         produced_frames = (producer_progress['completed'] or 0)
         completed_frames = (complete_progress['completed'] or 0)
         in_progress_frames = produced_frames - completed_frames

@@ -41,7 +41,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
         #self.update_progress(data['chunk'].shape[0])
         return data
 
-    def __crop_and_rotate(self, data) -> None:
+    def __crop_and_rotate(self, data):
         raw_frames = data['chunk']
         nframes = raw_frames.shape[0]
         centroids = data['features']['features']['centroid']

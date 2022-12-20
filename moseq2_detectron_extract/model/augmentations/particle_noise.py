@@ -57,14 +57,14 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
 
         return particle
 
-    def get_transform(self, image: np.ndarray=None):
+    def get_transform(self, image: np.ndarray):
         ''' Get the transform
         '''
         if (self._rand_range() < self.p_application) or self.always_apply:
             n_particles = int(self._rand_range(*self.n_particles))
             field = np.zeros(image.shape[:2], dtype=image.dtype)
             for _ in range(n_particles):
-                field += self.generate_particle(size=image.shape[:2], dtype=image.dtype)
+                field += self.generate_particle(size=(image.shape[0], image.shape[1]), dtype=image.dtype)
 
             if len(image.shape) == 3:
                 field = np.expand_dims(field, -1)

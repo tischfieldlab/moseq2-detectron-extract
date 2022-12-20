@@ -81,7 +81,7 @@ default_keypoint_connection_rules: KeypointConnections = [
 
 
 def load_annotations_helper(annot_files: Iterable[str], replace_paths: Iterable[Tuple[str, str]]=None,
-                            mask_format: str='polygon', register: bool=True, show_info: bool=True):
+                            mask_format: MaskFormat='polygon', register: bool=True, show_info: bool=True):
     ''' Utility "do-it-all function for the common task of loading and processing annotations
 
     Parameters:
@@ -112,7 +112,7 @@ def load_annotations_helper(annot_files: Iterable[str], replace_paths: Iterable[
         show_dataset_info(annotations)
 
     if register:
-        register_datasets(annotations, default_keypoint_names)
+        register_datasets(annotations)
 
     return annotations
 
@@ -405,8 +405,8 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
     '''
     annot: dict = {}
     kpts = {}
-    original_width = None
-    original_height = None
+    original_width: Union[int, None] = None
+    original_height: Union[int, None] = None
 
 
     if len(entry[key]) > 1:
@@ -440,6 +440,9 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
 
     if keypoint_names is not None:
         annot['keypoints'] = sort_keypoints(keypoint_names, kpts)
+
+    assert original_width is not None
+    assert original_height is not None
 
     return {
         'file_name': get_image_path(entry),

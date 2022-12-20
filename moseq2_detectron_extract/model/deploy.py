@@ -31,7 +31,7 @@ def export_model(cfg: CfgNode, output: str, run_eval: bool=True):
     '''
     logger = setup_logger()
 
-    torch._C._jit_set_bailout_depth(1) # type: ignore; pylint: disable=protected-access
+    torch._C._jit_set_bailout_depth(1) # type: ignore # pylint: disable=protected-access
 
     # cuda context is initialized before creating dataloader, so we don't fork anymore
     cfg.DATALOADER.NUM_WORKERS = 0

@@ -16,7 +16,7 @@ def validate_range_arg(param_name: str, value: Any) -> Union[Tuple[int, int], Tu
             raise ValueError(f"Lower {param_name} should be non negative.")
         if value[1] < 0:
             raise ValueError(f"Upper {param_name} should be non negative.")
-        return value
+        return (value[0], value[1])
     elif isinstance(value, (int, float)):
         if value < 0:
             raise ValueError(f"{param_name} should be non negative.")

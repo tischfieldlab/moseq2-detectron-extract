@@ -20,7 +20,7 @@ def read_flips_file(file_path: str) -> List[Tuple[int, int]]:
     ranges (List[Tuple[int, int]]): list of flip ranges
 
     '''
-    flips = []
+    flips: List[Tuple[int, int]] = []
     with(open(file_path, 'r', encoding='utf-8')) as flip_file:
         for lno, line in enumerate(flip_file):
             line = line.strip()
@@ -42,7 +42,7 @@ def read_flips_file(file_path: str) -> List[Tuple[int, int]]:
                 if len(parts) != 2:
                     raise RuntimeError(f'File {file_path} line {lno + 1}: Expected exactly 2 indicies, but recieved {len(parts)}! "{line}"')
 
-                flips.append(tuple(parts[:2]))
+                flips.append((parts[0], parts[1]))
 
     try:
         verify_ranges(flips)
@@ -124,10 +124,11 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
         # if we were given flip_ranges, convert to flip_mask
         if flip_ranges is not None:
             verify_ranges(flip_ranges, vmax=nframes)
-            flip_mask = np.zeros(nframes, dtype=np.bool)
+            flip_mask = np.zeros(nframes, dtype=bool)
             for start, stop in flip_ranges:
                 flip_mask[start:stop] = flip_class
         else:
+            assert flip_mask is not None
             flip_mask = (flip_mask == flip_class)
 
         # find a path for flips that is not already in use
@@ -161,6 +162,7 @@ def flip_dataset(h5_file: str, flip_mask: np.ndarray = None, flip_ranges: List[T
             h5[flips_path] = recompute_flips(h5, flips_path=flips_path)
 
         # apply flips to the datasets
+        assert flip_mask is not None
         flip_locations = np.nonzero(flip_mask)
         h5[frames_path][flip_locations] = flip_horizontal(h5[frames_path][flip_locations])
         h5[frames_mask_path][flip_locations] = flip_horizontal(h5[frames_mask_path][flip_locations])
@@ -192,10 +194,10 @@ def recompute_flips(h5: h5py.File, flips_path: str = '/metadata/extraction/flips
     np.ndarray - xor reduced flips
     '''
     # split into something like ['/metadata/extraction', 'flips']
-    base_group, base_name = flips_path.rsplit('/', 1)[0]
+    parts = flips_path.rsplit('/', 1)[0]
 
     # Get a sorted list of keys with a suffix matching flips name
-    keys = sorted([f'{base_group}/{k}' for k in list(h5[base_group].keys()) if k.startswith(f'{base_name}_')])
+    keys = sorted([f'{parts[0]}/{k}' for k in list(h5[parts[0]].keys()) if k.startswith(f'{parts[1]}_')])
 
     # pull data for each of the keys
     data = [h5[k][()] for k in keys]

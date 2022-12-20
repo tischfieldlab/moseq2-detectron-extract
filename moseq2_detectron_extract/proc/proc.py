@@ -343,10 +343,10 @@ def reverse_crop_and_rotate_frame(frame: np.ndarray, dest_size: Tuple[int, int],
     rot_mat = cv2.getRotationMatrix2D(src_center, -angle, 1)
     frame = cv2.warpAffine(frame, rot_mat, (dest_size[0], dest_size[1]))
 
-    translate_mat = np.float32([
+    translate_mat = np.array([
         [1, 0, center[0] - src_center[0]],
         [0, 1, center[1] - src_center[1]]
-    ])
+    ], dtype=float)
     frame = cv2.warpAffine(frame, translate_mat, (dest_size[0], dest_size[1]))
 
     return frame
