@@ -1,4 +1,4 @@
-from typing import Dict, List, Literal, Tuple, Union
+from typing import Optional, Dict, List, Literal, Tuple, Union
 
 import h5py
 import numpy as np
@@ -64,7 +64,7 @@ def rotate_points_batch(points: np.ndarray, centers: np.ndarray, angles: Union[n
     return points
 
 
-def keypoint_attributes(keypoint_names: List[str]=None) -> Dict[str, str]:
+def keypoint_attributes(keypoint_names: Optional[List[str]]=None) -> Dict[str, str]:
     ''' Gets keypoint attributes dict with names paired with descriptions.
 
     Parameters:
@@ -91,7 +91,7 @@ def keypoint_attributes(keypoint_names: List[str]=None) -> Dict[str, str]:
 
 
 def keypoints_to_dict(keypoints: np.ndarray, frames: np.ndarray, centers: np.ndarray, angles: np.ndarray, true_depth: float=673.1,
-    keypoint_names: List[str]=None) -> Dict[str, np.ndarray]:
+    keypoint_names: Optional[List[str]]=None) -> Dict[str, np.ndarray]:
     ''' Convert keypoint data to a dict format
 
     Also converts keypoints to following:
@@ -162,7 +162,7 @@ def keypoints_to_dict(keypoints: np.ndarray, frames: np.ndarray, centers: np.nda
     return out
 
 
-def load_keypoint_data_from_h5(h5_file: h5py.File, keypoints: List[str]=None, coord_system: Literal['reference', 'rotated']='reference',
+def load_keypoint_data_from_h5(h5_file: h5py.File, keypoints: Optional[List[str]]=None, coord_system: Literal['reference', 'rotated']='reference',
                                units: Literal['px','mm']='px', root: str='/keypoints'):
     ''' Load keypoint data from a result h5 files.
 
@@ -192,7 +192,7 @@ def load_keypoint_data_from_h5(h5_file: h5py.File, keypoints: List[str]=None, co
     return data
 
 
-def load_keypoint_data_from_dict(data: Dict[str, np.ndarray], keypoints: List[str]=None, coord_system: Literal['reference', 'rotated']='reference',
+def load_keypoint_data_from_dict(data: Dict[str, np.ndarray], keypoints: Optional[List[str]]=None, coord_system: Literal['reference', 'rotated']='reference',
     units: Literal['px','mm']='px', root: str='/keypoints'):
     ''' Load keypoint data from a result h5 files.
 

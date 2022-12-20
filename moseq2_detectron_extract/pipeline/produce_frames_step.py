@@ -4,6 +4,7 @@ from moseq2_detectron_extract.io.session import Session, Stream
 from moseq2_detectron_extract.pipeline.pipeline_step import ProducerPipelineStep
 
 from moseq2_detectron_extract.proc.proc import prep_raw_frames
+from typing import Optional
 
 # pylint: disable=attribute-defined-outside-init
 
@@ -11,7 +12,7 @@ class ProduceFramesStep(ProducerPipelineStep):
     ''' PipelineStep to produce raw frames for processing
     '''
 
-    def __init__(self, session: Session, config: dict, name: str = None, **kwargs) -> None:
+    def __init__(self, session: Session, config: dict, name: Optional[str] = None, **kwargs) -> None:
         super().__init__(config, name, **kwargs)
         self.session = session
 

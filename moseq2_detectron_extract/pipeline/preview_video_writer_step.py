@@ -10,13 +10,14 @@ from moseq2_detectron_extract.proc.keypoints import \
     load_keypoint_data_from_dict
 from moseq2_detectron_extract.proc.proc import stack_videos
 from moseq2_detectron_extract.viz import ArenaView, CleanedFramesView, RotatedKeypointsView
+from typing import Optional
 
 # pylint: disable=attribute-defined-outside-init
 
 class PreviewVideoWriterStep(ProcessPipelineStep):
     ''' PipelineStep which writes a preview video
     '''
-    def __init__(self, config: dict, name: str = None, **kwargs) -> None:
+    def __init__(self, config: dict, name: Optional[str] = None, **kwargs) -> None:
         super().__init__(config, name, **kwargs)
 
         # We need to grab the metadata for the dataset here, or the data will not be available in the subprocess!!

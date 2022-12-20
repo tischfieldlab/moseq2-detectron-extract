@@ -3,7 +3,7 @@ import logging
 import time
 from collections import abc
 from contextlib import ExitStack
-from typing import List, Union
+from typing import Optional, List, Union
 
 import detectron2.data.transforms as T
 import torch
@@ -40,7 +40,7 @@ class Evaluator:
         self.input_format = cfg.INPUT.FORMAT
         assert self.input_format in ["L"], self.input_format
 
-    def __call__(self, output_dir: str=None):
+    def __call__(self, output_dir: Optional[str]=None):
         data_loader = Trainer.build_test_loader(self.cfg, self.cfg.DATASETS.TEST)
         evaluator = DatasetEvaluators([Trainer.build_evaluator(self.cfg, self.cfg.DATASETS.TEST, output_folder=output_dir)])
         eval_results = inference_on_dataset(self.model, data_loader, evaluator)

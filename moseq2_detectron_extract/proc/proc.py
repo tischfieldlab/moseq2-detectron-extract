@@ -1,4 +1,4 @@
-from typing import Dict, List, Literal, Sequence, Tuple
+from typing import Optional, Dict, List, Literal, Sequence, Tuple
 
 import cv2
 import matplotlib.pyplot as plt
@@ -120,7 +120,7 @@ def colorize_video(frames: np.ndarray, vmin: float=0, vmax: float=100, cmap: str
     return disp_img.astype('uint8')
 
 
-def prep_raw_frames(frames: np.ndarray, bground_im: np.ndarray=None, roi: np.ndarray=None, vmin: float=None, vmax: float=None,
+def prep_raw_frames(frames: np.ndarray, bground_im: Optional[np.ndarray]=None, roi: Optional[np.ndarray]=None, vmin: Optional[float]=None, vmax: Optional[float]=None,
                     dtype: npt.DTypeLike='uint8', fix_invalid_pixels=True) -> np.ndarray:
     ''' Prepare raw `frames` by:
             1) subtracting background based on `bground_im`

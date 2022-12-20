@@ -1,7 +1,7 @@
 from concurrent.futures import ProcessPoolExecutor
 import itertools
 import random
-from typing import Iterable, Sequence, Tuple
+from typing import Optional, Iterable, Sequence, Tuple
 
 import cv2
 import matplotlib.pyplot as plt
@@ -129,7 +129,7 @@ def scale_color_frames(frames: np.ndarray, scale: float=2.0) -> np.ndarray:
 
 def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names: Sequence[str],
     keypoint_connection_rules: KeypointConnections, keypoint_colors: Sequence[Tuple[int, int, int]],
-    roi_contour: Iterable[np.ndarray]=None, scale: float=2.0, radius: int=3, thickness: int=2) -> np.ndarray:
+    roi_contour: Optional[Iterable[np.ndarray]]=None, scale: float=2.0, radius: int=3, thickness: int=2) -> np.ndarray:
     ''' Draw `instances` on `frame`
 
     Parameters:
@@ -162,7 +162,7 @@ def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names:
 
 def draw_instances_data_fast(frame: np.ndarray, keypoints: np.ndarray, masks: np.ndarray, boxes: np.ndarray, keypoint_names: Sequence[str],
     keypoint_connection_rules: KeypointConnections, keypoint_colors: Sequence[Tuple[int, int, int]],
-    roi_contour: Iterable[np.ndarray]=None, scale: float=2.0, radius: int=3, thickness: int=2) -> np.ndarray:
+    roi_contour: Optional[Iterable[np.ndarray]]=None, scale: float=2.0, radius: int=3, thickness: int=2) -> np.ndarray:
     ''' Draw `instances` on `frame`
 
     Parameters:
@@ -344,7 +344,7 @@ class H5ResultPreviewVideoGenerator():
     ''' Generates a "result preview video" from an extracted h5 result file
     '''
     def __init__(self, h5_file: str, dset_name: str = 'moseq', vmin: float = 0., vmax: float = 100., fps: int = 30,
-                 batch_size: int = 100, start: int = None, stop: int = None) -> None:
+                 batch_size: int = 100, start: Optional[int] = None, stop: Optional[int] = None) -> None:
         self.h5_file = h5_file
         self.dset_name = dset_name
         self.vmin = vmin
@@ -489,7 +489,7 @@ class ArenaView(BaseView):
         self.contour = get_roi_contour(roi, crop=True)
 
 
-    def generate_frames(self, raw_frames: np.ndarray, keypoints: np.ndarray = None, masks: np.ndarray = None, boxes: np.ndarray = None):
+    def generate_frames(self, raw_frames: np.ndarray, keypoints: Optional[np.ndarray] = None, masks: Optional[np.ndarray] = None, boxes: Optional[np.ndarray] = None):
         ''' Generate frames for this view
         '''
         rfs = raw_frames.shape

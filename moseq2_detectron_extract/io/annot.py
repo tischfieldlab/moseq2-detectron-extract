@@ -80,7 +80,7 @@ default_keypoint_connection_rules: KeypointConnections = [
     ]
 
 
-def load_annotations_helper(annot_files: Iterable[str], replace_paths: Iterable[Tuple[str, str]]=None,
+def load_annotations_helper(annot_files: Iterable[str], replace_paths: Optional[Iterable[Tuple[str, str]]]=None,
                             mask_format: MaskFormat='polygon', register: bool=True, show_info: bool=True):
     ''' Utility "do-it-all function for the common task of loading and processing annotations
 
@@ -292,7 +292,7 @@ def poly_to_mask(poly: np.ndarray, out_shape: Tuple[int, int]) -> np.ndarray:
     return mask
 
 
-def read_annotations(annot_file: str, keypoint_names: List[str]=None, mask_format: MaskFormat='polygon', rescale: float=1.0) -> Sequence[DataItem]:
+def read_annotations(annot_file: str, keypoint_names: Optional[List[str]]=None, mask_format: MaskFormat='polygon', rescale: float=1.0) -> Sequence[DataItem]:
     ''' Read annotations from json file output by labelstudio (coco-ish) format
 
     Parameters:

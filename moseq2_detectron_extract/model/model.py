@@ -13,6 +13,7 @@ from moseq2_detectron_extract.model.augmentations import (
     Albumentations, RandomFieldNoiseAugmentation, ScaleAugmentation, ParticleNoiseAugmentation)
 from moseq2_detectron_extract.model.hooks import LossEvalHook, MemoryUsageHook
 from moseq2_detectron_extract.model.mapper import MoseqDatasetMapper
+from typing import Optional
 
 
 class Trainer(DefaultTrainer):
@@ -45,7 +46,7 @@ class Trainer(DefaultTrainer):
         return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
 
     @classmethod
-    def build_evaluator(cls, cfg: CfgNode, dataset_name: str, output_folder: str=None):
+    def build_evaluator(cls, cfg: CfgNode, dataset_name: str, output_folder: Optional[str]=None):
         if output_folder is None:
             output_folder = os.path.join(cfg.OUTPUT_DIR, "coco_eval")
             ensure_dir(output_folder)

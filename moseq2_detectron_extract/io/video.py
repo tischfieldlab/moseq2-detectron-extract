@@ -7,7 +7,7 @@ import tempfile
 from copy import Error
 from itertools import groupby
 from operator import itemgetter
-from typing import Iterable, List, Tuple, TypeVar, TypedDict, Union
+from typing import Optional, Iterable, List, Tuple, TypeVar, TypedDict, Union
 
 import cv2
 import matplotlib.pyplot as plt
@@ -64,8 +64,8 @@ class BlockInfo(TypedDict):
     dims: Tuple[int, int, int]
     idxs: Iterable[int]
 
-def read_frames_raw(filename: Union[str, tarfile.TarInfo], frames: FramesSelection=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16,
-    dtype: npt.DTypeLike="<i2", tar_object: tarfile.TarFile=None) -> np.ndarray:
+def read_frames_raw(filename: Union[str, tarfile.TarInfo], frames: Optional[FramesSelection]=None, frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16,
+    dtype: npt.DTypeLike="<i2", tar_object: Optional[tarfile.TarFile]=None) -> np.ndarray:
     '''
     Reads in data from raw binary file
 
@@ -161,7 +161,7 @@ class FFProbeInfo(TypedDict):
 
 
 # https://gist.github.com/hiwonjoon/035a1ead72a767add4b87afe03d0dd7b
-def get_video_info(filename: Union[str, tarfile.TarInfo], tar_object: tarfile.TarFile=None) -> FFProbeInfo:
+def get_video_info(filename: Union[str, tarfile.TarInfo], tar_object: Optional[tarfile.TarFile]=None) -> FFProbeInfo:
     '''
     Get dimensions of data compressed using ffv1, along with duration via ffmpeg
 
@@ -221,7 +221,7 @@ def get_video_info(filename: Union[str, tarfile.TarInfo], tar_object: tarfile.Ta
 # simple command to pipe frames to an ffv1 file
 def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
                  pixel_format: str='gray16le', codec: str='ffv1', close_pipe: bool=True,
-                 pipe=None, slices: int=24, slicecrc: int=1, frame_size: str=None, get_cmd=False):
+                 pipe=None, slices: int=24, slicecrc: int=1, frame_size: Optional[str]=None, get_cmd=False):
     '''
     Write frames to avi file using the ffv1 lossless encoder
     '''
@@ -273,7 +273,7 @@ def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
 
 
 def read_frames(filename: Union[str, tarfile.TarInfo], frames=range(0,), threads: int=6, fps: int=30,
-                pixel_format: str='gray16le', frame_size: Tuple[int, int]=None,
+                pixel_format: str='gray16le', frame_size: Optional[Tuple[int, int]]=None,
                 slices: int=24, slicecrc: int=1, tar_object=None, **_):
     '''
     Reads in frames from the .nut/.avi file using a pipe from ffmpeg.
@@ -491,7 +491,7 @@ def load_movie_data(filename: Union[str, tarfile.TarInfo], frames=None, frame_di
 
 
 def get_movie_info(filename: Union[str, tarfile.TarInfo], frame_dims: Tuple[int, int]=(512, 424), bit_depth: int=16,
-                   tar_object: tarfile.TarFile=None):
+                   tar_object: Optional[tarfile.TarFile]=None):
     '''
     Gets movie info
     '''
@@ -512,7 +512,7 @@ def get_movie_info(filename: Union[str, tarfile.TarInfo], frame_dims: Tuple[int,
 class PreviewVideoWriter():
     ''' Encapsulate state needed for generating Preview Videos
     '''
-    def __init__(self, filename: str, fps: int=30, vmin: float=0, vmax: float=100, tqdm_opts: dict=None) -> None:
+    def __init__(self, filename: str, fps: int=30, vmin: float=0, vmax: float=100, tqdm_opts: Optional[dict]=None) -> None:
         self.filename = filename
         self.fps = fps
         self.vmin = vmin
