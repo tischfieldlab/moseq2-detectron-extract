@@ -1,10 +1,12 @@
 from functools import partial
 
 import numpy as np
+from norfair import Detection, Tracker
 
 from moseq2_detectron_extract.pipeline.pipeline_step import ProcessPipelineStep
 from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict
-from moseq2_detectron_extract.proc.proc import crop_and_rotate_frame, instances_to_features
+from moseq2_detectron_extract.proc.proc import (crop_and_rotate_frame,
+                                                instances_to_features)
 from moseq2_detectron_extract.proc.scalars import compute_scalars
 
 # pylint: disable=attribute-defined-outside-init
@@ -21,11 +23,22 @@ class ProcessFeaturesStep(ProcessPipelineStep):
                                        min_height=self.config['min_height'],
                                        max_height=self.config['max_height'],
                                        true_depth=true_depth)
+        self.tracker = Tracker(distance_function="mean_euclidean",
+                               distance_threshold=20,
+                               initialization_delay=None,
+                               hit_counter_max=1)
 
     def process(self, data: dict):
+        self.__select_instances(data)
         data = self.__compute_features(data)
         data = self.__crop_and_rotate(data)
         return data
+
+
+    def __select_instances(self, data):
+        for frame_instances in data['inference']:
+            detections = [Detection(p) for p in frame_instances['instances'].pred_boxes.get_centers().cpu().numpy()]
+            tracked_objects = self.tracker.update(detections=detections)
 
 
     def __compute_features(self, data):

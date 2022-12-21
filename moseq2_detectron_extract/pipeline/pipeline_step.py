@@ -106,7 +106,6 @@ class PipelineStep():
             # Run some setup
             torch.multiprocessing.set_sharing_strategy('file_system')
             self.reset_progress(self.total_items)
-            assert self.in_queue is not None
             assert self.shutdown_event is not None
 
             # Allow the step to initalize itself
@@ -125,6 +124,7 @@ class PipelineStep():
                     data = None
                 else:
                     try:
+                        assert self.in_queue is not None
                         data = self.in_queue.get(block=True, timeout=0.1)
                         if data is None:
                             self.set_outputs(None)
