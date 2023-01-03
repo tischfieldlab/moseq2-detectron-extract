@@ -268,6 +268,17 @@ def click_monkey_patch_option_show_defaults():
     click.core.Option.__init__ = new_init # type: ignore
 
 
+class OptionalParamType(click.ParamType):
+    ''' Wrap a `click.ParamType` and make it optional'''
+    def __init__(self, param_type: click.ParamType):
+        self.param_type = param_type
+
+    def convert(self, value, param, ctx):
+        if not value:
+            return
+        return self.param_type.convert(value, param, ctx)
+
+
 def enable_profiling():
     ''' Enable application profiling via cProfile
     '''
