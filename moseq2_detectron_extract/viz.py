@@ -197,7 +197,7 @@ def draw_instances_data_fast(frame: np.ndarray, keypoints: np.ndarray, masks: np
     if boxes is None:
         boxes = []
 
-    for mask, kpts, box in itertools.zip_longest(masks, keypoints, boxes, fillvalue=None):
+    for i, (mask, kpts, box) in enumerate(itertools.zip_longest(masks, keypoints, boxes, fillvalue=None)):
         # draw mask
         if mask is not None:
             im = draw_mask(im, mask)
@@ -206,6 +206,8 @@ def draw_instances_data_fast(frame: np.ndarray, keypoints: np.ndarray, masks: np
         if box is not None:
             box *= scale
             im = cv2.rectangle(im, tuple(box[0:2].astype(int)), tuple(box[2:4].astype(int)), (0,255,0))
+            txt_pos = (int(box[0]), int(box[1]))
+            im = cv2.putText(im, f"{i}", txt_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1, cv2.LINE_AA)
 
         # keypoints
         if kpts is not None:
