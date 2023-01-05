@@ -161,7 +161,7 @@ def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expec
 @optgroup.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to run model inference on')
 @optgroup.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint')
 @optgroup.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
-@optgroup.option('--instance-threshold', default=0.05, type=click.FloatRange(min=0.0, max=1.0), help='Minimum score threshold to filter inference results')
+@optgroup.option('--instance-threshold', default=0.5, type=click.FloatRange(min=0.0, max=1.0), help='Minimum score threshold to filter inference results')
 @optgroup.option('--expected-instances', default=1, type=click.IntRange(min=1), help='Maximum number of instances expected in each frame. Results will contain no more than this number of instances')
 @optgroup.option('--allowed-detections', default=None, type=OptionalParamType(click.IntRange(min=1)), help='Maximum number of detections allowed to be reported by the detector. This will be reduced to at most --expected-instances during post-processing.')
 @optgroup.group('Background Detection')
