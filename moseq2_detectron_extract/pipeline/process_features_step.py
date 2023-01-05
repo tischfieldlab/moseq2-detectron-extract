@@ -31,7 +31,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
         self.tracker = Tracker(distance_function="mean_euclidean",
                                distance_threshold=50,
                                initialization_delay=0,
-                               hit_counter_max=self.config['nframes'])
+                               hit_counter_max=3)
 
         self.instance_log = InstanceLogger(os.path.join(self.config['output_dir'], "instance_log.tsv"))
 
