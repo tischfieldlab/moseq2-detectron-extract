@@ -110,8 +110,8 @@ class ProcessFeaturesStep(ProcessPipelineStep):
         if len(instances) <= 1:
             return instances
 
-        scores = instances.scores
-        idxs = np.argsort(scores.numpy())
+        # process the instances in order of score
+        idxs = np.argsort(instances.scores.numpy())
 
         # initialize the list of picked indexes
         pick = []
@@ -125,7 +125,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
             pick.append(i)
 
             try:
-                # pre−compute the IoU matrix: NxN
+                # compute the IoU matrix: NxN
                 masks = instances.pred_masks.clone()[idxs].reshape(len(idxs), -1).int()
                 intersection = np.matmul(masks, masks.T)
                 areas = masks.sum(dim=1).expand(len(idxs), len(idxs))
@@ -139,7 +139,8 @@ class ProcessFeaturesStep(ProcessPipelineStep):
 
             except Exception as ex:
                 pass
-        # return only the bounding boxes that were picked using the integer data type
+
+        # return only the instances that were picked
         return instances[pick]
 
 
