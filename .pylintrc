@@ -8,7 +8,7 @@ disable=
 generated-members=numpy.*, torch.*, cv2.*
 
 [FORMAT]
-disable=logging-fstring-interpolation,too-many-arguments,too-many-locals,too-many-instance-attributes,too-few-public-methods,no-else-return,no-self-use
+disable=logging-fstring-interpolation,too-many-arguments,too-many-locals,too-many-instance-attributes,too-few-public-methods,no-else-return,no-self-use,consider-using-enumerate
 max-line-length=160
 good-names=i,j,k,ex,Run,_,pk,X,x,Y,y,xx,yy,mu,a,b,c,d,cx,cy,cs,rr,cc,L,S,n,kp,T,R,o,p,im,h5,x1,x2,y1,y2,ax,ki,r1,r2,e,ff
 max-statements=100
