@@ -157,6 +157,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
             detections.append(Detection(center, data=data))
         return detections
 
+
     def __select_instances(self, data):
         
         for frame_idx, frame_instances in zip(data['frame_idxs'], data['inference']):
@@ -170,9 +171,14 @@ class ProcessFeaturesStep(ProcessPipelineStep):
             if len(tracked_objects) <= 1:
                 continue
 
-            # find the item with the oldest age?
+
+            # filter out detections without any "live" points - i.e. keep only objects observed in the current frame
+            filtered_tracked_objects = filter(lambda to: to.live_points.any() , tracked_objects)
+            # sort the tracked objects by age
+            sorted_tracked_objects = sorted(filtered_tracked_objects, key=lambda item: item.age)
+
+            # while we have tracked objects, pick up to `expected_instances` number of objects
             selected_instances = []
-            sorted_tracked_objects = sorted(tracked_objects, key=lambda item: item.age)
             while len(selected_instances) < self.config['expected_instances'] and len(sorted_tracked_objects) > 0:
                 selected_instances.append(sorted_tracked_objects.pop().last_detection.data["instance"])
 
