@@ -20,20 +20,6 @@ import tqdm
 from tqdm.contrib.logging import _TqdmLoggingHandler
 
 
-def gen_batch_sequence(nframes: int, chunk_size: int, overlap: int, offset: int=0):
-    ''' Generate a sequence with overlap
-
-    Parameters:
-    nframes (int): number of frames to produce
-    chunk_size (int): size of each chunk
-    overlap (int): overlap between successive chunks
-    offset (int): offset of the initial chunk
-    '''
-    seq = range(offset, nframes)
-    for i in range(offset, len(seq)-overlap, chunk_size-overlap):
-        yield seq[i:i+chunk_size]
-
-
 def load_timestamps(timestamp_file: Union[str, IO[bytes]], col: int=0) -> np.ndarray:
     ''' Read timestamps from space delimited text file
 

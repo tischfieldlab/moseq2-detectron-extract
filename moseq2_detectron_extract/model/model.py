@@ -4,7 +4,7 @@ from albumentations.augmentations.transforms import GaussNoise
 from detectron2.config.config import CfgNode
 from detectron2.data import (build_detection_test_loader,
                              build_detection_train_loader)
-from detectron2.data.transforms import (FixedSizeCrop, RandomBrightness,
+from detectron2.data.transforms import (FixedSizeCrop, RandomBrightness, RandomSaturation, RandomLighting,
                                         RandomContrast, RandomRotation)
 from detectron2.engine.defaults import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
@@ -26,15 +26,17 @@ class Trainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg: CfgNode):
         augs = [
-            RandomRotation([0, 360], expand=True, sample_style='range'),
+            RandomRotation([0, 360], expand=False, sample_style='range'),
             ScaleAugmentation(0.5, 1.2, 250, 250),
             FixedSizeCrop((250, 250), pad=True, pad_value=0),
             RandomBrightness(0.8, 1.2),
             RandomContrast(0.8, 1.2),
+            RandomSaturation(0.8, 1.2),
+            RandomLighting(1),
             Albumentations(GaussNoise()),
             # DoughnutNoiseAugmentation(),
-            RandomFieldNoiseAugmentation(p=0.75),
-            ParticleNoiseAugmentation(p=0.75)
+            #RandomFieldNoiseAugmentation(p=0.75),
+            #ParticleNoiseAugmentation(p=0.75)
         ]
         mapper = MoseqDatasetMapper(cfg, is_train=True, augmentations=augs, use_instance_mask=True, use_keypoint=True, recompute_boxes=True)
         return build_detection_train_loader(cfg, mapper=mapper)

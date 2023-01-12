@@ -125,7 +125,9 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd):
 @click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
 @click.option('--replace-data-path', multiple=True, default=[], type=(str, str),
     help='Replace path to data image items in `annot_file`. Specify <search> <replace>')
-def evaluate(model_dir, annot_file, replace_data_path):
+@optgroup.option('--instance-threshold', default=0.05, type=click.FloatRange(min=0.0, max=1.0), help='Minimum score threshold to filter inference results')
+@optgroup.option('--expected-instances', default=1, type=click.IntRange(min=1), help='Maximum number of instances expected in each frame')
+def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expected_instances):
     ''' CLI entrypoint for model evaluation '''
     setup_logging()
     logging.info('') # Empty line to give some breething room
@@ -135,8 +137,8 @@ def evaluate(model_dir, annot_file, replace_data_path):
     with open(os.path.join(model_dir, 'config.yaml'), 'r', encoding='utf-8') as cfg_file:
         cfg = cfg.load_cfg(cfg_file)
     cfg.MODEL.WEIGHTS = get_last_checkpoint(model_dir)
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
-    cfg.TEST.DETECTIONS_PER_IMAGE = 1
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = instance_threshold  # set a custom testing threshold
+    cfg.TEST.DETECTIONS_PER_IMAGE = expected_instances
 
 
     annotations = load_annotations_helper(annot_file,
@@ -158,6 +160,8 @@ def evaluate(model_dir, annot_file, replace_data_path):
 @optgroup.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to run model inference on')
 @optgroup.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint')
 @optgroup.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
+@optgroup.option('--instance-threshold', default=0.05, type=click.FloatRange(min=0.0, max=1.0), help='Minimum score threshold to filter inference results')
+@optgroup.option('--expected-instances', default=1, type=click.IntRange(min=1), help='Maximum number of instances expected in each frame')
 @optgroup.group('Background Detection')
 @optgroup.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
 @optgroup.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
@@ -181,18 +185,20 @@ def evaluate(model_dir, annot_file, replace_data_path):
 @optgroup.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
 @optgroup.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk')
 @optgroup.option('--fps', default=30, type=int, help='Frame rate of camera')
-def extract(model, input_file, device, checkpoint, batch_size, frame_trim, chunk_size, chunk_overlap, bg_roi_dilate, bg_roi_shape, bg_roi_index,
-          bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes,
-          use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size, report_outliers):
+def extract(model, input_file, device, checkpoint, batch_size, instance_threshold, expected_instances, frame_trim, chunk_size, chunk_overlap,
+          bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold,
+          bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size, report_outliers):
     ''' Extract a moseq session with a trained detectron2 model
 
     \b
     MODEL is a path to a model, which could be:
         A) Path to a directory containing model files. It is expected that the directory contain a file `config.yaml`
            containing the model configuration. The model which is ultimatly loaded is affected by --checkpoint.
-           This method allows dynamically setting the --device parameter.
+           This method allows dynamically setting some other parameters, such as --device, --instance-threshold,
+           and --expected-instances.
         B) Path to a file with a `*.ts` extension whose contents are a compiled torchscript model.
-           The parameters --device and --checkpoint have no effect.
+           The parameters --device, --checkpoint, --instance-threshold, and --expected-instances have no effect,
+           since these are "burned into" the model is compiled.
     \b
     INPUT_FILE is a path to moseq raw depth data, which could be:
         A) Path to a compressed moseq session in tar.gz format which contains a depth.dat file,
@@ -333,7 +339,9 @@ def dataset_info(annot_file, replace_data_path):
 @click.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint.')
 @click.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to compile model for.')
 @click.option('--eval-model', is_flag=True, help='Run COCO evaluation metrics on supplied annotations.')
-def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, eval_model):
+@click.option('--instance-threshold', default=0.0, type=click.FloatRange(min=0.0, max=1.0), help='Minimum score threshold to filter inference results')
+@click.option('--expected-instances', default=1, type=click.IntRange(min=1), help='Maximum number of instances expected in each frame')
+def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, eval_model, instance_threshold, expected_instances):
     ''' CLI entrypoint for compiling a model to torchscript '''
     setup_logging()
 
@@ -350,8 +358,8 @@ def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, 
         logging.info(f' -> Using model checkpoint at iteration {checkpoint}....')
         cfg.MODEL.WEIGHTS = get_specific_checkpoint(model_dir, checkpoint)
 
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6  # set a custom testing threshold
-    cfg.TEST.DETECTIONS_PER_IMAGE = 1
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = instance_threshold  # set a custom testing threshold
+    cfg.TEST.DETECTIONS_PER_IMAGE = expected_instances
 
     logging.info(f' -> Setting device to \'{device}\'')
     cfg.MODEL.DEVICE = device
@@ -360,7 +368,9 @@ def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, 
                             replace_data_path,
                             mask_format=cfg.INPUT.MASK_FORMAT,
                             register=True,
+                            split=False,
                             show_info=True)
+    cfg.DATASETS.TEST = ('moseq_train',)
 
     logging.info('Exporting model....')
     export_model(cfg, model_dir, run_eval=eval_model)

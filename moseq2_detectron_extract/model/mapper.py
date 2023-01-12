@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from detectron2.data.dataset_mapper import DatasetMapper
 from moseq2_detectron_extract.io.image import read_image
-from moseq2_detectron_extract.proc.proc import colorize_video
 
 
 class MoseqDatasetMapper(DatasetMapper):
@@ -25,9 +24,10 @@ class MoseqDatasetMapper(DatasetMapper):
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
 
         # USER: Write your own image loading if it's not from a file
-        image = read_image(dataset_dict["file_name"], dtype='uint8')
+        file_name = str(dataset_dict["file_name"]).replace('_depth_', '_mda_')
+        image = read_image(file_name, dtype='uint8')
         # image = image[:,:,0] # grayscale, first channel only, but keep the dimention
-        
+
         utils.check_image_size(dataset_dict, image)
 
 
@@ -35,15 +35,15 @@ class MoseqDatasetMapper(DatasetMapper):
         transforms = self.augmentations(aug_input)
         image = aug_input.image
 
-        if len(image.shape) == 2:
-            # seems the augmentations can cause the last axis to drop
-            # when only a single channel. Lets pop the data into a third dimention!
-            image = image[:,:,None]
+        #if len(image.shape) == 2:
+        #    # seems the augmentations can cause the last axis to drop
+        #    # when only a single channel. Lets pop the data into a third dimention!
+        #    image = image[:,:,None]
 
         #print(image.shape)
-        image = np.expand_dims(image[:, :, 0], axis=0)
+        #image = np.expand_dims(image[:, :, 0], axis=0)
         #print(image.shape)
-        image = colorize_video(image)[0]
+        #image = colorize_video(image)[0]
         #print(image.shape)
 
         image_shape = image.shape[:2]  # h, w

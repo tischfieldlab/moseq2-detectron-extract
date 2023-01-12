@@ -20,13 +20,18 @@ class ProduceFramesStep(ProducerPipelineStep):
         self.session = session
 
     def initialize(self):
-        self.prep_frames = partial( prep_raw_frames,
+        self.prep_frames1 = partial(prep_raw_frames,
                                     bground_im=self.session.bground_im,
                                     roi=self.session.roi,
                                     vmin=self.config['min_height'],
                                     vmax=self.config['max_height'])
+        self.prep_frames2 = partial(prep_raw_frames,
+                                    bground_im=None,
+                                    roi=self.session.roi,
+                                    vmin=None,
+                                    vmax=None)
         self.iterator = self.session.iterate(self.config['chunk_size'], self.config['chunk_overlap'])
-        self.iterator.attach_filter(stream=Stream.DEPTH, filterer=self.prep_frames)
+        # self.iterator.attach_filter(stream=Stream.DEPTH, filterer=self.prep_frames)
         self.enumerator = enumerate(self.iterator)
         self.encoder = HHAEncoder(apply_roi(self.session.bground_im[None,:,:], self.session.roi)[0])
 
@@ -34,12 +39,15 @@ class ProduceFramesStep(ProducerPipelineStep):
         try:
             i, (frame_idxs, raw_frames) = next(self.enumerator)
             offset = self.config['chunk_overlap'] if i > 0 else 0
-            hha = np.zeros((*raw_frames.shape, 3), dtype=np.uint8)
-            for j in range(raw_frames.shape[0]):
-                hha[i] = self.encoder.encode(raw_frames[j])
+
+            raw_frames_for_hha = self.prep_frames2(raw_frames.copy())
+            hha = np.zeros((*raw_frames_for_hha.shape, 3), dtype=np.uint8)
+            for j in range(raw_frames_for_hha.shape[0]):
+                hha[j] = self.encoder.encode(raw_frames_for_hha[j])
+
             data = {
                 'batch': i,
-                'chunk': raw_frames,
+                'chunk': self.prep_frames1(raw_frames),
                 'hha_chunk': hha,
                 'frame_idxs': frame_idxs,
                 'offset': offset
