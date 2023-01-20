@@ -20,7 +20,7 @@ class Predictor:
         self.model = model
         self.is_torchscript = is_torchscript
         self.exit_stack = ExitStack()
-        self.exit_stack .enter_context(torch.no_grad())
+        self.exit_stack.enter_context(torch.no_grad())
 
     @property
     def device(self):
@@ -75,7 +75,7 @@ class Predictor:
             height, width = (torch.tensor(x) for x in image.shape[:2])
             #image = self.aug.get_transform(original_image).apply_image(original_image)
             if isinstance(image, torch.Tensor):
-                pass
+                image = image.movedim(2, 0)
             elif isinstance(image, np.ndarray):
                 image = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
             else:

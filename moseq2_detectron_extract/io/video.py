@@ -166,7 +166,7 @@ def get_video_info(filename: Union[str, tarfile.TarInfo], tar_object: Optional[t
     Get dimensions of data compressed using ffv1, along with duration via ffmpeg
 
     Parameters:
-    filename (str): name of file
+    filename (str|tarfile.TarInfo): name of file
     tar_object (tarfile.TarFile|None): tarfile to read from. None if filename is not compressed
 
     Returns:
@@ -301,7 +301,7 @@ def read_frames(filename: Union[str, tarfile.TarInfo], frames=range(0,), threads
         is_stream = False
         frames_filename = filename
 
-    finfo = get_video_info(filename)
+    finfo = get_video_info(frames_filename)
 
     if frames is None or len(frames) == 0:
         frames = np.arange(finfo['nframes']).astype('int16')
