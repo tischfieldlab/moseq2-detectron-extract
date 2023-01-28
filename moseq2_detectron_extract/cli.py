@@ -1,5 +1,6 @@
 import datetime
 import logging
+import multiprocessing
 import os
 from pathlib import Path
 
@@ -605,5 +606,6 @@ def verify_flips(flip_file):
 
 
 if __name__ == '__main__':
+    multiprocessing.set_start_method('spawn')
     torch.multiprocessing.set_start_method('spawn')
     cli()
