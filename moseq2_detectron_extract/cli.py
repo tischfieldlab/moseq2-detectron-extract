@@ -606,6 +606,4 @@ def verify_flips(flip_file):
 
 
 if __name__ == '__main__':
-    multiprocessing.set_start_method('spawn', force=True)
-    torch.multiprocessing.set_start_method('spawn', force=True)
     cli()
