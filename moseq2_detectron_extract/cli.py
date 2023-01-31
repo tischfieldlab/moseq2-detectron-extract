@@ -40,6 +40,9 @@ from moseq2_detectron_extract.viz import H5ResultPreviewVideoGenerator
 # warnings.showwarning = warn_with_traceback
 # np.seterr(all='raise')
 
+import warnings
+warnings.filterwarnings("ignore")
+
 if os.getenv('MOSEQ_DETECTRON_PROFILE', 'False').lower() in ('true', '1', 't'):
     enable_profiling()
 
