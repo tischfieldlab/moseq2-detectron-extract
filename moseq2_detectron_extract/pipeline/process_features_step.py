@@ -1,6 +1,6 @@
 from functools import partial
 import os
-from typing import List, Literal
+from typing import List
 
 import numpy as np
 from norfair import Detection, Tracker
@@ -13,6 +13,7 @@ from moseq2_detectron_extract.proc.proc import (crop_and_rotate_frame,
 from moseq2_detectron_extract.proc.scalars import compute_scalars
 from detectron2.structures import Instances
 from scipy.ndimage import center_of_mass
+
 
 # pylint: disable=attribute-defined-outside-init
 
@@ -28,7 +29,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
                                        min_height=self.config['min_height'],
                                        max_height=self.config['max_height'],
                                        true_depth=true_depth)
-        self.tracker = Tracker(distance_function="mean_euclidean",
+        self.tracker = Tracker(distance_function='euclidean',
                                distance_threshold=50,
                                initialization_delay=0,
                                hit_counter_max=3)
