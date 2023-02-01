@@ -73,7 +73,11 @@ class PreviewVideoWriterStep(ProcessPipelineStep):
             frame_instances = instances[i]["instances"].to('cpu')
             #ref_masks.append(frame_instances.pred_masks.numpy())
             #ref_keypoints.append(frame_instances.pred_keypoints.numpy())
-            ref_boxes.append(frame_instances.pred_boxes.tensor.numpy())
+            box = frame_instances.pred_boxes.tensor.numpy()
+            if box.size == 0:
+                box = np.empty((1, 4), dtype=float)
+                box.fill(np.nan)
+            ref_boxes.append(box)
         #ref_masks = np.array(ref_masks)
         #ref_keypoints = np.array(ref_keypoints)
         ref_boxes = np.array(ref_boxes)
