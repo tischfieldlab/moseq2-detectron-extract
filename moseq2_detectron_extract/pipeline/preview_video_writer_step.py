@@ -28,7 +28,7 @@ class PreviewVideoWriterStep(ProcessPipelineStep):
 
         # We need to grab the metadata for the dataset here, or the data will not be available in the subprocess!!
         self.dset_meta = MetadataCatalog.get(self.config['dataset_name'])
-        self.workers = 4
+        self.workers = 8
 
     def initialize(self):
         preview_video_dest = os.path.join(self.config['output_dir'], f"results_{self.config['bg_roi_index']:02d}.mp4")
