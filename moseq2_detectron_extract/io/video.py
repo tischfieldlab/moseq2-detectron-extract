@@ -381,6 +381,7 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
 
     command = [
         'ffmpeg',
+        '-tune', 'zerolatency',
         '-y',
         '-loglevel', 'fatal',
         '-threads', str(threads),
@@ -402,7 +403,7 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
         return command
 
     if not pipe:
-        pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=2**20)
+        pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
 
     # scale frames d00d
 
