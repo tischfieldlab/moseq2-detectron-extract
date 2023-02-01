@@ -21,7 +21,7 @@ import tqdm
 from tqdm.contrib.logging import _TqdmLoggingHandler
 
 
-def gen_batch_sequence(nframes: int, chunk_size: int, overlap: int, offset: int=0):
+def gen_batch_sequence(nframes: int, chunk_size: int, overlap: int=0, offset: int=0):
     ''' Generate a sequence with overlap
 
     Parameters:
