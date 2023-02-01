@@ -1,7 +1,7 @@
 import ast
 import json
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -48,7 +48,16 @@ def write_image(filename: str, image: np.ndarray, scale: bool=True, scale_factor
         directory.mkdir(parents=True, exist_ok=True)
 
     if file.suffix == '.tiff':
-        tifffile.imsave(file.as_posix(), image.astype(dtype), compress=compress, metadata=metadata)
+        compression: Union[str, None]
+        compressionargs: Union[Dict[str, Any], None]
+        
+        if compress > 0:
+            compression = 'zlib'
+            compressionargs = {'level': int(compress)}
+        else:
+            compression = None
+            compressionargs = None
+        tifffile.imwrite(file.as_posix(), data=image.astype(dtype), compression=compression, compressionargs=compressionargs, metadata=metadata)
     else:
         imwrite(file.as_posix(), image.astype(dtype))
 

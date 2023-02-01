@@ -62,9 +62,16 @@ def outputs_to_instances(inputs: List[Dict[str, torch.Tensor]], outputs: List[Di
     return instances
 
 
+def ensure_spawn_start_method() -> None:
+    ''' Ensure that multiprocessing start method is set to spawn
+    '''
+    torch.multiprocessing.set_start_method('spawn', force=True)
+
+
 def get_default_device() -> str:
     ''' Get the moniker for the current torch device
     '''
+    ensure_spawn_start_method()
     if torch.cuda.is_available():
         return f'cuda:{torch.cuda.current_device()}'
     else:
@@ -74,6 +81,7 @@ def get_default_device() -> str:
 def get_available_devices() -> List[str]:
     ''' Get a list of available torch device monikers
     '''
+    ensure_spawn_start_method()
     devices = ['cpu']
     if torch.cuda.is_available():
         devices.append('cuda') # generic cuda is allowed

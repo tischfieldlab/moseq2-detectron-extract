@@ -19,6 +19,7 @@ class InferenceStep(ProcessPipelineStep):
 
     def initialize(self):
         warnings.filterwarnings("ignore", category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
+        warnings.filterwarnings("ignore")
 
         self.scale = partial(scale_raw_frames, vmin=self.config['min_height'], vmax=self.config['max_height'])
 

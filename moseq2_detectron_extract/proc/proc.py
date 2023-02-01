@@ -651,8 +651,8 @@ def mask_and_keypoints_from_model_output(model_outputs: List[dict]) -> Tuple[np.
     '''
     # initialize output arrays
     first = model_outputs[0]["instances"]
-    masks = np.empty((len(model_outputs), 1, *first.pred_masks.shape[1:]), dtype='uint8')
-    masks.fill(np.nan)
+    masks = np.zeros((len(model_outputs), 1, *first.pred_masks.shape[1:]), dtype='uint8')
+    # masks.fill(np.nan) # NaNs cannot be used in uint8 arrays :(
     keypoints = np.empty((len(model_outputs), 1, first.pred_keypoints.shape[1], 3), dtype=float)
     keypoints.fill(np.nan)
     num_instances = np.zeros((len(model_outputs)), dtype=int)

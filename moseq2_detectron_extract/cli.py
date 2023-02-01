@@ -1,5 +1,6 @@
 import datetime
 import logging
+import multiprocessing
 import os
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import click
 from click_option_group import optgroup
 from detectron2.utils.env import seed_all_rng
 from tabulate import tabulate
+import torch
 from moseq2_detectron_extract.dataset import generate_dataset_for_sessions, write_label_studio_tasks
 
 from moseq2_detectron_extract.extract import extract_session
@@ -37,6 +39,9 @@ from moseq2_detectron_extract.viz import H5ResultPreviewVideoGenerator
 # warnings.filterwarnings('ignore', category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
 # warnings.showwarning = warn_with_traceback
 # np.seterr(all='raise')
+
+import warnings
+warnings.filterwarnings("ignore")
 
 if os.getenv('MOSEQ_DETECTRON_PROFILE', 'False').lower() in ('true', '1', 't'):
     enable_profiling()
@@ -335,6 +340,116 @@ def dataset_info(annot_file, replace_data_path):
     '''
     setup_logging()
     load_annotations_helper(annot_file, replace_data_path, register=False, show_info=True)
+
+
+@cli.command(name='infer-dataset', help='Run inference on a dataset')
+@click.argument('model_path', nargs=1, type=click.Path(exists=True))
+@click.argument('annot_file', nargs=1, type=click.Path(exists=True))
+@click.option('--replace-data-path', multiple=True, default=[], type=(str, str),
+    help='Replace path to data image items in `annot_file`. Specify <search> <replace>')
+@optgroup.group('Model Inference')
+@optgroup.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to run model inference on')
+@optgroup.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint')
+@optgroup.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
+@optgroup.option('--instance-threshold', default=0.05, type=click.FloatRange(min=0.0, max=1.0), help='Minimum score threshold to filter inference results')
+@optgroup.option('--expected-instances', default=1, type=click.IntRange(min=1), help='Maximum number of instances expected in each frame')
+def infer_dataset(model_path, annot_file, replace_data_path, device, checkpoint, batch_size, instance_threshold, expected_instances):
+    """ Run inference on a dataset
+    """
+
+    # load model
+    print('Loading model....')
+    if os.path.isfile(model_path) and model_path.endswith('.ts'):
+        print(f' -> Using torchscript model "{os.path.abspath(model_path)}"....')
+        print(' -> WARNING: Ignoring --device parameter because this is a torchscript model')
+        predictor = Predictor.from_torchscript(model_path)
+        model_version = model_path
+
+    else:
+        cfg = get_base_config()
+        with open(os.path.join(model_path, 'config.yaml'), 'r', encoding='utf-8') as cfg_file:
+            cfg = cfg.load_cfg(cfg_file)
+
+        if checkpoint == 'last':
+            cfg.MODEL.WEIGHTS = get_last_checkpoint(model_path)
+            print(f' -> Using last model checkpoint: "{cfg.MODEL.WEIGHTS}"')
+        else:
+            cfg.MODEL.WEIGHTS = get_specific_checkpoint(model_path, checkpoint)
+            print(f' -> Using model checkpoint at iteration {checkpoint}: "{cfg.MODEL.WEIGHTS}"')
+
+        print(f" -> Setting device to \"{device}\"")
+        cfg.MODEL.DEVICE = device
+
+        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = instance_threshold # set a custom testing threshold
+        cfg.TEST.DETECTIONS_PER_IMAGE = expected_instances # set number of detections per image
+        predictor = Predictor.from_config(cfg)
+        model_version = cfg.MODEL.WEIGHTS
+
+    print(f' -> Actually using device "{predictor.device}"')
+    print('')
+
+
+    # load the annotations / tasks
+    annotations = read_tasks(annot_file)
+    with open(annot_file, 'r', encoding='utf-8') as in_file:
+        raw_tasks = json.load(in_file)
+    working_annotations = replace_multiple_data_paths_in_annotations(annotations, replace_data_path)
+    register_datasets(working_annotations, split=False)
+    data_loader = Trainer.build_test_loader(cfg, cfg.DATASETS.TRAIN)
+
+
+    # submit tasks to network
+    for idx, inputs in enumerate(data_loader):
+        outputs = predictor(inputs[0]['image'][0, :, :, None])
+        instance = cast(Instances, outputs['instances'][0].to('cpu'))
+        annot = raw_tasks[idx]
+        annot['predictions'] = [{
+            'model_version': model_version,
+            'score': float(instance.scores[0]),
+            'result': []
+        }]
+
+        # add mask
+        poly = mask_to_poly(instance.pred_masks.numpy().astype('uint8')[0])[0]
+        poly[:,:,1] = (poly[:,:,1] / instance.image_size[1]) * 100
+        poly[:,:,0] = (poly[:,:,0] / instance.image_size[0]) * 100
+        annot['predictions'][0]['result'].append({
+            'original_width': int(instance.image_size[1]),
+            'original_height': int(instance.image_size[0]),
+            'image_rotation': 0,
+            'type': 'polygonlabels',
+            'from_name': 'label',
+            'to_name': 'image',
+            'value': {
+                'polygonlabels': ['Mouse'],
+                'points': poly[:,0,:].tolist()
+            }
+        })
+
+        # add keypoints
+        for i, kp in enumerate(default_keypoint_names):
+            annot['predictions'][0]['result'].append({
+                'original_width': int(instance.image_size[1]),
+                'original_height': int(instance.image_size[0]),
+                'image_rotation': 0,
+                'type': 'keypointlabels',
+                'from_name': 'keypoint-label',
+                'to_name': 'image',
+                'value': {
+                    'keypointlabels': [kp],
+                    'x': float((instance.pred_keypoints[0, i, 0] / instance.image_size[1]) * 100),
+                    'y': float((instance.pred_keypoints[0, i, 1] / instance.image_size[0]) * 100),
+                    'width': (1.0 / 3.75)
+                }
+            })
+
+    # save tasks to file, now including annotations
+    write_label_studio_tasks(raw_tasks, annot_file+'.predictions.json')
+
+
+    # get back inference results
+    # add inference results as annotations to tasks
+    # save new annotations including predictions from the model
 
 
 
