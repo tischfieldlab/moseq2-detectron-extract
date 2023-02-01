@@ -1,4 +1,5 @@
 
+import cProfile
 import math
 import os
 import time
@@ -55,12 +56,14 @@ class PreviewVideoWriterStep(ProcessPipelineStep):
                                      root='')
 
         self.executor = ThreadPoolExecutor(self.workers)
+        self.profiler = cProfile.Profile()
 
     def finalize(self):
         self.executor.shutdown()
         self.video_pipe.close()
 
     def process(self, data):
+        self.profiler.enable()
         raw_frames = data['chunk']
         instances = data['inference']
         masks = data['mask_frames']
@@ -109,6 +112,8 @@ class PreviewVideoWriterStep(ProcessPipelineStep):
             frame_idxs, out_video_combined = future.result()
             self.video_pipe.write_frames(frame_idxs, out_video_combined)
             self.update_progress(frame_idxs.shape[0])
+        self.profiler.disable()
+        self.profiler.dump_stats(os.path.join(self.config['output_dir'], f"profile_stats_{frame_idxs[0]}.txt"))
 
     def _process_chunk(self, frame_idxs, raw_frames, ref_boxes, ref_keypoints, ref_masks, masks, rot_keypoints, clean_frames):
 
