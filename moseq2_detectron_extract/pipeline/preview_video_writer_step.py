@@ -104,7 +104,7 @@ class PreviewVideoWriterStep(ProcessPipelineStep):
 
         for future in futures:
             while not future.done():
-                time.sleep(0.5)
+                time.sleep(0.1)
 
             frame_idxs, out_video_combined = future.result()
             self.video_pipe.write_frames(frame_idxs, out_video_combined)
