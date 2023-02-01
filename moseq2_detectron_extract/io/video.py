@@ -402,7 +402,7 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
         return command
 
     if not pipe:
-        pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+        pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=2**20)
 
     # scale frames d00d
 
