@@ -272,6 +272,7 @@ class OptionalParamType(click.ParamType):
     ''' Wrap a `click.ParamType` and make it optional'''
     def __init__(self, param_type: click.ParamType):
         self.param_type = param_type
+        self.name = f'{param_type.name} (Optional)'
 
     def convert(self, value, param, ctx):
         if not value:
