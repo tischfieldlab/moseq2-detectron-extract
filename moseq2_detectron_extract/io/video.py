@@ -402,21 +402,22 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
         return command
 
     if not pipe:
-        pipe = subprocess.Popen(
-            command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+        pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
 
     # scale frames d00d
 
     use_cmap = plt.get_cmap(cmap)
 
     for i in tqdm.tqdm(range(frames.shape[0]), desc="Writing frames", **tqdm_kwargs):
-        disp_img = frames[i, ...].copy().astype('float32')
         if len(frames.shape) == 3:
             # we have only single channel
+            disp_img = frames[i, ...].copy().astype('float32')
             disp_img = (disp_img-depth_min)/(depth_max-depth_min)
             disp_img[disp_img < 0] = 0
             disp_img[disp_img > 1] = 1
             disp_img = np.delete(use_cmap(disp_img), 3, 2)*255
+        else:
+            disp_img = frames[i, ...].copy()
 
         if frame_range is not None:
             cv2.putText(disp_img, str(frame_range[i]), txt_pos, font, 1, white, 2, cv2.LINE_AA)
