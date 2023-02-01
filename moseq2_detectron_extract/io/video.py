@@ -396,6 +396,7 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
         '-r', str(fps),
         '-pix_fmt', 'yuv420p',
         '-tune', 'zerolatency',
+        '-preset', 'ultrafast',
         filename
     ]
 
