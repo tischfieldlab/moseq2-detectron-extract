@@ -381,7 +381,6 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
 
     command = [
         'ffmpeg',
-        '-tune', 'zerolatency',
         '-y',
         '-loglevel', 'fatal',
         '-threads', str(threads),
@@ -396,6 +395,7 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
         '-slicecrc', str(slicecrc),
         '-r', str(fps),
         '-pix_fmt', 'yuv420p',
+        '-tune', 'zerolatency',
         filename
     ]
 
