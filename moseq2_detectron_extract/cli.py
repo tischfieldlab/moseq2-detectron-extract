@@ -1,8 +1,10 @@
 import datetime
+import json
 import logging
 import multiprocessing
 import os
 from pathlib import Path
+from typing import cast
 
 import click
 from click_option_group import optgroup
@@ -12,9 +14,9 @@ import torch
 from moseq2_detectron_extract.dataset import generate_dataset_for_sessions, write_label_studio_tasks
 
 from moseq2_detectron_extract.extract import extract_session
-from moseq2_detectron_extract.io.annot import (default_keypoint_names, load_annotations_helper,
+from moseq2_detectron_extract.io.annot import (default_keypoint_names, load_annotations_helper, mask_to_poly, read_tasks,
                                                register_dataset_metadata,
-                                               register_datasets)
+                                               register_datasets, replace_multiple_data_paths_in_annotations)
 from moseq2_detectron_extract.io.flips import flip_dataset, read_flips_file
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import (
@@ -25,6 +27,7 @@ from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config,
                                                    load_config)
 from moseq2_detectron_extract.model.deploy import export_model
+from moseq2_detectron_extract.model.predict import Predictor
 from moseq2_detectron_extract.model.util import (get_available_device_info,
                                                  get_available_devices,
                                                  get_default_device,
@@ -34,6 +37,7 @@ from moseq2_detectron_extract.model.util import (get_available_device_info,
 from moseq2_detectron_extract.proc.util import check_completion_status
 from moseq2_detectron_extract.quality import find_outliers_h5
 from moseq2_detectron_extract.viz import H5ResultPreviewVideoGenerator
+from detectron2.structures import Instances
 
 # import warnings
 # warnings.filterwarnings('ignore', category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
