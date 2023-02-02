@@ -66,8 +66,8 @@ class PreviewVideoWriterStep(ProcessPipelineStep):
         clean_frames = data['depth_frames']
         rot_keypoints = self.load_rot_kpts(data['keypoints'])
 
-        ref_masks = data['features']['masks']
-        ref_keypoints = data['features']['keypoints']
+        ref_masks = data['features']['masks'][:, None, :, :]
+        ref_keypoints = data['features']['keypoints'][:, None, :, :]
         ref_boxes = []
         for i in range(raw_frames.shape[0]):
             frame_instances = instances[i]["instances"].to('cpu')
