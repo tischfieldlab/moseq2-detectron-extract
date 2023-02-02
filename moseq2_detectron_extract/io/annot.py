@@ -4,6 +4,7 @@ import os
 import random
 from typing import (Callable, Dict, Iterable, List, Literal, MutableSequence,
                     Optional, Sequence, Tuple, TypedDict, Union, cast)
+import cv2
 
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
@@ -103,8 +104,7 @@ def load_annotations_helper(annot_files: Iterable[str], replace_paths: Optional[
         annotations.extend(annot)
 
     if replace_paths is not None:
-        for search, replace in replace_paths:
-            replace_data_path_in_annotations(annotations, search, replace)
+        annotations = replace_multiple_data_paths_in_annotations(annotations, replace_paths)
     validate_annotations(annotations)
 
     if show_info:
@@ -258,7 +258,7 @@ def register_datasets(annotations: MutableSequence[DataItem], split: bool=True) 
             DatasetCatalog.register(f"moseq_{dset_type}", split_annot[i])
             register_dataset_metadata(f"moseq_{dset_type}")
     else:
-        DatasetCatalog.register("moseq_train", annotations)
+        DatasetCatalog.register("moseq_train", lambda: annotations)
         register_dataset_metadata("moseq_train")
 
 
@@ -290,6 +290,49 @@ def poly_to_mask(poly: np.ndarray, out_shape: Tuple[int, int]) -> np.ndarray:
     rr,cc = polygon(poly[:,0], poly[:,1], out_shape)
     mask[cc, rr, 0] = 1
     return mask
+
+
+def mask_to_poly(mask: np.ndarray) -> List[float]:
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    return contours
+    # polygons = []
+
+    # for object in contours:
+    #     coords = []
+
+    #     for point in object:
+    #         coords.append(int(point[0][0]))
+    #         coords.append(int(point[0][1]))
+
+    #     polygons.append(coords)
+    # return polygons
+
+
+def read_tasks(tasks_file: str, rescale: float=1.0) -> Sequence[DataItem]:
+    ''' Read tasks from json file output by labelstudio, not expecting annotation data
+
+    Parameters:
+    tasks_file (string): path to the annotation json file
+    rescale (float): instensity rescaling to apply (by dataset mapper) to image when loading
+
+    Returns:
+    Sequence[DataItem] annotations
+    '''
+    tasks = []
+    with open(tasks_file, 'r', encoding='utf-8') as in_file:
+        data = json.load(in_file)
+
+        for entry in data:
+            image_path = get_image_path(entry)
+            image = read_image(image_path, dtype='uint8')
+            tasks.append({
+                'file_name': image_path,
+                'width': image.shape[1],
+                'height': image.shape[0],
+                'image_id': image_path,
+                'rescale_intensity': rescale,
+            })
+    return tasks
 
 
 def read_annotations(annot_file: str, keypoint_names: Optional[List[str]]=None, mask_format: MaskFormat='polygon', rescale: float=1.0) -> Sequence[DataItem]:
@@ -452,6 +495,21 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
         'annotations': [cast(KptSegmAnnotation, annot)],
         'rescale_intensity': 1,
     }
+
+def replace_multiple_data_paths_in_annotations(annotations: Sequence[DataItem], replace_paths: Sequence[Tuple[str, str]]) -> Sequence[DataItem]:
+    ''' Replace a series substrings in the filename of annotations.
+    Useful when moving datasets to another computer
+
+    Parameters:
+    annotations (Sequence[DataItem]): annotations to validate
+    replace_paths (Tuple[str, str]): a series of searches and replacements
+
+    Returns:
+    Sequence[DataItem], annotations with data path modified according to `replace_paths`
+    '''
+    for search, replace in replace_paths:
+        annotations = replace_data_path_in_annotations(annotations, search, replace)
+    return annotations
 
 
 def replace_data_path_in_annotations(annotations: Sequence[DataItem], search: str, replace: str) -> Sequence[DataItem]:

@@ -47,8 +47,8 @@ def generate_dataset_for_sessions(input_files: Sequence[str], streams: Sequence[
     output_dir = ensure_dir(output_dir)
 
     if streams is None or len(streams) == 0:
-        stream = ['depth']
-    stream = list(set(stream))
+        streams = ['depth']
+    streams = list(set(streams))
 
 
     output_info = []
@@ -231,7 +231,6 @@ def write_label_studio_tasks(tasks: List[dict], dest: str):
     with open(dest, 'w', encoding='utf-8') as task_file:
         json.dump(tasks, task_file, indent='\t')
     logging.info(f'Wrote {len(tasks)} label-studio tasks to "{dest}"')
-
 
 
 def select_frames_kmeans(frames_iterator: SessionFramesIterator, num_frames_to_pick: int, num_clusters: Optional[int]=None,
