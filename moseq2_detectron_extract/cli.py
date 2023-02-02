@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import multiprocessing
 import os
 from pathlib import Path
 from typing import cast
@@ -9,6 +10,7 @@ import click
 from click_option_group import optgroup
 from detectron2.utils.env import seed_all_rng
 from tabulate import tabulate
+import torch
 from moseq2_detectron_extract.dataset import generate_dataset_for_sessions, write_label_studio_tasks
 
 from moseq2_detectron_extract.extract import extract_session
@@ -41,6 +43,9 @@ from detectron2.structures import Instances
 # warnings.filterwarnings('ignore', category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
 # warnings.showwarning = warn_with_traceback
 # np.seterr(all='raise')
+
+import warnings
+warnings.filterwarnings("ignore")
 
 if os.getenv('MOSEQ_DETECTRON_PROFILE', 'False').lower() in ('true', '1', 't'):
     enable_profiling()
@@ -433,6 +438,7 @@ def infer_dataset(model_path, annot_file, replace_data_path, device, checkpoint,
                     'keypointlabels': [kp],
                     'x': float((instance.pred_keypoints[0, i, 0] / instance.image_size[1]) * 100),
                     'y': float((instance.pred_keypoints[0, i, 1] / instance.image_size[0]) * 100),
+                    'width': (1.0 / 3.75)
                 }
             })
 
