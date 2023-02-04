@@ -403,7 +403,7 @@ def infer_dataset(model_path, annot_file, replace_data_path, device, checkpoint,
 
 
     # submit tasks to network
-    for idx, inputs in enumerate(data_loader):
+    for idx, inputs in enumerate(tqdm(data_loader, desc="Inferring images")):
         outputs = predictor(inputs[0]['image'][0, :, :, None])
         instance = cast(Instances, outputs['instances'][0].to('cpu'))
         annot = raw_tasks[idx]
