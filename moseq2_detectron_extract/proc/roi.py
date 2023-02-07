@@ -232,7 +232,7 @@ def apply_roi(frames: np.ndarray, roi: np.ndarray) -> np.ndarray:
 
     bbox = get_bbox(roi)
     if bbox is not None:
-        frames = frames[:, bbox[0, 0]:bbox[1, 0], bbox[0, 1]:bbox[1, 1]]
+        frames = frames[:, int(bbox[0, 0]):int(bbox[1, 0]), int(bbox[0, 1]):int(bbox[1, 1])]
     return frames
 
 
@@ -283,7 +283,7 @@ def get_roi_contour(roi: np.ndarray, crop: bool=True) -> np.ndarray:
     '''
     bbox = get_bbox(roi)
     if crop and bbox is not None:
-        mask = roi[bbox[0, 0]:bbox[1, 0], bbox[0, 1]:bbox[1, 1]]
+        mask = roi[int(bbox[0, 0]):int(bbox[1, 0]), int(bbox[0, 1]):int(bbox[1, 1])]
     else:
         mask = np.copy(roi)
     contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)

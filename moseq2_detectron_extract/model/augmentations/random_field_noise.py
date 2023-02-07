@@ -34,7 +34,7 @@ class RandomFieldNoiseAugmentation(Augmentation):
         self.intensity_max = validate_range_arg('intensity_max', intensity_max)
         self.always_apply = always_apply
         self.p_application = p
-        self.eps = np.finfo(np.float64).eps
+        self.eps: float = float(np.finfo(np.float64).eps)
 
     def pkgen(self, n: float):
         ''' Helper that generates power-law power spectrum

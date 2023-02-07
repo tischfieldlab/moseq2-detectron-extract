@@ -1,8 +1,9 @@
 from importlib.metadata import version
 
 import h5py
+from moseq2_detectron_extract.io.click import click_param_annot
 
-from moseq2_detectron_extract.io.util import click_param_annot, dict_to_h5
+from moseq2_detectron_extract.io.util import dict_to_h5
 from moseq2_detectron_extract.proc.keypoints import keypoint_attributes
 from moseq2_detectron_extract.proc.scalars import scalar_attributes
 

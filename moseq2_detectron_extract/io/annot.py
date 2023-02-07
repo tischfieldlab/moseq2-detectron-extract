@@ -81,7 +81,7 @@ default_keypoint_connection_rules: KeypointConnections = [
     ]
 
 
-def load_annotations_helper(annot_files: Iterable[str], replace_paths: Optional[Iterable[Tuple[str, str]]]=None,
+def load_annotations_helper(annot_files: Iterable[str], replace_paths: Optional[Sequence[Tuple[str, str]]]=None,
                             mask_format: MaskFormat='polygon', register: bool=True, show_info: bool=True):
     ''' Utility "do-it-all function for the common task of loading and processing annotations
 
@@ -162,8 +162,16 @@ def get_dataset_im_size_range(dset: Sequence[DataItem]) -> Tuple[Tuple[float, fl
         (np.min(heights), np.max(heights))
     )
 
+class BboxAspectStats(TypedDict):
+    ''' Statistics on the aspect ratios of bounding boxes
+    '''
+    min: float
+    max: float
+    mean: float
+    median: float
+    stdev: float
 
-def get_dataset_bbox_aspect_ratios(dset: Sequence[DataItem]) -> Dict[str, float]:
+def get_dataset_bbox_aspect_ratios(dset: Sequence[DataItem]) -> BboxAspectStats:
     ''' Calculate descriptive stats for bounding box aspect ratios
 
     Parameters:
@@ -183,11 +191,11 @@ def get_dataset_bbox_aspect_ratios(dset: Sequence[DataItem]) -> Dict[str, float]
             aspect_ratios.append(ax1 / ax2)
 
     return {
-        'min': np.min(aspect_ratios),
-        'max': np.max(aspect_ratios),
-        'mean': np.mean(aspect_ratios),
-        'median': np.median(aspect_ratios),
-        'stdev': np.std(aspect_ratios)
+        'min': float(np.min(aspect_ratios)),
+        'max': float(np.max(aspect_ratios)),
+        'mean': float(np.mean(aspect_ratios)),
+        'median': float(np.median(aspect_ratios)),
+        'stdev': float(np.std(aspect_ratios))
     }
 
 
@@ -292,23 +300,20 @@ def poly_to_mask(poly: np.ndarray, out_shape: Tuple[int, int]) -> np.ndarray:
     return mask
 
 
-def mask_to_poly(mask: np.ndarray) -> List[float]:
+def mask_to_poly(mask: np.ndarray) -> List[List[float]]:
+    '''Convert a mask image to a bounding polygon
+
+    Parameters:
+        mask (np.ndarray): mask with zeros indicating background, and ones indicating foreground
+
+    Returns
+        List of polygon coordinates, of shape (ncoordinates, 2 [x, y])
+    '''
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return contours
-    # polygons = []
-
-    # for object in contours:
-    #     coords = []
-
-    #     for point in object:
-    #         coords.append(int(point[0][0]))
-    #         coords.append(int(point[0][1]))
-
-    #     polygons.append(coords)
-    # return polygons
 
 
-def read_tasks(tasks_file: str, rescale: float=1.0) -> Sequence[DataItem]:
+def read_tasks(tasks_file: str, rescale: float=1.0) -> List[DataItem]:
     ''' Read tasks from json file output by labelstudio, not expecting annotation data
 
     Parameters:
@@ -318,7 +323,7 @@ def read_tasks(tasks_file: str, rescale: float=1.0) -> Sequence[DataItem]:
     Returns:
     Sequence[DataItem] annotations
     '''
-    tasks = []
+    tasks: List[DataItem] = []
     with open(tasks_file, 'r', encoding='utf-8') as in_file:
         data = json.load(in_file)
 
@@ -331,6 +336,7 @@ def read_tasks(tasks_file: str, rescale: float=1.0) -> Sequence[DataItem]:
                 'height': image.shape[0],
                 'image_id': image_path,
                 'rescale_intensity': rescale,
+                'annotations': []
             })
     return tasks
 
@@ -402,8 +408,14 @@ def get_polygon_data(entry: dict, mask_format: MaskFormat) -> SegmAnnotation:
         ],
     }
 
+class KeypointAnnotation(TypedDict):
+    '''Data annotating a given keypoint instance
+    '''
+    x: float
+    y: float
+    v: int
 
-def get_keypoint_data(entry: dict) -> dict:
+def get_keypoint_data(entry: dict) -> Dict[str, KeypointAnnotation]:
     ''' Extract keypoint data from an annotation entry
     '''
     return {
@@ -496,7 +508,7 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
         'rescale_intensity': 1,
     }
 
-def replace_multiple_data_paths_in_annotations(annotations: Sequence[DataItem], replace_paths: Sequence[Tuple[str, str]]) -> Sequence[DataItem]:
+def replace_multiple_data_paths_in_annotations(annotations: List[DataItem], replace_paths: Sequence[Tuple[str, str]]) -> List[DataItem]:
     ''' Replace a series substrings in the filename of annotations.
     Useful when moving datasets to another computer
 
@@ -512,7 +524,7 @@ def replace_multiple_data_paths_in_annotations(annotations: Sequence[DataItem], 
     return annotations
 
 
-def replace_data_path_in_annotations(annotations: Sequence[DataItem], search: str, replace: str) -> Sequence[DataItem]:
+def replace_data_path_in_annotations(annotations: List[DataItem], search: str, replace: str) -> List[DataItem]:
     ''' Replace substrings in the filename of annotations.
     Useful when moving datasets to another computer
 

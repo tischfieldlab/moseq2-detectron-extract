@@ -3,27 +3,38 @@ import pkgutil
 import subprocess
 from importlib import import_module
 from pathlib import Path
+from typing import List
+import click
 
 import pytest
 from moseq2_detectron_extract.cli import cli
 
 
-__THIS_PACKAGE = 'moseq2_detectron_extract'
-pkg_path = Path(__file__).resolve().parent.parent.joinpath(__THIS_PACKAGE)
+def command_tree(obj):
+    if isinstance(obj, click.Group):
+        return {name: command_tree(value) for name, value in obj.commands.items()}
 
 
-@pytest.mark.parametrize("entry_point", [value.name for value in cli.commands.values()])
+def collect_commands(group: click.Group) -> List[str]:
+    return list(command_tree(group).keys())
+
+
+def collect_modules(root: str) -> List[str]:
+    pkg_path = str(Path(__file__).resolve().parent.parent.joinpath(root))
+    modules_to_test = pkgutil.iter_modules([pkg_path], prefix=f"{root}.")
+    module_names = [m.name for m in modules_to_test]
+    return module_names
+
+
+@pytest.mark.parametrize("entry_point", collect_commands(cli))
 def test_entry_point(entry_point):
-    ''' Test that we can run commands with the --help flag
-    '''
-    rtn_code = subprocess.call(['python', os.path.join(pkg_path, 'cli.py'), str(entry_point), '--help'])
+    os.environ["COVERAGE_PROCESS_START"] = "1"
+    rtn_code = subprocess.call(["moseq2-detectron-extract", str(entry_point), "--help"])
     assert rtn_code == 0
+    os.environ.pop("COVERAGE_PROCESS_START")
 
 
-modules_to_test = pkgutil.iter_modules([pkg_path], prefix=__THIS_PACKAGE + '.')
-@pytest.mark.parametrize("module_path", [m.name for m in modules_to_test])
+@pytest.mark.parametrize("module_path", collect_modules("moseq2_detectron_extract"))
 def test_import(module_path):
-    ''' Test that we can import all modules in the package
-    '''
-    import_module(module_path, package=__THIS_PACKAGE)
+    import_module(module_path)
     assert True

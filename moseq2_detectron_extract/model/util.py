@@ -132,7 +132,7 @@ def get_system_versions():
     Returns:
         dict: Contains keys `Framework` and `Version`, both containing lists of data.
     '''
-    data = collections.OrderedDict()
+    data: Dict[str, List[str]] = collections.OrderedDict()
     data['Framework'] = []
     data['Version'] = []
 

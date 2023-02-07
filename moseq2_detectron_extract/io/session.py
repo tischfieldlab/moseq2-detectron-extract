@@ -241,7 +241,7 @@ class Session():
             if use_cache:
                 write_image(roi_filename, roi, scale=True, dtype='uint8')
 
-        true_depth = np.median(bground_im[roi > 0])
+        true_depth = float(np.median(bground_im[roi > 0]))
         if verbose:
             logging.info(f'Detected true depth: {true_depth}')
 
