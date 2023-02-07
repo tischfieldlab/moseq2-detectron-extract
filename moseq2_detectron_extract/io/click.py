@@ -109,7 +109,7 @@ def command_with_config(config_file_param_name: str) -> Type[click.Command]:
             """
             # grab the config file
             config_file = ctx.params[config_file_param_name]
-            param_defaults = {p.human_readable_name: p.default for p in self.params if isinstance(p, click.core.Option)}
+            param_defaults = {p.human_readable_name: p.default for p in self.params if isinstance(p, click.core.Option) and not p.name.startswith('fake_')}
             param_defaults = {k: tuple(v) if isinstance(v, list) else v for k, v in param_defaults.items()}
             param_cli = {k: tuple(v) if isinstance(v, list) else v for k, v in ctx.params.items()}
 
