@@ -117,6 +117,7 @@ def keypoints_to_dict(keypoints: np.ndarray, frames: np.ndarray, centers: np.nda
     if keypoint_names is None:
         keypoint_names = default_keypoint_names
 
+    old_error_settings = np.seterr(invalid='ignore')
     # Collect Z-height for each keypoint, and convert to mm
     x_coords = np.clip(np.floor(keypoints[:, :, 0]).astype(int), 0, frames.shape[2]-1)
     y_coords = np.clip(np.floor(keypoints[:, :, 1]).astype(int), 0, frames.shape[1]-1)
@@ -158,6 +159,8 @@ def keypoints_to_dict(keypoints: np.ndarray, frames: np.ndarray, centers: np.nda
         out[f'rotated/{kpn}_x_mm'] = rot_kpts_mm[:, kpi, 0]
         out[f'rotated/{kpn}_y_mm'] = rot_kpts_mm[:, kpi, 1]
         out[f'rotated/{kpn}_z_mm'] = z_data[:, kpi]
+
+    np.seterr(**old_error_settings)
 
     return out
 

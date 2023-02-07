@@ -1,29 +1,40 @@
 import datetime
-from functools import partial
 import json
 import logging
-import multiprocessing
 import os
+import warnings
+from functools import partial
 from pathlib import Path
 from typing import cast
 
 import click
 from click_option_group import optgroup
+from detectron2.structures import Instances
 from detectron2.utils.env import seed_all_rng
 from tabulate import tabulate
-import torch
-from moseq2_detectron_extract.dataset import generate_dataset_for_sessions, write_label_studio_tasks
+from tqdm import tqdm
 
+from moseq2_detectron_extract.dataset import (generate_dataset_for_sessions,
+                                              write_label_studio_tasks)
 from moseq2_detectron_extract.extract import extract_session
-from moseq2_detectron_extract.io.annot import (default_keypoint_names, load_annotations_helper, mask_to_poly, read_tasks,
-                                               register_dataset_metadata,
-                                               register_datasets, replace_multiple_data_paths_in_annotations)
-from moseq2_detectron_extract.io.click import click_monkey_patch_option_show_defaults, command_with_config, get_command_defaults
+from moseq2_detectron_extract.io.annot import (
+    default_keypoint_names, load_annotations_helper, mask_to_poly, read_tasks,
+    register_dataset_metadata, register_datasets,
+    replace_multiple_data_paths_in_annotations)
+from moseq2_detectron_extract.io.click import (
+    OptionalParamType, click_monkey_patch_option_show_defaults,
+    command_with_config, get_command_defaults)
 from moseq2_detectron_extract.io.flips import flip_dataset, read_flips_file
 from moseq2_detectron_extract.io.session import Session
-from moseq2_detectron_extract.io.util import (
-    attach_file_logger, backup_existing_file,
-    enable_profiling, ensure_dir, find_unused_file_path, recursive_find_unextracted_dirs, setup_logging, wrap_command_with_local, wrap_command_with_slurm, write_yaml)
+from moseq2_detectron_extract.io.util import (attach_file_logger,
+                                              backup_existing_file,
+                                              enable_profiling, ensure_dir,
+                                              find_unused_file_path,
+                                              recursive_find_unextracted_dirs,
+                                              setup_logging,
+                                              wrap_command_with_local,
+                                              wrap_command_with_slurm,
+                                              write_yaml)
 from moseq2_detectron_extract.model import Evaluator, Trainer
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config,
@@ -39,14 +50,12 @@ from moseq2_detectron_extract.model.util import (get_available_device_info,
 from moseq2_detectron_extract.proc.util import check_completion_status
 from moseq2_detectron_extract.quality import find_outliers_h5
 from moseq2_detectron_extract.viz import H5ResultPreviewVideoGenerator
-from detectron2.structures import Instances
 
 # import warnings
 # warnings.filterwarnings('ignore', category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
 # warnings.showwarning = warn_with_traceback
 # np.seterr(all='raise')
 
-import warnings
 warnings.filterwarnings("ignore")
 
 if os.getenv('MOSEQ_DETECTRON_PROFILE', 'False').lower() in ('true', '1', 't'):
@@ -172,8 +181,9 @@ def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expec
 @optgroup.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to run model inference on')
 @optgroup.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint')
 @optgroup.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
-@optgroup.option('--instance-threshold', default=0.05, type=click.FloatRange(min=0.0, max=1.0), help='Minimum score threshold to filter inference results')
-@optgroup.option('--expected-instances', default=1, type=click.IntRange(min=1), help='Maximum number of instances expected in each frame')
+@optgroup.option('--instance-threshold', default=0.5, type=click.FloatRange(min=0.0, max=1.0), help='Minimum score threshold to filter inference results')
+@optgroup.option('--expected-instances', default=1, type=click.IntRange(min=1), help='Maximum number of instances expected in each frame. Results will contain no more than this number of instances')
+@optgroup.option('--allowed-detections', default=None, type=OptionalParamType(click.IntRange(min=1)), help='Maximum number of detections allowed to be reported by the detector. This will be reduced to at most --expected-instances during post-processing.')
 @optgroup.group('Background Detection')
 @optgroup.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
 @optgroup.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
@@ -198,7 +208,7 @@ def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expec
 @optgroup.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk')
 @optgroup.option('--fps', default=30, type=int, help='Frame rate of camera')
 @click.option("--config-file", type=click.Path())
-def extract(model, input_file, device, checkpoint, batch_size, instance_threshold, expected_instances, frame_trim, chunk_size, chunk_overlap,
+def extract(model, input_file, device, checkpoint, batch_size, instance_threshold, expected_instances, allowed_detections, frame_trim, chunk_size, chunk_overlap,
           bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold,
           bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size,
           report_outliers, config_file):
@@ -222,6 +232,10 @@ def extract(model, input_file, device, checkpoint, batch_size, instance_threshol
     '''
     setup_logging(add_defered_file_handler=True)
     print('') # Empty line to give some breething room
+
+    if allowed_detections is None or allowed_detections < expected_instances:
+        allowed_detections = (expected_instances + 1) * 2
+        logging.info(f'WARNING: --allowed-detections was not set or less than --expected-instances, will set --allowed-detections to {allowed_detections}')
 
     config_data = locals()
     config_data.update({
@@ -401,8 +415,13 @@ def infer_dataset(model_path, annot_file, replace_data_path, device, checkpoint,
 
 
     # submit tasks to network
-    for idx, inputs in enumerate(data_loader):
+    for idx, inputs in enumerate(tqdm(data_loader, desc="Inferring images")):
         outputs = predictor(inputs[0]['image'][0, :, :, None])
+
+        if len(outputs['instances']) <= 0:
+            tqdm.write(f"No instances were found in task #{idx}")
+            continue
+
         instance = cast(Instances, outputs['instances'][0].to('cpu'))
         annot = raw_tasks[idx]
         annot['predictions'] = [{

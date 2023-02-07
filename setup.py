@@ -33,6 +33,7 @@ setup(
         'imageio',
         'joblib',
         'matplotlib',
+        'norfair',
         'numpy',
         'pandas',
         'ruamel.yaml',

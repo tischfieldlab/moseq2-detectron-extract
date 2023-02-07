@@ -197,15 +197,17 @@ def draw_instances_data_fast(frame: np.ndarray, keypoints: Optional[np.ndarray],
     if boxes is None:
         boxes = np.array([])
 
-    for mask, kpts, box in itertools.zip_longest(masks, keypoints, boxes, fillvalue=None):
+    for i, (mask, kpts, box) in enumerate(itertools.zip_longest(masks, keypoints, boxes, fillvalue=None)):
         # draw mask
         if mask is not None:
             im = draw_mask(im, mask)
 
         # draw box
-        if box is not None:
+        if box is not None and not np.any(np.isnan(box)):
             box *= scale
             im = cv2.rectangle(im, tuple(box[0:2].astype(int)), tuple(box[2:4].astype(int)), (0,255,0))
+            txt_pos = (int(box[0]), int(box[1]))
+            im = cv2.putText(im, f"{i}", txt_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1, cv2.LINE_AA)
 
         # keypoints
         if kpts is not None:
@@ -491,6 +493,12 @@ class ArenaView(BaseView):
 
     def generate_frames(self, raw_frames: np.ndarray, keypoints: Optional[np.ndarray] = None, masks: Optional[np.ndarray] = None, boxes: Optional[np.ndarray] = None):
         ''' Generate frames for this view
+
+        Parameters:
+            raw_frames (np.ndarray): grayscale frames to draw instances on, of shape (nframes, height, width)
+            keypoints (np.ndarray): keypoint data, of shape (nframes, ninstances, nkeypoints, 3 [x, y, s])
+            masks (np.ndarray): mask data, of shape (nframes, ninstances, height, width)
+            boxes (np.ndarray): bounding box data, of shape (nframes, ninstances, 4)
         '''
         rfs = raw_frames.shape
         video = np.zeros((rfs[0], int(rfs[1]*self.scale), int(rfs[2]*self.scale), 3), dtype='uint8')

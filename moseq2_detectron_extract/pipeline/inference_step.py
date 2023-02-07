@@ -48,7 +48,7 @@ class InferenceStep(ProcessPipelineStep):
             cfg.MODEL.DEVICE = self.config['device']
 
             cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = self.config['instance_threshold'] # set a custom testing threshold
-            cfg.TEST.DETECTIONS_PER_IMAGE = self.config['expected_instances'] # set number of detections per image
+            cfg.TEST.DETECTIONS_PER_IMAGE = self.config['allowed_detections'] # set number of detections per image
             self.predictor = Predictor.from_config(cfg)
 
         self.write_message(f' -> Actually using device "{self.predictor.device}"')

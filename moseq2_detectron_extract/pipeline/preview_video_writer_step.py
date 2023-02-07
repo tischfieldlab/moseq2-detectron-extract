@@ -66,16 +66,20 @@ class PreviewVideoWriterStep(ProcessPipelineStep):
         clean_frames = data['depth_frames']
         rot_keypoints = self.load_rot_kpts(data['keypoints'])
 
-        ref_masks = []
-        ref_keypoints = []
+        ref_masks = data['features']['masks'][:, None, :, :]
+        ref_keypoints = data['features']['keypoints'][:, None, :, :]
         ref_boxes = []
-        for i in range(len(instances)):
+        for i in range(raw_frames.shape[0]):
             frame_instances = instances[i]["instances"].to('cpu')
-            ref_masks.append(frame_instances.pred_masks.numpy())
-            ref_keypoints.append(frame_instances.pred_keypoints.numpy())
-            ref_boxes.append(frame_instances.pred_boxes.tensor.numpy())
-        ref_masks = np.array(ref_masks)
-        ref_keypoints = np.array(ref_keypoints)
+            #ref_masks.append(frame_instances.pred_masks.numpy())
+            #ref_keypoints.append(frame_instances.pred_keypoints.numpy())
+            box = frame_instances.pred_boxes.tensor.numpy()
+            if box.size == 0:
+                box = np.empty((1, 4), dtype=float)
+                box.fill(np.nan)
+            ref_boxes.append(box)
+        #ref_masks = np.array(ref_masks)
+        #ref_keypoints = np.array(ref_keypoints)
         ref_boxes = np.array(ref_boxes)
         frame_idxs = np.array(data['frame_idxs'])
 

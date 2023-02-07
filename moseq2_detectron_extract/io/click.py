@@ -6,6 +6,18 @@ import ruamel.yaml as yaml
 from moseq2_detectron_extract.io.util import read_yaml
 
 
+class OptionalParamType(click.ParamType):
+    ''' Wrap a `click.ParamType` and make it optional'''
+    def __init__(self, param_type: click.ParamType):
+        self.param_type = param_type
+        self.name = f'{param_type.name} (Optional)'
+
+    def convert(self, value, param, ctx):
+        if not value:
+            return
+        return self.param_type.convert(value, param, ctx)
+
+
 def click_param_annot(click_cmd: click.Command) -> Dict[str, Optional[str]]:
     ''' Given a click.Command instance, return a dict that maps option names to help strings.
     Currently skips click.Arguments, as they do not have help strings.
