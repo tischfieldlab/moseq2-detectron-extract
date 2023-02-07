@@ -75,7 +75,6 @@ def cli():
 
 
 # pylint: disable=unused-argument
-
 @cli.command(name='train', help='Train a model')
 @click.argument('annot_file', required=True, nargs=-1, type=click.Path(exists=True))
 @click.argument('model_dir', nargs=1, type=click.Path(exists=False))
@@ -177,7 +176,7 @@ def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expec
 @cli.command(name='extract', cls=command_with_config("config_file"), short_help='Extract a moseq session raw data')
 @click.argument('input_file', nargs=1, type=click.Path(exists=True))
 @optgroup.group('Model Inference')
-@optgroup.option('--model', type=click.Path(exists=True), required=True, help="Path to the model for inference.")
+@optgroup.option('--model', type=click.Path(exists=True), help="Path to the model for inference.")
 @optgroup.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to run model inference on')
 @optgroup.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint')
 @optgroup.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
