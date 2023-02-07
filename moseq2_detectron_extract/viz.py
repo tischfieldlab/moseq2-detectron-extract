@@ -160,7 +160,7 @@ def draw_instances_fast(frame: np.ndarray, instances: Instances, keypoint_names:
 
 
 
-def draw_instances_data_fast(frame: np.ndarray, keypoints: np.ndarray, masks: np.ndarray, boxes: np.ndarray, keypoint_names: Sequence[str],
+def draw_instances_data_fast(frame: np.ndarray, keypoints: Optional[np.ndarray], masks: Optional[np.ndarray], boxes: Optional[np.ndarray], keypoint_names: Sequence[str],
     keypoint_connection_rules: KeypointConnections, keypoint_colors: Sequence[Tuple[int, int, int]],
     roi_contour: Optional[Iterable[np.ndarray]]=None, scale: float=2.0, radius: int=3, thickness: int=2) -> np.ndarray:
     ''' Draw `instances` on `frame`
@@ -189,13 +189,13 @@ def draw_instances_data_fast(frame: np.ndarray, keypoints: np.ndarray, masks: np
     im = cv2.resize(im, (int(im.shape[1] * scale), int(im.shape[0] * scale)))
 
     if masks is None:
-        masks = []
+        masks = np.array([])
 
     if keypoints is None:
-        keypoints = []
+        keypoints = np.array([])
 
     if boxes is None:
-        boxes = []
+        boxes = np.array([])
 
     for mask, kpts, box in itertools.zip_longest(masks, keypoints, boxes, fillvalue=None):
         # draw mask

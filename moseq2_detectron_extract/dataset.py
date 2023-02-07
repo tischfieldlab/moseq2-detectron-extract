@@ -47,7 +47,7 @@ def generate_dataset_for_sessions(input_files: Sequence[str], streams: Sequence[
     output_dir = ensure_dir(output_dir)
 
     if streams is None or len(streams) == 0:
-        streams = ['depth']
+        streams = [Stream.DEPTH]
     streams = list(set(streams))
 
 

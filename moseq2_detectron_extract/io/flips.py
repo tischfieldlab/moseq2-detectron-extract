@@ -122,14 +122,15 @@ def flip_dataset(h5_file: str, flip_mask: Optional[np.ndarray] = None, flip_rang
         nframes = h5[frames_path].shape[0]
 
         # if we were given flip_ranges, convert to flip_mask
+        real_flip_mask: np.ndarray
         if flip_ranges is not None:
             verify_ranges(flip_ranges, vmax=nframes)
-            flip_mask = np.zeros(nframes, dtype=bool)
+            real_flip_mask = np.zeros(nframes, dtype=bool)
             for start, stop in flip_ranges:
-                flip_mask[start:stop] = flip_class
+                real_flip_mask[start:stop] = flip_class
         else:
             assert flip_mask is not None
-            flip_mask = (flip_mask == flip_class)
+            real_flip_mask = (flip_mask == flip_class)
 
         # find a path for flips that is not already in use
         new_flips_path = find_unused_dataset_path(h5_file, flips_path)

@@ -126,6 +126,7 @@ class PipelineStep():
                     data = None
                 else:
                     try:
+                        assert self.in_queue is not None
                         data = self.in_queue.get(block=True, timeout=0.1)
                         if data is None:
                             self.set_outputs(None)
