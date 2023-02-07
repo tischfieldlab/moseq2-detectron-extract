@@ -649,7 +649,6 @@ def extract_batch(input_dir, config_file, cluster_type, slurm_partition, slurm_n
     to_extract = recursive_find_unextracted_dirs(input_dir)
     #params = read_yaml(config_file)
 
-
     if cluster_type == "local":
         cluster_wrap = wrap_command_with_local
     elif cluster_type == "slurm":

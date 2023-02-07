@@ -486,7 +486,7 @@ def wrap_command_with_local(cmd: str, output: Optional[str] = None) -> str:
     Returns:
         (str): the wrapped command
     """
-    if output is not None:
+    if output is None:
         return cmd
     else:
         return cmd + f' > "{output}"'
