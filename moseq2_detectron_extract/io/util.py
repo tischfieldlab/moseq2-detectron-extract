@@ -5,15 +5,15 @@ import io
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import traceback
 import warnings
 from logging.handlers import MemoryHandler
 from pstats import Stats
-from typing import IO, Dict, Optional, Union
+from typing import IO, Any, Optional, Protocol, Union
 
-import click
 import h5py
 import numpy as np
 import ruamel.yaml as yaml
@@ -236,38 +236,6 @@ def attach_file_logger(log_filename: str, logger: Optional[logging.Logger]=None)
     raise RuntimeError('Could not find a suitable handler to attach target!')
 
 
-
-
-def click_param_annot(click_cmd: click.Command) -> Dict[str, Optional[str]]:
-    ''' Given a click.Command instance, return a dict that maps option names to help strings.
-    Currently skips click.Arguments, as they do not have help strings.
-
-    Parameters:
-    click_cmd (click.Command): command to introspect
-
-    Returns:
-    annotations (dict): click.Option.human_readable_name as keys; click.Option.help as values
-    '''
-    annotations = {}
-    for param in click_cmd.params:
-        if isinstance(param, click.Option):
-            annotations[param.human_readable_name] = param.help
-    return annotations
-
-
-def click_monkey_patch_option_show_defaults():
-    ''' Monkey patch click.core.Option to turn on showing default values.
-    '''
-    orig_init = click.core.Option.__init__
-    def new_init(self, *args, **kwargs):
-        ''' This version of click.core.Option.__init__ will set show default values to True
-        '''
-        orig_init(self, *args, **kwargs)
-        self.show_default = True
-    # end new_init()
-    click.core.Option.__init__ = new_init # type: ignore
-
-
 def enable_profiling():
     ''' Enable application profiling via cProfile
     '''
@@ -405,3 +373,120 @@ def find_unused_dataset_path(h5_file: str, path: str) -> str:
                     break
                 i += 1
     return new_path
+
+
+def recursive_find_unextracted_dirs(root_dir=None,
+                                    session_pattern=r'session_\d+\.(?:tgz|tar\.gz)',
+                                    filename='depth.dat',
+                                    yaml_path='proc/results_00.yaml',
+                                    metadata_path='metadata.json',
+                                    skip_checks=False):
+    """Recursively find unextracted directories
+    """
+    if root_dir is None:
+        root_dir = os.getcwd()
+
+    session_archive_pattern = re.compile(session_pattern)
+
+    proc_dirs = []
+    for root, _, files in os.walk(root_dir):
+        for file in files:
+            if file == filename: #test for uncompressed session
+                status_file = os.path.join(root, yaml_path)
+                metadata_file = os.path.join(root, metadata_path)
+
+            elif session_archive_pattern.fullmatch(file): #test for compressed session
+                session_name = os.path.basename(file).replace('.tar.gz', '').replace('.tgz', '')
+                status_file = os.path.join(root, session_name, yaml_path)
+                metadata_file = os.path.join(root, f'{session_name}.json')
+            else:
+                continue #skip this current file as it does not look like session data
+
+            #perform checks
+            if skip_checks or (not os.path.exists(status_file) and os.path.exists(metadata_file)):
+                proc_dirs.append(os.path.join(root, file))
+
+    return proc_dirs
+
+
+class CommandWrapper(Protocol):
+    """Wraps command."""
+
+    def __call__(self, cmd: str, output: Optional[str] = None, **kwds: Any) -> str:
+        """Calls command.
+
+        Args:
+            cmd: string carrying out command
+            output: output option
+        """
+        ...
+
+
+def wrap_command_with_slurm(
+    cmd: str, preamble: str, partition: str, ncpus: int, memory: str, gres: Optional[str], wall_time: str, extra_params: str, output: Optional[str] = None
+) -> str:
+    """Wraps a command to be run as a SLURM sbatch job.
+
+    Args:
+        cmd (str): Command to be wrapped
+        preamble (str): Commands to be run prior to `cmd` as part of this job
+        partition (str): Partition on which to run this job
+        ncpus (int): Number of CPU cores to allocate to this job
+        memory (str): Amount of memory to allocate to this job. ex: "2GB"
+        gres (str): Generic resources to allocate to this job. e.x. "gpu:1"
+        wall_time (str): Amount of wall time allocated to this job. ex: "1:00:00"
+        extra_params (str): Extra parameters to pass to slurm sbatch command
+        output (str): Path of file to write output to
+
+    Returns:
+        (str): the slurm wrapped command
+    """
+    # setup basic parameters for slurm's `sbatch` command:
+    #   important to set --nodes to 1 and --ntasks-per-node to one 1 or
+    #   the multiple --cpus-per-task may be split over multiple nodes!
+    sbatch_cmd = f"sbatch --partition {partition} --nodes 1 --ntasks-per-node 1 --cpus-per-task {ncpus} --mem {memory} --time {wall_time}"
+
+    if gres is not None and gres != "":
+        sbatch_cmd += f' --gres {gres}'
+
+    # if the user requests job log output to a file, set that up
+    if output is not None:
+        sbatch_cmd += f' --output "{output}"'
+
+    # if any extra params for slurm, add them
+    if len(extra_params) > 0:
+        sbatch_cmd += f" {extra_params}"
+
+    if len(preamble) > 0:
+        # if preamble does not end with semicolon, add one to separate from main command
+        if not preamble.endswith(";"):
+            preamble = preamble + "; "
+
+        # ensure there is a space separating preamble from main command
+        if not preamble.endswith(" "):
+            preamble = preamble + " "
+
+        # escape any quotes within the preamble
+        preamble = preamble.replace('"', r"\"")
+
+    # escape any quotes in the command
+    escaped_cmd = cmd.replace('"', r"\"")
+
+    # put it all togher and return the final wrapped command
+    return f'{sbatch_cmd} --wrap "{preamble}{escaped_cmd}";'
+
+
+def wrap_command_with_local(cmd: str, output: Optional[str] = None) -> str:
+    """Wraps a command to be run locally. Admittedly, this does not do too much.
+
+    Args:
+        cmd (str): Command to be wrapped
+        output (str): Path of file to write output to
+
+    Returns:
+        (str): the wrapped command
+    """
+    if output is not None:
+        return cmd
+    else:
+        return cmd + f' > "{output}"'

@@ -1,4 +1,5 @@
 import datetime
+from functools import partial
 import json
 import logging
 import multiprocessing
@@ -17,11 +18,12 @@ from moseq2_detectron_extract.extract import extract_session
 from moseq2_detectron_extract.io.annot import (default_keypoint_names, load_annotations_helper, mask_to_poly, read_tasks,
                                                register_dataset_metadata,
                                                register_datasets, replace_multiple_data_paths_in_annotations)
+from moseq2_detectron_extract.io.click import click_monkey_patch_option_show_defaults, command_with_config, get_command_defaults
 from moseq2_detectron_extract.io.flips import flip_dataset, read_flips_file
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import (
-    attach_file_logger, backup_existing_file, click_monkey_patch_option_show_defaults,
-    enable_profiling, ensure_dir, find_unused_file_path, setup_logging)
+    attach_file_logger, backup_existing_file,
+    enable_profiling, ensure_dir, find_unused_file_path, recursive_find_unextracted_dirs, setup_logging, wrap_command_with_local, wrap_command_with_slurm, write_yaml)
 from moseq2_detectron_extract.model import Evaluator, Trainer
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config,
@@ -163,10 +165,10 @@ def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expec
 
 
 
-@cli.command(name='extract', short_help='Extract a moseq session raw data')
-@click.argument('model', nargs=1, type=click.Path(exists=True))
+@cli.command(name='extract', cls=command_with_config("config_file"), short_help='Extract a moseq session raw data')
 @click.argument('input_file', nargs=1, type=click.Path(exists=True))
 @optgroup.group('Model Inference')
+@optgroup.option('--model', type=click.Path(exists=True), required=True, help="Path to the model for inference.")
 @optgroup.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to run model inference on')
 @optgroup.option('--checkpoint', default='last', help='Model checkpoint to load. Use "last" to load the last checkpoint')
 @optgroup.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
@@ -195,10 +197,11 @@ def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expec
 @optgroup.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
 @optgroup.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk')
 @optgroup.option('--fps', default=30, type=int, help='Frame rate of camera')
+@click.option("--config-file", type=click.Path())
 def extract(model, input_file, device, checkpoint, batch_size, instance_threshold, expected_instances, frame_trim, chunk_size, chunk_overlap,
           bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold,
           bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size,
-          report_outliers):
+          report_outliers, config_file):
     ''' Extract a moseq session with a trained detectron2 model
 
     \b
@@ -610,6 +613,62 @@ def verify_flips(flip_file):
         logging.warning(f'\nWARNING: {error_count}/{len(flip_file)} files have at least one issue!\n')
 
 
+@cli.command(name="generate-extract-config", short_help="Generates a configuration file that holds editable options for extraction parameters.")
+@click.option("--output-file", "-o", type=click.Path(), default="extract-config.yaml", help="Path where configuration should be saved.")
+def generate_extract_config(output_file: str):
+    """Generate a extraction config file.
+
+    Args:
+        output_file: str, where to save the config yaml.
+    """
+    output_file = os.path.abspath(output_file)
+    write_yaml(output_file, get_command_defaults(extract))
+    print(f'Successfully generated extraction config file at "{output_file}".')
+
+
+@cli.command(name='extract-batch', short_help='Generate commands for batch extraction')
+@click.option('-i', '--input-dir', type=click.Path(exists=True, file_okay=False), default=os.getcwd(), help="Path to extraction configuration file")
+@click.option('-c', '--config-file', type=click.Path(exists=True), required=True, help="Path to extraction configuration file")
+@click.option("--cluster-type", default="local", type=click.Choice(["local", "slurm"]))
+@optgroup.group("SLURM Scheduler Options", help="The following parameters affect how SLURM jobs are requested, ignored unless --cluster-type=slrum")
+@optgroup.option("--slurm-partition", type=str, default="main", help="Partition on which to run jobs. Only for SLURM")
+@optgroup.option("--slurm-ncpus", type=int, default=16, help="Number of CPUs per job. Only for SLURM")
+@optgroup.option("--slurm-memory", type=str, default="32GB", help="Amount of memory per job. Only for SLURM")
+@optgroup.option("--slurm-gres", type=str, default="gpu:1", help="Generic resources to request for the job, typically 1 gpu. Only for SLURM")
+@optgroup.option("--slurm-wall-time", type=str, default="30:00", help="Max wall time per job. Only for SLURM")
+@optgroup.option(
+    "--slurm-preamble",
+    type=str,
+    default="",
+    help="Extra commands to run prior to executing job. Useful for activating an environment, if needed",
+)
+@optgroup.option("--slurm-extra", type=str, default="", help="Extra parameters to pass to surm.")
+def extract_batch(input_dir, config_file, cluster_type, slurm_partition, slurm_ncpus, slurm_memory, slurm_gres, slurm_wall_time, slurm_preamble, slurm_extra):
+    """Generate commmands for batch extraction of raw moseq data.
+    """
+    to_extract = recursive_find_unextracted_dirs(input_dir)
+    #params = read_yaml(config_file)
+
+
+    if cluster_type == "local":
+        cluster_wrap = wrap_command_with_local
+    elif cluster_type == "slurm":
+        cluster_wrap = partial(
+            wrap_command_with_slurm,
+            preamble=slurm_preamble,
+            partition=slurm_partition,
+            ncpus=slurm_ncpus,
+            memory=slurm_memory,
+            gres=slurm_gres,
+            wall_time=slurm_wall_time,
+            extra_params=slurm_extra,
+        )
+    else:
+        raise ValueError(f"Unsupported cluster-type {cluster_type}")
+
+    for item in to_extract:
+        base_command = f"moseq2-detectron-extract extract --config-file {config_file} {item}"
+        print(cluster_wrap(base_command))
 
 
 if __name__ == '__main__':

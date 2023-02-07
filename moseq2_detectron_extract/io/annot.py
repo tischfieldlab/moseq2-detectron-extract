@@ -302,7 +302,7 @@ def poly_to_mask(poly: np.ndarray, out_shape: Tuple[int, int]) -> np.ndarray:
 
 def mask_to_poly(mask: np.ndarray) -> List[List[float]]:
     '''Convert a mask image to a bounding polygon
-    
+
     Parameters:
         mask (np.ndarray): mask with zeros indicating background, and ones indicating foreground
 
@@ -409,6 +409,8 @@ def get_polygon_data(entry: dict, mask_format: MaskFormat) -> SegmAnnotation:
     }
 
 class KeypointAnnotation(TypedDict):
+    '''Data annotating a given keypoint instance
+    '''
     x: float
     y: float
     v: int
