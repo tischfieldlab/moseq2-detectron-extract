@@ -115,7 +115,7 @@ def colorize_video(frames: np.ndarray, vmin: float=0, vmax: float=100, cmap: str
     disp_img = (disp_img-vmin)/(vmax-vmin)
     disp_img[disp_img < 0] = 0
     disp_img[disp_img > 1] = 1
-    disp_img = use_cmap(disp_img)[:,:,:,:3]*255
+    disp_img = use_cmap(disp_img)[...,:3]*255
 
     return disp_img.astype('uint8')
 
