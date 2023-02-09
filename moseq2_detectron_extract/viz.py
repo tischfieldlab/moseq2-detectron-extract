@@ -210,7 +210,7 @@ def draw_instances_data_fast(frame: np.ndarray, keypoints: Optional[np.ndarray],
             im = cv2.putText(im, f"{i}", txt_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1, cv2.LINE_AA)
 
         # keypoints
-        if kpts is not None:
+        if kpts is not None and not np.any(np.isnan(kpts)):
             im = draw_keypoints(im, kpts, keypoint_names, keypoint_connection_rules, keypoint_colors, scale=scale, radius=radius, thickness=thickness)
 
     return im
