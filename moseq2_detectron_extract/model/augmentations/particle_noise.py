@@ -3,7 +3,7 @@ from typing import Tuple
 import elasticdeform
 import numpy as np
 import numpy.typing as npt
-from detectron2.data.transforms import NoOpTransform
+from detectron2.data.transforms import NoOpTransform, BlendTransform
 from moseq2_detectron_extract.model.augmentations.occlude_transform import MaxBlendTransform
 from moseq2_detectron_extract.model.augmentations.random_field_noise import \
     RandomFieldNoiseAugmentation
@@ -69,6 +69,7 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
             if len(image.shape) == 3:
                 field = np.expand_dims(field, -1)
 
-            return MaxBlendTransform(src_image=field)
+            #return MaxBlendTransform(src_image=field)
+            return BlendTransform(src_image=field, src_weight=1, dst_weight=1)
         else:
             return NoOpTransform()

@@ -2,7 +2,7 @@ from functools import partial
 from typing import Tuple
 
 import numpy as np
-from detectron2.data.transforms import Augmentation, NoOpTransform
+from detectron2.data.transforms import Augmentation, NoOpTransform, BlendTransform
 from FyeldGenerator import generate_field
 
 from moseq2_detectron_extract.model.augmentations.occlude_transform import \
@@ -83,11 +83,15 @@ class RandomFieldNoiseAugmentation(Augmentation):
         dmax = image.max()
         return ((image - dmin) * ((vmax - vmin) / (dmax - dmin)) + vmin).astype(dtype)
 
-    def get_transform(self, image: np.ndarray):
+    def get_transform(self, image: np.ndarray, sem_seg: np.ndarray):
         ''' Get the transform
         '''
         if (self._rand_range() < self.p_application) or self.always_apply:
             field = self.get_field(shape=(image.shape[0], image.shape[1]))
+
+            # apply mask
+            if sem_seg is not None:
+                field = field * (1 - sem_seg)
 
             field = np.abs(field)
             field = self.rescale_intensity(field, vmin=0, vmax=int(self._rand_range(*self.intensity_max)))
@@ -97,8 +101,8 @@ class RandomFieldNoiseAugmentation(Augmentation):
             if len(image.shape) == 3:
                 field = np.expand_dims(field, -1)
 
-            #return BlendTransform(src_image=field, src_weight=1, dst_weight=1)
+            return BlendTransform(src_image=field, src_weight=1, dst_weight=1)
             #return MaxBlendTransform(src_image=field)
-            return ThresholdBlendTransform(src_image=field, threshold=10)
+            #return ThresholdBlendTransform(src_image=field, threshold=10)
         else:
             return NoOpTransform()

@@ -34,7 +34,7 @@ class DoughnutWhiteNoiseAugmentation(Augmentation):
         self.p_application = p
 
 
-    def get_transform(self, image: np.ndarray):
+    def get_transform(self, image: np.ndarray, sem_seg: np.ndarray):
         ''' Get the transform
         '''
         if (self._rand_range() < self.p_application) or self.always_apply:
@@ -48,6 +48,11 @@ class DoughnutWhiteNoiseAugmentation(Augmentation):
 
             im = np.zeros(shape=image.shape[:2], dtype=float)
             im[donut] = random_state.normal(self.mu, sigma, size=np.count_nonzero(donut))
+
+            # apply mask
+            if sem_seg is not None:
+                im = im * (1 - sem_seg)
+
             if len(image.shape) == 3:
                 im = np.expand_dims(im, -1)
             return BlendTransform(im, src_weight=1, dst_weight=1)
@@ -95,11 +100,15 @@ class DoughnutGRFNoiseAugmentation(RandomFieldNoiseAugmentation):
         return field
 
 
-    def get_transform(self, image: np.ndarray):
+    def get_transform(self, image: np.ndarray, sem_seg: np.ndarray):
         ''' Get the transform
         '''
         if (self._rand_range() < self.p_application) or self.always_apply:
             noise_field = self.generate_doughnut_noise(size=(image.shape[0], image.shape[1]), dtype=image.dtype)
+
+            # apply mask
+            if sem_seg is not None:
+                noise_field = noise_field * (1 - sem_seg)
 
             if len(image.shape) == 3:
                 noise_field = np.expand_dims(noise_field, -1)

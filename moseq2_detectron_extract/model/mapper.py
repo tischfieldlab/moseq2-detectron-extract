@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from detectron2.data.dataset_mapper import DatasetMapper
 from moseq2_detectron_extract.io.image import read_image
-
+from detectron2.structures.masks import PolygonMasks, polygons_to_bitmask, BitMasks
 
 class MoseqDatasetMapper(DatasetMapper):
     ''' Custom dataset mapper for moseq data
@@ -28,19 +28,15 @@ class MoseqDatasetMapper(DatasetMapper):
         image = image[:,:,0,None] # grayscale, first channel only, but keep the dimention
         utils.check_image_size(dataset_dict, image)
 
-        # USER: Remove if you don't do semantic/panoptic segmentation.
-        if "sem_seg_file_name" in dataset_dict:
-            sem_seg_gt = utils.read_image(dataset_dict.pop("sem_seg_file_name"), "L").squeeze(2)
-        else:
-            sem_seg_gt = None
 
-        aug_input = T.AugInput(image, sem_seg=sem_seg_gt)
-        if "rotate" in dataset_dict:
-            rotate = T.RandomRotation([dataset_dict['rotate']], expand=False, sample_style="choice")
-            transforms = T.AugmentationList(self.augmentations.augs + [rotate])(aug_input)
-        else:
-            transforms = self.augmentations(aug_input)
-        image, sem_seg_gt = aug_input.image, aug_input.sem_seg
+        poly_segm = PolygonMasks([annot['segmentation'] for annot in dataset_dict['annotations']])
+        btmsk_segm = [polygons_to_bitmask(p, dataset_dict["height"], dataset_dict["width"]) for p in poly_segm.polygons]
+        seg_masks = np.array(btmsk_segm).sum(axis=0).astype('uint8')
+
+
+        aug_input = T.AugInput(image, sem_seg=seg_masks)
+        transforms = self.augmentations(aug_input)
+        image = aug_input.image
 
         if len(image.shape) == 2:
             # seems the augmentations can cause the last axis to drop
@@ -52,20 +48,11 @@ class MoseqDatasetMapper(DatasetMapper):
         # but not efficient on large generic data structures due to the use of pickle & mp.Queue.
         # Therefore it's important to use torch.Tensor.
         dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
-        if sem_seg_gt is not None:
-            dataset_dict["sem_seg"] = torch.as_tensor(sem_seg_gt.astype("long"))
 
-        # USER: Remove if you don't use pre-computed proposals.
-        # Most users would not need this feature.
-        if self.proposal_topk is not None:
-            utils.transform_proposals(
-                dataset_dict, image_shape, transforms, proposal_topk=self.proposal_topk
-            )
 
         if not self.is_train:
             # USER: Modify this if you want to keep them for some reason.
             dataset_dict.pop("annotations", None)
-            dataset_dict.pop("sem_seg_file_name", None)
             return dataset_dict
 
         if "annotations" in dataset_dict:

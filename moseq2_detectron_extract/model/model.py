@@ -10,7 +10,7 @@ from detectron2.engine.defaults import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
 from moseq2_detectron_extract.io.util import ensure_dir
 from moseq2_detectron_extract.model.augmentations import (
-    Albumentations, RandomFieldNoiseAugmentation, ScaleAugmentation, ParticleNoiseAugmentation)
+    Albumentations, RandomFieldNoiseAugmentation, ScaleAugmentation, ParticleNoiseAugmentation, DoughnutGRFNoiseAugmentation)
 from moseq2_detectron_extract.model.hooks import LossEvalHook, MemoryUsageHook
 from moseq2_detectron_extract.model.mapper import MoseqDatasetMapper
 from typing import Optional
@@ -27,22 +27,22 @@ class Trainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg: CfgNode):
         augs = [
-            RandomRotation([0, 360], expand=True, sample_style='range'),
-            ScaleAugmentation(0.5, 1.2, 250, 250),
+            RandomRotation([0, 359], expand=False, sample_style='range'),
+            ScaleAugmentation(0.75, 1.2, 250, 250),
             FixedSizeCrop((250, 250), pad=True, pad_value=0),
-            RandomBrightness(0.8, 1.2),
-            RandomContrast(0.8, 1.2),
+            RandomBrightness(0.9, 1.1),
+            RandomContrast(0.9, 1.1),
             Albumentations(GaussNoise()),
-            # DoughnutNoiseAugmentation(),
-            RandomFieldNoiseAugmentation(p=0.75),
-            ParticleNoiseAugmentation(p=0.75)
+            DoughnutGRFNoiseAugmentation(p=0.5),
+            ParticleNoiseAugmentation(p=0.5),
+            RandomFieldNoiseAugmentation(p=0.5),
         ]
         mapper = MoseqDatasetMapper(cfg, is_train=True, augmentations=augs, use_instance_mask=True, use_keypoint=True, recompute_boxes=True)
         return build_detection_train_loader(cfg, mapper=mapper)
 
     @classmethod
     def build_test_loader(cls, cfg: CfgNode, dataset_name: str):
-        mapper = MoseqDatasetMapper(cfg, is_train=False, augmentations=[], use_instance_mask=True, use_keypoint=True, recompute_boxes=False)
+        mapper = MoseqDatasetMapper(cfg, is_train=False, augmentations=[], use_instance_mask=True, use_keypoint=True, recompute_boxes=True)
         return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
 
     @classmethod
