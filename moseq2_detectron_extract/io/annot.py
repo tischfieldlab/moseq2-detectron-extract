@@ -81,12 +81,13 @@ default_keypoint_connection_rules: KeypointConnections = [
     ]
 
 
-def load_annotations_helper(annot_files: Iterable[str], replace_paths: Optional[Sequence[Tuple[str, str]]]=None,
+def load_annotations_helper(annot_files: Iterable[str], image_format: str, replace_paths: Optional[Sequence[Tuple[str, str]]]=None,
                             mask_format: MaskFormat='polygon', register: bool=True, show_info: bool=True):
     ''' Utility "do-it-all function for the common task of loading and processing annotations
 
     Parameters:
     annot_files (Iterable[str]): file paths to read annotation information from
+    image_format (str): format of the images, typically 'L' for grayscale or 'RGB'
     replace_paths (Iterable[Tuple[str, str]]): search and replacement pairs for fixing filename paths in annotations
     mask_format (str): format that masks should be loaded as
     register (bool): if True, register loaded annotations with detectron2 dataset register
@@ -109,7 +110,7 @@ def load_annotations_helper(annot_files: Iterable[str], replace_paths: Optional[
 
     if show_info:
         logging.info('Dataset information:')
-        show_dataset_info(annotations)
+        show_dataset_info(annotations, image_format)
 
     if register:
         register_datasets(annotations)
@@ -117,28 +118,32 @@ def load_annotations_helper(annot_files: Iterable[str], replace_paths: Optional[
     return annotations
 
 
-def get_dataset_statistics(dset: Sequence[DataItem]):
+def get_dataset_statistics(dset: Sequence[DataItem], image_format: str):
     ''' Calculate mean a standard deviation of images over a dataset.
 
     Parameters:
-    dest (Sequence[DataItem]): annotations to compute statistics on
+    dest (Sequence[DataItem]): annotations on which to compute statistics
+    image_format (str): format of the images, typically 'L' for grayscale or 'RGB'
 
     Returns:
     Tuple(np.ndarray, np.ndarray), tuple of (mean, stdev), each an array indexed by channel
     '''
-    nchannels = 1
+    nchannels = 1 if image_format == 'L' else 3
     _count = 0
     _mean = np.zeros((nchannels,), dtype=float)
     _stdev = np.zeros((nchannels,), dtype=float)
 
     for d in tqdm(dset, desc='Computing Pixel Statistics', leave=False):
         scale_factor = d["rescale_intensity"] if "rescale_intensity" in d else None
-        image = read_image(d["file_name"], scale_factor=scale_factor, dtype='uint8')[:, :, 0]
+        image = read_image(d["file_name"], scale_factor=scale_factor, dtype='uint8')
+
+        if image_format == 'L':
+            image = image[:, :, 0, None]
 
         _count += 1
         for c in range(nchannels):
-            _mean[c] += image.mean()
-            _stdev[c] += image.std()
+            _mean[c] += image[:, :, c].mean()
+            _stdev[c] += image[:, :, c].std()
 
     _mean = _mean / _count
     _stdev = _stdev / _count
@@ -541,12 +546,13 @@ def replace_data_path_in_annotations(annotations: List[DataItem], search: str, r
     return annotations
 
 
-def show_dataset_info(annotations: Sequence[DataItem]) -> None:
+def show_dataset_info(annotations: Sequence[DataItem], image_format: str) -> None:
     ''' Print some basic information about a list of annotations.
         Includes the number of items, the size range of images, and the size range of bboxes
 
     Parameters:
     annotations (Sequence[DataItem]): annotations to validate
+    image_format (str): format of the images, typically 'L' for grayscale or 'RGB'
     '''
     logging.info(f"Number of Items: {len(annotations)}")
 
@@ -566,7 +572,7 @@ def show_dataset_info(annotations: Sequence[DataItem]) -> None:
                  f"mean {bbox_ratios['mean']:.2f} ± {bbox_ratios['stdev']:.2f} stdev")
 
     logging.info("Pixel Intensity Statistics:")
-    im_means, im_stdevs = get_dataset_statistics(annotations)
+    im_means, im_stdevs = get_dataset_statistics(annotations, image_format=image_format)
     for channel in range(im_means.shape[0]):
         logging.info(f" -> Ch{channel}: mean {im_means[channel]:.2f} ± {im_stdevs[channel]:.2f} stdev")
 

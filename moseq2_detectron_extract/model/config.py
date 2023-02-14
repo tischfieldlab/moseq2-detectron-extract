@@ -48,7 +48,7 @@ def get_base_config() -> CfgNode:
     cfg.DATALOADER.NUM_WORKERS = 4
 
     # Some information about the input images
-    cfg.INPUT.FORMAT = "L"
+    cfg.INPUT.FORMAT = "RGB"
     cfg.INPUT.MIN_SIZE_TRAIN = (240,)
     cfg.INPUT.MAX_SIZE_TRAIN = 250
     cfg.INPUT.MIN_SIZE_TEST = 240
@@ -78,7 +78,7 @@ def get_base_config() -> CfgNode:
 
 
     # emperically tuned parameters
-    cfg.MODEL.BACKBONE.FREEZE_AT = 0
+    cfg.MODEL.BACKBONE.FREEZE_AT = 2
     cfg.MODEL.FPN.NORM = 'GN'
     cfg.MODEL.FPN.FUSE_TYPE = 'avg'
     cfg.MODEL.ROI_KEYPOINT_HEAD.POOLER_RESOLUTION = 7
@@ -116,12 +116,12 @@ def add_dataset_cfg(cfg: CfgNode, train_dset_name: str="moseq_train", test_dset_
     ]
 
     if recompute_pixel_stats:
-        px_mean, px_stdev = get_dataset_statistics(DatasetCatalog.get(train_dset_name))
+        px_mean, px_stdev = get_dataset_statistics(DatasetCatalog.get(train_dset_name), cfg.INPUT.FORMAT)
         cfg.MODEL.PIXEL_MEAN = [float(pm) for pm in px_mean]
         cfg.MODEL.PIXEL_STD = [float(ps) for ps in px_stdev]
     else:
         # use premeasured
-        cfg.MODEL.PIXEL_MEAN = [1.8554014629469981]
-        cfg.MODEL.PIXEL_STD = [6.392353752797691]
+        cfg.MODEL.PIXEL_MEAN = [1.12] * (1 if cfg.INPUT.FORMAT == 'L' else 3)
+        cfg.MODEL.PIXEL_STD = [5.79] * (1 if cfg.INPUT.FORMAT == 'L' else 3)
 
     return cfg

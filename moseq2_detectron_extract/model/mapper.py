@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from detectron2.data.dataset_mapper import DatasetMapper
 from moseq2_detectron_extract.io.image import read_image
-from detectron2.structures.masks import PolygonMasks, polygons_to_bitmask, BitMasks
+from detectron2.structures.masks import PolygonMasks, polygons_to_bitmask
 
 class MoseqDatasetMapper(DatasetMapper):
     ''' Custom dataset mapper for moseq data
@@ -25,7 +25,10 @@ class MoseqDatasetMapper(DatasetMapper):
         # USER: Write your own image loading if it's not from a file
         scale_factor = dataset_dict["rescale_intensity"] if "rescale_intensity" in dataset_dict else None
         image = read_image(dataset_dict["file_name"], scale_factor=scale_factor, dtype='uint8')
-        image = image[:,:,0,None] # grayscale, first channel only, but keep the dimention
+        if self.image_format == 'L':
+            image = image[:,:,0,None] # grayscale, first channel only, but keep the dimention
+        elif self.image_format in ['RGB', 'BGR']:
+            pass
         utils.check_image_size(dataset_dict, image)
 
 

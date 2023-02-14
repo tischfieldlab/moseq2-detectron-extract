@@ -121,6 +121,7 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd):
 
 
     load_annotations_helper(annot_file,
+                            cfg.INPUT.FORMAT,
                             replace_data_path,
                             mask_format=cfg.INPUT.MASK_FORMAT,
                             register=True,
@@ -162,6 +163,7 @@ def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expec
 
 
     annotations = load_annotations_helper(annot_file,
+                                          cfg.INPUT.FORMAT,
                                           replace_data_path,
                                           mask_format=cfg.INPUT.MASK_FORMAT,
                                           register=False,
@@ -354,7 +356,7 @@ def dataset_info(annot_file, replace_data_path):
          -> Statistics on the image pixel intensities
     '''
     setup_logging()
-    load_annotations_helper(annot_file, replace_data_path, register=False, show_info=True)
+    load_annotations_helper(annot_file, "RGB", replace_data_path, register=False, show_info=True)
 
 
 @cli.command(name='infer-dataset', help='Run inference on a dataset')
@@ -507,6 +509,7 @@ def compile_model(model_dir, annot_file, replace_data_path, checkpoint, device, 
     cfg.MODEL.DEVICE = device
 
     load_annotations_helper(annot_file,
+                            cfg.INPUT.FORMAT,
                             replace_data_path,
                             mask_format=cfg.INPUT.MASK_FORMAT,
                             register=True,
