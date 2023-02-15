@@ -39,7 +39,7 @@ class Predictor:
         checkpointer = DetectionCheckpointer(model)
         checkpointer.load(cfg.MODEL.WEIGHTS)
 
-        assert cfg.INPUT.FORMAT in ["L"], cfg.INPUT.FORMAT
+        assert model.input_format == cfg.INPUT.FORMAT
 
         return cls(model)
 
@@ -66,8 +66,15 @@ class Predictor:
         # Apply pre-processing to image.
         return_as_list = True
         if len(original_image.shape) == 3:
+            # if we were not given a batch, convert to a batch.
+            # afterwards, origional_image will always be of shape (N, H, W, C)
             return_as_list = False
             original_image = original_image[None, ...]
+
+        if self.model.input_format == 'RGB' and original_image.shape[3] == 1:
+            # the model is expecting RGB format, but we were given single channel
+            # grayscale. Convert by just copying the single channel 3 times.
+            original_image = np.concatenate((original_image,) * 3, axis=3)
 
         inputs = []
         for i in range(original_image.shape[0]):
