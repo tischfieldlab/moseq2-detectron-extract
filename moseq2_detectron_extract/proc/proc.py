@@ -9,6 +9,7 @@ import tqdm
 from bottleneck import move_median
 from moseq2_detectron_extract.proc.keypoints import rotate_points_batch
 from moseq2_detectron_extract.proc.roi import apply_roi
+from moseq2_detectron_extract.proc.kalman import KalmanTracker, angle_difference
 
 
 def stack_videos(videos: Sequence[np.ndarray], orientation: Literal['horizontal', 'vertical', 'diagional']) -> np.ndarray:
@@ -666,7 +667,7 @@ def mask_and_keypoints_from_model_output(model_outputs: List[dict]) -> Tuple[np.
     return masks, keypoints, num_instances
 
 
-def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
+def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tracker: KalmanTracker):
     ''' Detect additional features and perform feature postprocessing
 
     Parameters:
@@ -696,14 +697,49 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray):
     angles[incl] = np.unwrap(angles[incl] * 2) / 2
     angles = -np.rad2deg(angles)
 
-    # Get and apply flips using keypoint information
-    flips = flips_from_keypoints(allocentric_keypoints[:,0,...], features['centroid'], angles, lengths)
-    angles[flips] += 180
+    if tracker is not None:
+        flips = np.zeros((allocentric_keypoints.shape[0],), dtype=bool)
 
-    # apply iterative filter on angle values
-    angles, filter_flips = iterative_filter_angles(angles)
-    features['orientation'] = np.array(angles)
-    flips = np.logical_xor(flips, filter_flips)
+        if not tracker.is_initialized:
+            init_data = [
+                features['centroid'],
+                angles
+            ]
+            tracker.initialize(init_data)
+
+        for i in range(allocentric_keypoints.shape[0]):
+            # evaluate keypoint liklihood, possibly mask keypoints
+
+            # get the next predicted state from the tracker
+            predicted_next_centroid, predicted_next_angle = tracker.sample(1)
+            rel_angle_dist = angle_difference(predicted_next_angle, angles[[i]])
+
+            # ask keypoint opinion on if angle should be flipped
+            flip_i, conf_i = flips_from_keypoints(allocentric_keypoints[[i],0,...], features['centroid'][[i],:], angles[[i]], lengths[[i]])
+            if flip_i[0]:
+                angles[i] += 180
+            flips[i] = flip_i
+
+
+            # finally updata kalman filter
+            to_filter = [
+                features['centroid'][[i]],
+                angles[[i]]
+            ]
+            t_cent, t_angle = tracker.filter_update(to_filter)
+            features['centroid'][i, :] = t_cent
+            angles[i] = t_angle
+
+        features['orientation'] = np.array(angles)
+    else:
+        # Get and apply flips using keypoint information
+        flips, _ = flips_from_keypoints(allocentric_keypoints[:,0,...], features['centroid'], angles, lengths)
+        angles[flips] += 180
+
+        # apply iterative filter on angle values
+        angles, filter_flips = iterative_filter_angles(angles)
+        features['orientation'] = np.array(angles)
+        flips = np.logical_xor(flips, filter_flips)
 
     return {
         'cleaned_frames': cleaned_frames,

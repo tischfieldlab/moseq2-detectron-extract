@@ -13,6 +13,7 @@ from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict
 from moseq2_detectron_extract.proc.proc import (crop_and_rotate_frame,
                                                 instances_to_features)
 from moseq2_detectron_extract.proc.scalars import compute_scalars
+from moseq2_detectron_extract.proc.kalman import KalmanTracker, KalmanTrackerAngle, KalmanTrackerPoint2D
 
 # pylint: disable=attribute-defined-outside-init
 
@@ -32,6 +33,11 @@ class ProcessFeaturesStep(ProcessPipelineStep):
                                distance_threshold=50,
                                initialization_delay=0,
                                hit_counter_max=3)
+
+        self.tracker2 = KalmanTracker([
+            KalmanTrackerPoint2D(order=3, delta_t=1.0),
+            KalmanTrackerAngle(order=3, delta_t=1.0, mod=True)
+        ])
 
         self.instance_log = InstanceLogger(os.path.join(self.config['output_dir'], "instance_log.tsv"))
 
@@ -103,7 +109,6 @@ class ProcessFeaturesStep(ProcessPipelineStep):
 
 
     def __select_instances(self, data):
-        
         for frame_idx, frame_instances in zip(data['frame_idxs'], data['inference']):
             #self.__soft_nms_mask_instances(frame_instances['instances'])
             frame_instances['instances'] = self.__nms_mask_instances(frame_instances['instances'])
@@ -130,7 +135,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
 
 
     def __compute_features(self, data):
-        features = instances_to_features(data['inference'], data['chunk'])
+        features = instances_to_features(data['inference'], data['chunk'], self.tracker2)
         scalars = self.compute_scalars(data['chunk'] * features['masks'], features['features'])
 
         data['keypoints'] = self.compute_keypoints(features['keypoints'],
