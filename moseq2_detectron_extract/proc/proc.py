@@ -703,7 +703,8 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tra
         if not tracker.is_initialized:
             init_data = [
                 features['centroid'],
-                angles
+                angles,
+                allocentric_keypoints[:, 0, :, :2]
             ]
             tracker.initialize(init_data)
 
@@ -711,24 +712,25 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tra
             # evaluate keypoint liklihood, possibly mask keypoints
 
             # get the next predicted state from the tracker
-            predicted_next_centroid, predicted_next_angle = tracker.sample(1)
-            rel_angle_dist = angle_difference(predicted_next_angle, angles[[i]])
+            p_next_centroid, p_next_angle, p_next_kpts = tracker.sample(1)
+            rel_angle_dist = angle_difference(p_next_angle, angles[[i]])
+
+            # finally updata kalman filter
+            to_filter = [
+                features['centroid'][[i]],
+                angles[[i]],
+                allocentric_keypoints[[i], 0, :, :2]
+            ]
+            t_cent, t_angle, t_kpts = tracker.filter_update(to_filter)
+            features['centroid'][i, :] = t_cent
+            angles[i] = t_angle
+            allocentric_keypoints[i, 0, :, :2] = t_kpts
 
             # ask keypoint opinion on if angle should be flipped
             flip_i, conf_i = flips_from_keypoints(allocentric_keypoints[[i],0,...], features['centroid'][[i],:], angles[[i]], lengths[[i]])
             if flip_i[0]:
                 angles[i] += 180
             flips[i] = flip_i
-
-
-            # finally updata kalman filter
-            to_filter = [
-                features['centroid'][[i]],
-                angles[[i]]
-            ]
-            t_cent, t_angle = tracker.filter_update(to_filter)
-            features['centroid'][i, :] = t_cent
-            angles[i] = t_angle
 
         features['orientation'] = np.array(angles)
     else:

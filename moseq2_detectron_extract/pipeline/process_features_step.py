@@ -13,7 +13,7 @@ from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict
 from moseq2_detectron_extract.proc.proc import (crop_and_rotate_frame,
                                                 instances_to_features)
 from moseq2_detectron_extract.proc.scalars import compute_scalars
-from moseq2_detectron_extract.proc.kalman import KalmanTracker, KalmanTrackerAngle, KalmanTrackerPoint2D
+from moseq2_detectron_extract.proc.kalman import KalmanTracker, KalmanTrackerAngle, KalmanTrackerPoint2D, KalmanTrackerNPoints2D
 
 # pylint: disable=attribute-defined-outside-init
 
@@ -36,7 +36,8 @@ class ProcessFeaturesStep(ProcessPipelineStep):
 
         self.tracker2 = KalmanTracker([
             KalmanTrackerPoint2D(order=3, delta_t=1.0),
-            KalmanTrackerAngle(order=3, delta_t=1.0, mod=True)
+            KalmanTrackerAngle(order=3, delta_t=1.0, mod=True),
+            KalmanTrackerNPoints2D(8, order=3, delta_t=1.0)
         ])
 
         self.instance_log = InstanceLogger(os.path.join(self.config['output_dir'], "instance_log.tsv"))

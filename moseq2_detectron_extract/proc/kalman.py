@@ -104,7 +104,10 @@ class KalmanTrackerItem(ABC):
     def __init__(self, order: int=3, delta_t: float=1.0):
         self.order = order
         self.delta_t = delta_t
-        self.state_size = self.build_observ_mat().shape[-1]
+
+    @property
+    def state_size(self) -> int:
+        return self.build_observ_mat().shape[-1]
 
     @abstractmethod
     def build_trans_mat(self) -> np.ndarray:
@@ -217,6 +220,39 @@ class KalmanTrackerPoint2D(KalmanTrackerPoint1D):
         return np.hstack((super().build_init_state_means(data[:, 0]),
                           super().build_init_state_means(data[:, 1])))
 
+
+class KalmanTrackerNPoints2D(KalmanTrackerPoint2D):
+    ''' Kalman tracker item for tracking several 2D points
+    '''
+    def __init__(self, n_points: int, order: int = 3, delta_t: float = 1):
+        self.n_points = n_points
+        super().__init__(order, delta_t)
+
+    def build_trans_mat(self):
+        ''' Build transition matrix for this point
+        '''
+        supr = super() # super() does not work inside a list comprehension, so retireve it here
+        return block_diag(*[supr.build_trans_mat() for _ in range(self.n_points)])
+
+    def build_observ_mat(self):
+        ''' Build observation matrix
+        '''
+        supr = super() # super() does not work inside a list comprehension, so retireve it here
+        return block_diag(*[supr.build_observ_mat() for _ in range(self.n_points)])
+
+    def build_init_state_means(self, data: np.ndarray):
+        supr = super() # super() does not work inside a list comprehension, so retireve it here
+        return np.hstack((supr.build_init_state_means(data[:, i, :]) for i in range(self.n_points)))
+
+    def format_data(self, data: np.ndarray) -> np.ndarray:
+        '''Format `data` for internal use by the kalman filter.
+        '''
+        return data.reshape(data.shape[0], -1)
+
+    def inverse_format_data(self, data: np.ndarray) -> np.ndarray:
+        '''Format `data` to report only primary state, for returning back to the user.
+        '''
+        return data[:, ::self.order].reshape(data.shape[0], self.n_points, -1)
 
 class KalmanTracker(object):
     ''' Object for kalman tracking

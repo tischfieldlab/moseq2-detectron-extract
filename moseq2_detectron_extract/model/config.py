@@ -78,7 +78,7 @@ def get_base_config() -> CfgNode:
 
 
     # emperically tuned parameters
-    cfg.MODEL.BACKBONE.FREEZE_AT = 2
+    cfg.MODEL.BACKBONE.FREEZE_AT = 0
     cfg.MODEL.FPN.NORM = 'GN'
     cfg.MODEL.FPN.FUSE_TYPE = 'avg'
     cfg.MODEL.ROI_KEYPOINT_HEAD.POOLER_RESOLUTION = 7
