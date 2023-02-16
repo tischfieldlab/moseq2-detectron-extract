@@ -87,6 +87,22 @@ def get_base_config() -> CfgNode:
     return cfg
 
 
+def add_rotated_bbox_support(cfg: CfgNode) -> CfgNode:
+    '''Set configuration to enable rotated boxes
+    '''
+
+    cfg.MODEL.ROI_HEADS.NAME = "RROIHeads"
+    cfg.MODEL.ROI_BOX_HEAD.POOLER_TYPE = "ROIAlignRotated"
+    cfg.MODEL.ROI_BOX_HEAD.BBOX_REG_WEIGHTS = (1, 1, 1, 1, 1)
+    cfg.MODEL.PROPOSAL_GENERATOR.NAME = "RRPN"
+    cfg.MODEL.RPN.HEAD_NAME = "StandardRPNHead"
+    cfg.MODEL.RPN.BBOX_REG_WEIGHTS = (1, 1, 1, 1, 1)
+    cfg.MODEL.ANCHOR_GENERATOR.NAME = "RotatedAnchorGenerator"
+    cfg.MODEL.ANCHOR_GENERATOR.ANGLES = [[-90, -60, -30, 0, 30, 60, 90]]
+
+    return cfg
+
+
 def add_dataset_cfg(cfg: CfgNode, train_dset_name: str="moseq_train", test_dset_name: str="moseq_test", recompute_pixel_stats: bool=True) -> CfgNode:
     ''' Add dataset-specific configuration details to the config
 
