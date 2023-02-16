@@ -743,7 +743,17 @@ def flips_from_keypoints(keypoints: np.ndarray, centroids: np.ndarray, angles: n
     front_votes = np.mean(rot_keypoint_scores[:, front_keypoints], axis=1)
     rear_votes = np.mean(rot_keypoint_scores[:, rear_keypoints], axis=1)
     flips = np.where(front_votes < rear_votes, True, False)
-    return flips
+
+    # compute a confidence score
+    # essentially, the proportion of all keypoints which agree with the final call of Flip/NoFlip
+    # since it is majority voting, scores will vary between [0.5, 1.0]
+    expected = np.where(flips[:, None], np.array([-1, 1]), np.array([1, -1]))
+    agree = np.count_nonzero(rot_keypoint_scores[:, front_keypoints] == expected[:, 0, None], axis=1) \
+          + np.count_nonzero(rot_keypoint_scores[:, rear_keypoints] == expected[:, 1, None], axis=1)
+    total = len(front_keypoints) + len(rear_keypoints)
+    conf_scores = agree / total
+
+    return flips, conf_scores
 
 
 def interpolate_nan_values(data: np.ndarray) -> np.ndarray:
