@@ -5,8 +5,10 @@ import detectron2.data.transforms as T
 import numpy as np
 import torch
 from detectron2.data.dataset_mapper import DatasetMapper
-from moseq2_detectron_extract.io.image import read_image
 from detectron2.structures.masks import PolygonMasks, polygons_to_bitmask
+
+from moseq2_detectron_extract.io.image import read_image
+
 
 class MoseqDatasetMapper(DatasetMapper):
     ''' Custom dataset mapper for moseq data
