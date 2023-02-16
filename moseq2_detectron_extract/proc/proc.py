@@ -723,7 +723,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tra
             ]
             t_cent, t_angle, t_kpts = tracker.filter_update(to_filter)
             features['centroid'][i, :] = t_cent
-            angles[i] = t_angle
+            # angles[i] = t_angle
             allocentric_keypoints[i, 0, :, :2] = t_kpts
 
             # ask keypoint opinion on if angle should be flipped
