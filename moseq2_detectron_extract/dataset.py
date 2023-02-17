@@ -200,15 +200,15 @@ def produce_frames(iterator: SessionFramesIterator, dest_directory: str) -> List
                 }
             }
 
-        if 'depth' in iterator.streams:
-            for idx, raw_frame in zip(frame_idxs, data[iterator.streams.index('depth')+1]):
+        if Stream.DEPTH in iterator.streams:
+            for idx, raw_frame in zip(frame_idxs, data[iterator.streams.index(Stream.DEPTH)+1]):
                 dest = os.path.join(dest_directory, f'{iterator.session.session_id}_depth_{idx}.png')
                 write_image(dest, raw_frame, scale=False, dtype='uint8')
                 session_data[idx]['data']['depth_image'] = dest
                 session_data[idx]['data']['images'].append(dest)
 
-        if 'rgb' in iterator.streams:
-            for idx, raw_frame in zip(frame_idxs, data[iterator.streams.index('rgb')+1]):
+        if Stream.RGB in iterator.streams:
+            for idx, raw_frame in zip(frame_idxs, data[iterator.streams.index(Stream.RGB)+1]):
                 dest = os.path.join(dest_directory, f'{iterator.session.session_id}_rgb_{idx}.png')
                 write_image(dest, raw_frame, scale=False, dtype='uint8')
                 session_data[idx]['data']['rgb_image'] = dest

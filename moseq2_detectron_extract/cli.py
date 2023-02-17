@@ -557,10 +557,10 @@ def system_info():
 
 
 @cli.command(name='manual-flip', short_help='Apply manually annotated flips to an extraction result')
-@click.argument('h5_file', nargs=1, type=click.Path(exists=True))
-@click.argument('flips_file', nargs=1, type=click.Path(exists=True))
+@click.argument('h5_file', nargs=1, type=click.Path(exists=True, dir_okay=False))
+@click.argument('flips_file', nargs=1, type=click.Path(exists=True, dir_okay=False))
 @click.option('--visualize/--no-visualize', default=True, help='Visualize the newly flipped dataset')
-def manual_flip(h5_file, flips_file, visualize):
+def manual_flip(h5_file: str, flips_file: str, visualize: bool):
     ''' Manually flip frames according to flips file
 
     Will backup the h5 file before applying manual flip corrections. This process will correct depth
@@ -572,26 +572,24 @@ def manual_flip(h5_file, flips_file, visualize):
     setup_logging()
     logging.info('')
 
-    h5_path = Path(h5_file)
-    assert h5_path.exists()
-
     # read flips file
     flips = read_flips_file(flips_file)
     logging.info(f'Read {len(flips)} flip ranges, comprising {sum([stop - start for start, stop in flips])} total frames')
 
     # create backup of h5 file
-    h5_back_path = backup_existing_file(h5_path)
-    logging.info(f'Successfully backed up h5 file: {h5_path} -> {h5_back_path}')
+    h5_back_path = backup_existing_file(h5_file)
+    logging.info(f'Successfully backed up h5 file: {h5_file} -> {h5_back_path}')
 
     # apply flips
     logging.info('Applying filps to dataset....')
-    flip_dataset(h5_path, flip_ranges=flips)
+    flip_dataset(h5_file, flip_ranges=flips)
     logging.info('Flips successfully applied')
 
     # if requested, visualize the dataset
     if visualize:
         register_dataset_metadata('moseq')
-        vdest = find_unused_file_path(h5_path.with_name(f'{h5_path.stem}.manual_fliped.mp4'))
+        h5_path = Path(h5_file)
+        vdest = find_unused_file_path(str(h5_path.with_name(f'{h5_path.stem}.manual_fliped.mp4')))
         logging.info(f'Generating preview video: {vdest}')
 
         H5ResultPreviewVideoGenerator(h5_file).generate(vdest)

@@ -131,7 +131,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
             sorted_tracked_objects = sorted(filtered_tracked_objects, key=lambda item: item.age)
 
             # while we have tracked objects, pick up to `expected_instances` number of objects
-            selected_instances = []
+            selected_instances: List[Instances] = []
             while len(selected_instances) < self.config['expected_instances'] and len(sorted_tracked_objects) > 0:
                 selected_instances.append(sorted_tracked_objects.pop().last_detection.data["instance"])
 

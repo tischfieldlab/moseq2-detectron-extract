@@ -85,14 +85,16 @@ class PipelineStep():
     def signal_shutdown(self):
         ''' Signal that this step should stop processing data and shutdown
         '''
-        self.shutdown_event.set()
+        if self.shutdown_event is not None:
+            self.shutdown_event.set()
 
     def shutdown(self):
         ''' Perform cleanup actions
         '''
         for out_queue in self.out_queue:
             out_queue.close()
-        self.progress.close()
+        if self.progress is not None:
+            self.progress.close()
 
     @property
     def total_items(self) -> int:

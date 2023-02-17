@@ -350,7 +350,7 @@ class SessionFramesIterator():
         self.chunk_overlap = chunk_overlap
         self.batches = list(self.generate_samples())
         self.current = 0
-        self.streams: List[Union[str, Stream]] = list(set(streams))
+        self.streams: List[Stream] = list(set(streams))
         self.filters: List[_FilterItem] = []
         self.ts_map = TimestampMapper()
         for stream in streams:
@@ -455,7 +455,7 @@ class SessionFramesSampler(SessionFramesIterator):
         '''Generate a sequence with overlap
         '''
         offset = self.session.first_frame_idx
-        seq = range(offset, self.session.nframes)
+        seq = np.arange(offset, self.session.nframes)
         seq = np.random.choice(seq, self.num_samples, replace=False)
         for i in range(offset, len(seq)-self.chunk_overlap, self.chunk_size-self.chunk_overlap):
             yield seq[i:i+self.chunk_size]
