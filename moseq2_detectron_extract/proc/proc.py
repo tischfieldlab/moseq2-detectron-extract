@@ -7,10 +7,11 @@ import numpy.typing as npt
 import scipy
 import tqdm
 from bottleneck import move_median
+from moseq2_detectron_extract.io.util import find_unused_file_path
 from moseq2_detectron_extract.proc.keypoints import rotate_points_batch
 from moseq2_detectron_extract.proc.roi import apply_roi
 from moseq2_detectron_extract.proc.kalman import KalmanTracker, angle_difference
-
+import pandas as pd
 
 def stack_videos(videos: Sequence[np.ndarray], orientation: Literal['horizontal', 'vertical', 'diagional']) -> np.ndarray:
     ''' Stack videos according to orientation to create one big video
@@ -698,6 +699,8 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tra
     angles[incl] = np.unwrap(angles[incl] * 2) / 2
     angles = -np.rad2deg(angles)
 
+    flip_info = []
+
     if tracker is not None:
         flips = np.zeros((allocentric_keypoints.shape[0],), dtype=bool)
 
@@ -725,15 +728,28 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tra
             t_cent, t_angle, t_kpts = tracker.filter_update(to_filter)
             features['centroid'][i, :] = t_cent
             # angles[i] = t_angle
-            allocentric_keypoints[i, 0, :, :2] = t_kpts
+            allocentric_keypoints[i, 0, :8, :2] = t_kpts[:8, :] # assign back but skip tailtip (inference is better than tracked since it moves so fast!)
 
             # ask keypoint opinion on if angle should be flipped
             flip_i, conf_i = flips_from_keypoints(allocentric_keypoints[[i],0,...], features['centroid'][[i],:], angles[[i]], lengths[[i]])
+
+            flip_info.append({
+                'i': i,
+                'kpt_flip_opinion': flip_i,
+                'kpt_flip_conf': conf_i,
+                'angle_in': angles[i],
+                'pred_angle': t_angle,
+            })
+
             if flip_i[0]:
                 angles[i] += 180
             flips[i] = flip_i
 
+            flip_info[-1]['angle_out'] = angles[i]
+
         features['orientation'] = np.array(angles)
+        flip_info_df = pd.DataFrame(flip_info)
+        flip_info_df.to_csv(find_unused_file_path('flip_info.tsv'), sep='\t', index=False)
     else:
         # this is our default procedure if we are not working with a tracker
 

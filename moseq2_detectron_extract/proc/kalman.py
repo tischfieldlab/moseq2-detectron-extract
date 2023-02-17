@@ -282,7 +282,7 @@ class KalmanTracker(object):
         self.items = items_to_track
 
         # these get set after calling initialize()
-        self.kalman_filter: KalmanFilter
+        self.kalman_filter: KalmanFilter = None
 
         # these are only used with streaming obervations (i.e. using self.filter_update())
         self.last_mean: np.ndarray
