@@ -29,11 +29,14 @@ class ProcessFeaturesStep(ProcessPipelineStep):
                                        min_height=self.config['min_height'],
                                        max_height=self.config['max_height'],
                                        true_depth=true_depth)
+
+        # this tracker is used for SORT, indentifying individuals across frames
         self.tracker = Tracker(distance_function='euclidean',
                                distance_threshold=50,
                                initialization_delay=0,
                                hit_counter_max=3)
 
+        # this tracker is used for keypoint/centroid smoothing and flip detection
         self.tracker2 = KalmanTracker([
             KalmanTrackerPoint2D(order=3, delta_t=1.0),
             KalmanTrackerAngle(order=3, delta_t=1.0, mod=True),
@@ -41,6 +44,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
         ])
 
         self.instance_log = InstanceLogger(os.path.join(self.config['output_dir'], "instance_log.tsv"))
+
 
     def process(self, data: dict):
         data = self.__select_instances(data)
@@ -85,7 +89,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
 
                 # delete all indexes from the index list that have iou over threshold
                 ious_over_thresh = np.where(ious > iou_threshold)[0]
-                idxs_to_delete = np.unique(np.concatenate(([last], ious_over_thresh)))
+                idxs_to_delete = np.unique(np.concatenate(([last], ious_over_thresh)))  # type: ignore
                 idxs = np.delete(idxs, idxs_to_delete)
 
             except Exception as ex:

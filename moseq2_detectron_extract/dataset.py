@@ -159,7 +159,7 @@ def prepare_session_iterator(session: Session, streams: Iterable[Stream], sample
 
     elif sample_method == 'uniform':
         step = session.nframes // n_samples
-        iterator = session.index(np.arange(step, session.nframes, step), chunk_size=chunk_size, streams=streams)
+        iterator = session.index(range(step, session.nframes, step), chunk_size=chunk_size, streams=streams)
 
     elif sample_method == 'list':
         assert indices is not None

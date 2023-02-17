@@ -112,9 +112,8 @@ def read_frames_raw(filename: Union[str, tarfile.TarInfo], frames: Optional[Fram
             raise FileNotFoundError(f"Could not open tar member: {filename.name if isinstance(filename, tarfile.TarInfo) else filename}")
         for blk in blocks:
             frames_file.seek(blk['seek_point'])
-            chunk = frames_file.read(blk['read_bytes'])
-            chunk = np.frombuffer(chunk, dtype=np.dtype(dtype)).reshape(blk['dims'])
-            out_buffer[blk['idxs'], ...] = chunk
+            chunk_bytes = frames_file.read(blk['read_bytes'])
+            out_buffer[blk['idxs'], ...] = np.frombuffer(chunk_bytes, dtype=np.dtype(dtype)).reshape(blk['dims'])
         frames_file.close()
     elif isinstance(filename, str):
         with open(filename, "rb") as frames_file:
@@ -263,7 +262,7 @@ def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
             command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
 
     for i in tqdm.tqdm(range(frames.shape[0])):
-        pipe.stdin.write(frames[i, ...].astype('uint16').tostring())
+        pipe.stdin.write(frames[i, ...].astype('uint16').tobytes())
 
     if close_pipe:
         pipe.stdin.close()

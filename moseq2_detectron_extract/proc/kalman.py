@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Sequence
 
 import numpy as np
 import numpy.ma as ma
@@ -231,18 +231,26 @@ class KalmanTrackerNPoints2D(KalmanTrackerPoint2D):
     def build_trans_mat(self):
         ''' Build transition matrix for this point
         '''
-        supr = super() # super() does not work inside a list comprehension, so retireve it here
-        return block_diag(*[supr.build_trans_mat() for _ in range(self.n_points)])
+        trans_mats = []
+        for _ in range(self.n_points):
+            trans_mats.append(super().build_trans_mat())
+        return block_diag(*trans_mats)
 
     def build_observ_mat(self):
         ''' Build observation matrix
         '''
-        supr = super() # super() does not work inside a list comprehension, so retireve it here
-        return block_diag(*[supr.build_observ_mat() for _ in range(self.n_points)])
+        observ_mats = []
+        for _ in range(self.n_points):
+            observ_mats.append(super().build_observ_mat())
+        return block_diag(*observ_mats)
 
     def build_init_state_means(self, data: np.ndarray):
-        supr = super() # super() does not work inside a list comprehension, so retireve it here
-        return np.hstack((supr.build_init_state_means(data[:, i, :]) for i in range(self.n_points)))
+        ''' Build initial state means
+        '''
+        state_means = []
+        for i in range(self.n_points):
+            state_means.append(super().build_init_state_means(data[:, i, :]))
+        return np.hstack(state_means)
 
     def format_data(self, data: np.ndarray) -> np.ndarray:
         '''Format `data` for internal use by the kalman filter.
@@ -254,30 +262,31 @@ class KalmanTrackerNPoints2D(KalmanTrackerPoint2D):
         '''
         return data[:, ::self.order].reshape(data.shape[0], self.n_points, -1)
 
+
 class KalmanTracker(object):
     ''' Object for kalman tracking
     '''
 
-    def __init__(self, items_to_track: List[KalmanTrackerItem]):
+    def __init__(self, items_to_track: Sequence[KalmanTrackerItem]):
         '''
         Parameters:
-        items_to_track (List[KalmanTrackerItem]): Specification of the items to be tracked by this kalman filter
+        items_to_track (Sequence[KalmanTrackerItem]): Specification of the items to be tracked by this kalman filter
         '''
         if items_to_track is None or len(items_to_track) <= 0:
             raise ValueError("You need to supply a list of `KalmanTrackerItem`s to the constructor!")
 
         timesteps = [item.delta_t for item in items_to_track]
         if not np.allclose(timesteps, timesteps[0]):
-            raise ValueError(f"Timesteps across `KalmanTrackerItem` must be the same! Got: {', '.join(timesteps)}")
+            raise ValueError(f"Timesteps across `KalmanTrackerItem` must be the same! Got: {', '.join([str(t) for t in timesteps])}")
 
         self.items = items_to_track
 
         # these get set after calling initialize()
-        self.kalman_filter: KalmanFilter = None
+        self.kalman_filter: KalmanFilter
 
         # these are only used with streaming obervations (i.e. using self.filter_update())
-        self.last_mean: np.ndarray = None
-        self.last_covar: np.ndarray = None
+        self.last_mean: np.ndarray
+        self.last_covar: np.ndarray
 
     @property
     def is_initialized(self) -> bool:
@@ -285,10 +294,10 @@ class KalmanTracker(object):
         '''
         return self.kalman_filter is not None
 
-    def initialize(self, init_data: np.ndarray):
+    def initialize(self, init_data: Sequence[np.ndarray]) -> None:
         ''' Initialize the tracker with data
         Parameters:
-        init_data (np.ndarray): initial data, of shape (nframes, npoints, 2 [x, y])
+        init_data (Sequence[np.ndarray]): initial data, one element in the sequence for each `KalmanTrackerItem`
         '''
         self.kalman_filter = KalmanFilter(
             transition_matrices=self._build_trans_mat(),
@@ -300,7 +309,7 @@ class KalmanTracker(object):
         self.last_mean = self.kalman_filter.initial_state_mean
         self.last_covar = self.kalman_filter.initial_state_covariance
 
-    def _build_init_state_means(self, init_data) -> np.ndarray:
+    def _build_init_state_means(self, init_data: Sequence[np.ndarray]) -> np.ndarray:
         ''' Build initial state mean matrix
         '''
         return np.hstack([itm.build_init_state_means(init_data[i]) for i, itm in enumerate(self.items)])
@@ -315,10 +324,10 @@ class KalmanTracker(object):
         '''
         return block_diag(*[itm.build_observ_mat() for itm in self.items])
 
-    def _format_data(self, data):
+    def _format_data(self, data: Sequence[np.ndarray]) -> np.ndarray:
         return np.column_stack([itm.format_data(data[i]) for i, itm in enumerate(self.items)])
 
-    def _inverse_format_data(self, data):
+    def _inverse_format_data(self, data: np.ndarray) -> Sequence[np.ndarray]:
         out = []
         offset = 0
         for itm in self.items:
@@ -326,25 +335,25 @@ class KalmanTracker(object):
             offset += itm.state_size
         return out
 
-    def sample(self, n_timesteps: int = 1) -> np.ndarray:
+    def sample(self, n_timesteps: int = 1) -> Sequence[np.ndarray]:
         '''Use the kalman filter to look into the future'''
         states, observations = self.kalman_filter.sample(n_timesteps)
         return self._inverse_format_data(states)
 
-    def smooth(self, data: np.ndarray) -> np.ndarray:
+    def smooth(self, data: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
         ''' Use the kalman filter to smooth data points
         '''
         to_smooth = self._format_data(data)
         means, _ = self.kalman_filter.smooth(to_smooth)
         return self._inverse_format_data(means)
 
-    def filter(self, data: np.ndarray) -> np.ndarray:
+    def filter(self, data: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
         ''' Filter '''
         to_filter = self._format_data(data)
         means, _ = self.kalman_filter.filter(to_filter)
         return self._inverse_format_data(means)
 
-    def filter_update(self, data: np.ndarray) -> np.ndarray:
+    def filter_update(self, data: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
         ''' Filter and update '''
         to_filter = self._format_data(data)[0]
         mean, covar = self.kalman_filter.filter_update(

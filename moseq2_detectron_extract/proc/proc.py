@@ -218,12 +218,13 @@ def scale_raw_frames(frames: np.ndarray, vmin: float, vmax: float, dtype: npt.DT
     Returns:
     np.ndarray contatining intensity scaled frames data
     '''
-    if np.issubdtype(np.dtype(dtype), np.integer):
-        dmin = np.iinfo(dtype).min
-        dmax = np.iinfo(dtype).max
+    real_dtype = np.dtype(dtype)
+    if np.issubdtype(real_dtype, np.integer):
+        dmin = float(np.iinfo(real_dtype).min)
+        dmax = float(np.iinfo(real_dtype).max)
     else:
-        dmin = np.finfo(dtype).min
-        dmax = np.finfo(dtype).max
+        dmin = float(np.finfo(real_dtype.name).min)
+        dmax = float(np.finfo(real_dtype.name).max)
 
     return ((frames - vmin) * ((dmax - dmin) / (vmax - vmin)) + dmin).astype(dtype)
 
@@ -734,6 +735,8 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tra
 
         features['orientation'] = np.array(angles)
     else:
+        # this is our default procedure if we are not working with a tracker
+
         # Get and apply flips using keypoint information
         flips, _ = flips_from_keypoints(allocentric_keypoints[:,0,...], features['centroid'], angles, lengths)
         angles[flips] += 180
@@ -753,7 +756,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tra
     }
 
 
-def flips_from_keypoints(keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray, length: float=80) -> np.ndarray:
+def flips_from_keypoints(keypoints: np.ndarray, centroids: np.ndarray, angles: np.ndarray, length: float=80) -> Tuple[np.ndarray, np.ndarray]:
     ''' Estimate flips given keypoints, centroids, angles, and lengths
 
     Parameters:

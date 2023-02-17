@@ -57,7 +57,7 @@ class ParticleNoiseAugmentation(RandomFieldNoiseAugmentation):
 
         return particle
 
-    def get_transform(self, image: np.ndarray):
+    def get_transform(self, image: np.ndarray):  # type: ignore
         ''' Get the transform
         '''
         if (self._rand_range() < self.p_application) or self.always_apply:

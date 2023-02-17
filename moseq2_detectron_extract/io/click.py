@@ -60,7 +60,7 @@ def get_command_defaults(command: click.Command, skip_required: bool = False):
     """
     out = {}
     for item in command.params:
-        if item.name.startswith('fake_'):
+        if item.name is not None and item.name.startswith('fake_'):
             # option groups will create entries with `fake_<long-random-string>`
             # we should skip these
             continue
