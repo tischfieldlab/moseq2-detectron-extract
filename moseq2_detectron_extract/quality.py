@@ -46,7 +46,7 @@ def find_outliers_h5(result_h5: str, dest: Optional[str]=None, keypoint_names: O
 
         logging.info('Searching for frames with flip disagreements...')
         centroids = np.column_stack((h5['/scalars/centroid_x_px'][()], h5['/scalars/centroid_y_px'][()]))
-        angles = h5['/scalars/angle'][()]
+        angles = np.rad2deg(h5['/scalars/angle'][()])
         flips_mask, _ = flips_from_keypoints(kpts, centroids, angles)
         flips = np.nonzero(flips_mask)[0]
         write_indicies(dest.format('flips'), flips)
