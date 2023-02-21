@@ -337,7 +337,9 @@ class KalmanTracker(object):
         return block_diag(*[itm.build_observ_mat() for itm in self.items])
 
     def _format_data(self, data: Sequence[np.ndarray]) -> np.ndarray:
-        return np.column_stack([itm.format_data(data[i]) for i, itm in enumerate(self.items)])
+        fmt = np.column_stack([itm.format_data(data[i]) for i, itm in enumerate(self.items)])
+        fmt = ma.masked_invalid(fmt)
+        return fmt
 
     def _inverse_format_data(self, data: np.ndarray) -> Sequence[np.ndarray]:
         out = []
