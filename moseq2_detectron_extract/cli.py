@@ -174,9 +174,62 @@ def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expec
     evaluator()
 
 
+@cli.command(name="find-roi", help="Finds the ROI and background distance to subtract from frames when extracting.")
+@click.argument('input-file', type=click.Path(exists=True, dir_okay=False))
+@optgroup.group('Output')
+@optgroup.option('--output-dir', default=None, help='Output directory to save the extraction output files')
+@optgroup.group('Background Detection')
+@optgroup.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
+@optgroup.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
+@optgroup.option('--bg-roi-index', default=0, type=int, help='Index of which background mask(s) to use')
+@optgroup.option('--bg-roi-weights', default=(1, .1, 1), type=(float, float, float), help='Feature weighting (area, extent, dist) of the background mask')
+@optgroup.option('--bg-roi-depth-range', default=(650, 750), type=(float, float), help='Range to search for floor of arena (in mm)')
+@optgroup.option('--bg-roi-gradient-filter', default=False, type=bool, help='Exclude walls with gradient filtering')
+@optgroup.option('--bg-roi-gradient-threshold', default=3000, type=float, help='Gradient must be < this to include points')
+@optgroup.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
+@optgroup.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
+@optgroup.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
+def find_roi(input_file, output_dir, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold,
+             bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground):
+    '''Finds the ROI and background distance to subtract from frames when extracting.
+    '''
+
+    setup_logging(add_defered_file_handler=True)
+    print('') # Empty line to give some breething room
+
+    config = locals()
+
+    session = Session(input_file)
+
+    # set up the output directory
+    if config['output_dir'] is None:
+        output_dir = os.path.join(session.dirname, 'proc')
+        config['output_dir'] = output_dir
+    else:
+        output_dir = config['output_dir']
+    ensure_dir(output_dir)
+
+    # Attach log file to logging module, dependent on having setup output_dir
+    attach_file_logger(os.path.join(output_dir, f"results_{config['bg_roi_index']:02d}.log"))
+
+    # Find image background and ROI
+    session.find_roi(bg_roi_dilate=config['bg_roi_dilate'],
+                    bg_roi_shape=config['bg_roi_shape'],
+                    bg_roi_index=config['bg_roi_index'],
+                    bg_roi_weights=config['bg_roi_weights'],
+                    bg_roi_depth_range=config['bg_roi_depth_range'],
+                    bg_roi_gradient_filter=config['bg_roi_gradient_filter'],
+                    bg_roi_gradient_threshold=config['bg_roi_gradient_threshold'],
+                    bg_roi_gradient_kernel=config['bg_roi_gradient_kernel'],
+                    bg_roi_fill_holes=config['bg_roi_fill_holes'],
+                    use_plane_bground=config['use_plane_bground'],
+                    cache_dir=output_dir,
+                    verbose=True)
+    logging.info("")
+
 
 @cli.command(name='extract', cls=command_with_config("config_file"), short_help='Extract a moseq session raw data')
-@click.argument('input_file', nargs=1, type=click.Path(exists=True))
+@click.argument('input-file', nargs=1, type=click.Path(exists=True, dir_okay=False))
 @optgroup.group('Model Inference')
 @optgroup.option('--model', type=click.Path(exists=True), help="Path to the model for inference.")
 @optgroup.option('--device', default=get_default_device(), type=click.Choice(get_available_devices()), help='Device to run model inference on')
