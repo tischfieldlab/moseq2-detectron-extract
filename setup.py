@@ -36,6 +36,7 @@ setup(
         'norfair',
         'numpy',
         'pandas',
+        'pykalman',
         'ruamel.yaml',
         'scikit-image',
         'scikit-learn',
