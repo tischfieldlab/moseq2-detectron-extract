@@ -84,6 +84,13 @@ def get_base_config() -> CfgNode:
     cfg.MODEL.ROI_KEYPOINT_HEAD.POOLER_RESOLUTION = 7
     cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION = 0.5
 
+
+    # Sometimes we need these or model will not work, but we dont really use them!
+    cfg.MODEL.ROI_BOX_HEAD.USE_FED_LOSS = False
+    cfg.MODEL.ROI_BOX_HEAD.USE_SIGMOID_CE = False
+    cfg.MODEL.ROI_BOX_HEAD.FED_LOSS_FREQ_WEIGHT_POWER = 0.5
+    cfg.MODEL.ROI_BOX_HEAD.FED_LOSS_NUM_CLASSES = 50
+
     return cfg
 
 
