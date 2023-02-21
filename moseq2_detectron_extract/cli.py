@@ -5,7 +5,7 @@ import os
 import warnings
 from functools import partial
 from pathlib import Path
-from typing import cast
+from typing import Union, cast
 
 import click
 from click_option_group import optgroup
@@ -554,6 +554,22 @@ def system_info():
         logging.info('No devices found')
     logging.info('\n')
 
+
+@cli.command(name='visualize-result', short_help='Generate a visualization of the extraction results from an h5 file.')
+@click.argument('h5_file', nargs=1, type=click.Path(exists=True, dir_okay=False))
+@click.option('--dest', default=None, help='Destination for the visualization')
+def visualize_result(h5_file: str, dest: Union[str, None]):
+    '''Generate a visualization of the extraction results from an h5 file.
+    '''
+    register_dataset_metadata('moseq')
+    h5_path = Path(h5_file)
+    if dest is not None:
+        vdest = dest
+    else:
+        vdest = find_unused_file_path(str(h5_path.with_suffix('.mp4')))
+    logging.info(f'Generating preview video: {vdest}')
+
+    H5ResultPreviewVideoGenerator(h5_file).generate(vdest)
 
 
 @cli.command(name='manual-flip', short_help='Apply manually annotated flips to an extraction result')
