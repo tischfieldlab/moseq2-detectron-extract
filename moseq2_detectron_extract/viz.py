@@ -1,4 +1,4 @@
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import itertools
 import random
 from typing import Optional, Iterable, Sequence, Tuple
@@ -407,7 +407,7 @@ class H5ResultPreviewVideoGenerator():
                 h5[self.centroid_x_path][batch_idxs],
                 h5[self.centroid_y_path][batch_idxs]
             ), axis=1)
-            angles = h5[self.angle_path][batch_idxs]
+            angles = np.rad2deg(h5[self.angle_path][batch_idxs])
             rot_keypoints = load_keypoint_data_from_h5(h5, coord_system='rotated', units='px')[batch_idxs]
             ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')[batch_idxs]
 
@@ -451,7 +451,7 @@ class H5ResultPreviewVideoGenerator():
         '''
         self._initialize()
         video_pipe = PreviewVideoWriter(dest, fps=self.fps, vmin=self.vmin, vmax=self.vmax)
-        pool = ProcessPoolExecutor(max_workers=2)
+        pool = ThreadPoolExecutor(max_workers=2)
 
         with tqdm(desc='Generating Frames', total=self.total_frames) as pbar:
 
