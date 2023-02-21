@@ -31,16 +31,18 @@ class ProcessFeaturesStep(ProcessPipelineStep):
                                        true_depth=true_depth)
 
         # this tracker is used for SORT, indentifying individuals across frames
-        self.tracker = Tracker(distance_function='euclidean',
-                               distance_threshold=50,
-                               initialization_delay=0,
-                               hit_counter_max=3)
+        self.instance_tracker = Tracker(distance_function='euclidean',
+                                        distance_threshold=50,
+                                        initialization_delay=0,
+                                        hit_counter_max=3)
 
         # this tracker is used for keypoint/centroid smoothing and flip detection
-        self.tracker2 = KalmanTracker([
-            KalmanTrackerPoint2D(order=3, delta_t=1.0),
-            KalmanTrackerAngle(order=3, delta_t=1.0, mod=True),
-            KalmanTrackerNPoints2D(8, order=3, delta_t=1.0)
+        self.point_tracker = KalmanTracker([
+            KalmanTrackerPoint2D(order=3, delta_t=1.0),  # Track centroids
+            KalmanTrackerNPoints2D(8, order=3, delta_t=1.0)  # Track keypoints
+        ])
+        self.angle_tracker = KalmanTracker([
+            KalmanTrackerAngle(order=3, delta_t=1.0, degrees=True),  # Track angles
         ])
 
         self.instance_log = InstanceLogger(os.path.join(self.config['output_dir'], "instance_log.tsv"))
@@ -120,7 +122,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
             self.instance_log.log_instances(frame_idx, frame_instances['instances'])
 
             # perform tracking
-            tracked_objects = self.tracker.update(detections=self.__instances_to_detections(frame_instances['instances']))
+            tracked_objects = self.instance_tracker.update(detections=self.__instances_to_detections(frame_instances['instances']))
 
             if len(tracked_objects) <= 1:
                 continue
@@ -140,7 +142,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
 
 
     def __compute_features(self, data):
-        features = instances_to_features(data['inference'], data['chunk'], self.tracker2)
+        features = instances_to_features(data['inference'], data['chunk'], self.point_tracker, self.angle_tracker)
         scalars = self.compute_scalars(data['chunk'] * features['masks'], features['features'])
 
         data['keypoints'] = self.compute_keypoints(features['keypoints'],

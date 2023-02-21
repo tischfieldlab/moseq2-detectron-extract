@@ -1,17 +1,20 @@
-from typing import Optional, Dict, List, Literal, Sequence, Tuple
+from typing import Dict, List, Literal, Optional, Sequence, Tuple
 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
 import scipy
 import tqdm
 from bottleneck import move_median
+
 from moseq2_detectron_extract.io.util import find_unused_file_path
+from moseq2_detectron_extract.proc.kalman import (KalmanTracker,
+                                                  angle_difference)
 from moseq2_detectron_extract.proc.keypoints import rotate_points_batch
 from moseq2_detectron_extract.proc.roi import apply_roi
-from moseq2_detectron_extract.proc.kalman import KalmanTracker, angle_difference
-import pandas as pd
+
 
 def stack_videos(videos: Sequence[np.ndarray], orientation: Literal['horizontal', 'vertical', 'diagional']) -> np.ndarray:
     ''' Stack videos according to orientation to create one big video
@@ -669,7 +672,13 @@ def mask_and_keypoints_from_model_output(model_outputs: List[dict]) -> Tuple[np.
     return masks, keypoints, num_instances
 
 
-def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tracker: KalmanTracker):
+def clamp_angles(angles: np.ndarray) -> np.ndarray:
+    ''' Clamp angles so they are always in the range of [0, 360)
+    '''
+    return np.where(angles < 0 , 360 + angles, angles) % 360
+
+
+def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, point_tracker: KalmanTracker, angle_tracker: KalmanTracker, debug: bool = False):
     ''' Detect additional features and perform feature postprocessing
 
     Parameters:
@@ -679,6 +688,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tra
     Returns:
     Dict[str, Any] - dict containing features and cleaned data
     '''
+    DEBUG = debug
 
     # frames x instances x keypoints x 3
     d2_masks, allocentric_keypoints, num_instances = mask_and_keypoints_from_model_output(model_outputs)
@@ -687,71 +697,91 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, tra
     cleaned_frames = clean_frames(raw_frames, iters_tail=3, progress_bar=False)
     features, masks = get_frame_features(cleaned_frames, mask=d2_masks[:, 0, :, :], use_cc=True, frame_threshold=3, progress_bar=False)
 
-    # interpolate NaN values in features data
-    #features['centroid'][:, 0] = interpolate_nan_values(features['centroid'][:, 0])
-    #features['centroid'][:, 1] = interpolate_nan_values(features['centroid'][:, 1])
-    #features['orientation'] = interpolate_nan_values(features['orientation'])
-    #lengths = interpolate_nan_values(np.max(features['axis_length'], axis=1))
+
     lengths = np.max(features['axis_length'], axis=1)
-
     angles = features['orientation']
-    incl = ~np.isnan(angles)
-    angles[incl] = np.unwrap(angles[incl] * 2) / 2
-    angles = -np.rad2deg(angles)
+    angles = -np.rad2deg(angles)  # convert angles from radians to degrees
+    angles = clamp_angles(angles)  # enforce angles are in the range [0, 360)
 
-    flip_info = []
+    if DEBUG:
+        orig_angles = np.copy(angles)
+        flip_info = []
 
-    if tracker is not None:
-        flips = np.zeros((allocentric_keypoints.shape[0],), dtype=bool)
+    if point_tracker is not None and angle_tracker is not None:
+        # STRATEGY (tracking-based):
+        # 1) improve point estimations by smoothing centroids and keypoints using tracker
+        # 2) use smoothed keypoints to flip angles
+        # 3) peak at next angle prediction, see if it makes any sense, potentially augment
+        # 4) filter and update angle tracking
 
-        if not tracker.is_initialized:
-            init_data = [
+        if not point_tracker.is_initialized:
+            # we need to initialize the point tracker with some data
+            point_tracker.initialize([
                 features['centroid'],
-                angles,
                 allocentric_keypoints[:, 0, :, :2]
-            ]
-            tracker.initialize(init_data)
+            ])
 
-        for i in range(allocentric_keypoints.shape[0]):
-            # evaluate keypoint liklihood, possibly mask keypoints
 
-            # get the next predicted state from the tracker
-            p_next_centroid, p_next_angle, p_next_kpts = tracker.sample(1)
+        # apply kalman smoothing to the centroids and keypoints
+        s_centroids, s_kpts = point_tracker.smooth_update([
+            features['centroid'],
+            allocentric_keypoints[:, 0, :, :2]
+        ])
+        features['centroid'] = s_centroids
+        allocentric_keypoints[:, 0, :7, :2] = s_kpts[:, :7, :] # assign back but skip tailtip (inference is better than tracked since it moves so fast!)
+
+
+        # apply flips to angles given smoothed keypoint information
+        flips, flip_confs = flips_from_keypoints(allocentric_keypoints[:, 0, ...], features['centroid'], angles, lengths)
+        angles[flips] = clamp_angles(angles[flips] + 180)  # IMPORTANT! Enforce angles remain within range [0, 360)
+
+
+        if not angle_tracker.is_initialized:
+            # we need to initialize the angle tracker with some data
+            angle_tracker.initialize([angles])
+
+
+        # Iterate through angles and apply our heuristic
+        for i in range(angles.shape[0]):
+            # Get the next predicted state from the tracker
+            # we are at time t, the tracker is at time t-1, sample 1 into the future (i.e. now)
+            p_next_angle, = angle_tracker.sample(1)
             rel_angle_dist = angle_difference(p_next_angle, angles[[i]])
 
-            # finally updata kalman filter
-            to_filter = [
-                features['centroid'][[i]],
-                angles[[i]],
-                allocentric_keypoints[[i], 0, :, :2]
-            ]
-            t_cent, t_angle, t_kpts = tracker.filter_update(to_filter)
-            features['centroid'][i, :] = t_cent
-            # angles[i] = t_angle
-            allocentric_keypoints[i, 0, :8, :2] = t_kpts[:8, :] # assign back but skip tailtip (inference is better than tracked since it moves so fast!)
+            # Potentially intervene here, if predicted angle is completely off from observed angle
+            # Here we choose a threshold of 120 degrees, meaning the difference is 180 +/- 60 degrees,
+            # or looks approximatly like a flip
+            if np.abs(rel_angle_dist) > 120:
+                angles[i] = clamp_angles(angles[i] + 180)
+                flips[i] = ~flips[i]
 
-            # ask keypoint opinion on if angle should be flipped
-            flip_i, conf_i = flips_from_keypoints(allocentric_keypoints[[i],0,...], features['centroid'][[i],:], angles[[i]], lengths[[i]])
+            # finally update kalman filter with our (potentially) corrected current angle
+            t_angle, = angle_tracker.filter_update([angles[[i]]])
 
-            flip_info.append({
-                'i': i,
-                'kpt_flip_opinion': flip_i,
-                'kpt_flip_conf': conf_i,
-                'angle_in': angles[i],
-                'pred_angle': t_angle,
-            })
-
-            if flip_i[0]:
-                angles[i] += 180
-            flips[i] = flip_i
-
-            flip_info[-1]['angle_out'] = angles[i]
+            if DEBUG:
+                flip_info.append({
+                    'i': i,
+                    'kpt_flip_opinion': flips[i],
+                    'kpt_flip_conf': flip_confs[i],
+                    'angle_in': orig_angles[i],
+                    'proc_angle': angles[i],
+                    'sample_angle': p_next_angle[0],
+                    'filt_angle': t_angle[0],
+                    'rel_angle_dist': rel_angle_dist,
+                    'angle_out':angles[i]
+                })
 
         features['orientation'] = np.array(angles)
-        flip_info_df = pd.DataFrame(flip_info)
-        flip_info_df.to_csv(find_unused_file_path('flip_info.tsv'), sep='\t', index=False)
+
+        if DEBUG:
+            # dump this data into a file in the cwd. let's not worry too much about it now,
+            # but this is the easiset way to just get data out for inspection.
+            flip_info_df = pd.DataFrame(flip_info)
+            flip_info_df.to_csv(find_unused_file_path('flip_info.tsv'), sep='\t', index=False)
     else:
-        # this is our default procedure if we are not working with a tracker
+        # STRATEGY (NOT tracking-based):
+        # 1) use keypoints to flip angles
+        # 2) perform iterative angle filtering (look for jumps in the range of 180)
 
         # Get and apply flips using keypoint information
         flips, _ = flips_from_keypoints(allocentric_keypoints[:,0,...], features['centroid'], angles, lengths)
