@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Sequence
+from typing import Sequence
 
 import numpy as np
 import numpy.ma as ma
@@ -107,6 +107,8 @@ class KalmanTrackerItem(ABC):
 
     @property
     def state_size(self) -> int:
+        '''Tell the size of the state space
+        '''
         return self.build_observ_mat().shape[-1]
 
     @abstractmethod
@@ -172,7 +174,7 @@ class KalmanTrackerPoint1D(KalmanTrackerItem):
 
     def build_init_state_means(self, data: np.ndarray):
         init_state_means = np.zeros((self.order,))
-        init_state_means[0] = self.format_data(data)[0]
+        init_state_means[0] = data[0]
         # Try to estimate initial state means
         #derivitives = self.get_derivitives()
         #for i in range(self.order):
@@ -183,23 +185,6 @@ class KalmanTrackerPoint1D(KalmanTrackerItem):
         #        print(i, j, samples)
         #    init_state_means[i] = samples[0]
         return init_state_means
-
-
-class KalmanTrackerAngle(KalmanTrackerPoint1D):
-    ''' Kalman tracker item for tracking an angle
-    '''
-
-    def __init__(self, order: int=3, delta_t: float=1.0, mod: bool=True):
-        super().__init__(order=order, delta_t=delta_t)
-        self.mod = mod
-
-    def format_data(self, data: np.ndarray):
-        return np.unwrap(np.mod(data, 360) - 180, period=360)
-
-    def inverse_format_data(self, data: np.ndarray):
-        if self.mod:
-            return np.mod(data[:, ::self.order] + 180, 360)
-        return data[:, ::self.order]
 
 
 class KalmanTrackerPoint2D(KalmanTrackerPoint1D):
@@ -219,6 +204,33 @@ class KalmanTrackerPoint2D(KalmanTrackerPoint1D):
     def build_init_state_means(self, data: np.ndarray):
         return np.hstack((super().build_init_state_means(data[:, 0]),
                           super().build_init_state_means(data[:, 1])))
+
+
+class KalmanTrackerAngle(KalmanTrackerPoint2D):
+    ''' Kalman tracker item for tracking an angle
+    '''
+
+    def __init__(self, order: int=3, delta_t: float=1.0, degrees: bool=True):
+        super().__init__(order=order, delta_t=delta_t)
+        self.degrees = degrees
+
+    def build_init_state_means(self, data: np.ndarray):
+        ''' Build initial state means
+        '''
+        return super().build_init_state_means(self.format_data(data))
+
+    def format_data(self, data: np.ndarray):
+        if self.degrees:
+            data = np.deg2rad(data)
+        return np.column_stack([np.sin(data), np.cos(data)])  # convert to y and x coordinates on unit circle
+
+    def inverse_format_data(self, data: np.ndarray):
+        data = data[:, ::self.order]  # collect y and x
+        data = np.arctan2(data[:, 0], data[:, 1])  # convert to angle
+        data = np.where(data < 0 , 2 * np.pi + data, data)  # enforce angle in range [0, 2pi]
+        if self.degrees:
+            data = np.rad2deg(data)  # convert to degrees
+        return data
 
 
 class KalmanTrackerNPoints2D(KalmanTrackerPoint2D):
@@ -335,9 +347,13 @@ class KalmanTracker(object):
             offset += itm.state_size
         return out
 
-    def sample(self, n_timesteps: int = 1) -> Sequence[np.ndarray]:
+    def sample(self, n_timesteps: int = 1, init_data: np.ndarray = None) -> Sequence[np.ndarray]:
         '''Use the kalman filter to look into the future'''
-        states, observations = self.kalman_filter.sample(n_timesteps)
+        if init_data is not None:
+            init_state = self._build_init_state_means(init_data)
+        else:
+            init_state = self.last_mean
+        states, _ = self.kalman_filter.sample(n_timesteps, init_state)
         return self._inverse_format_data(states)
 
     def smooth(self, data: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
@@ -345,6 +361,15 @@ class KalmanTracker(object):
         '''
         to_smooth = self._format_data(data)
         means, _ = self.kalman_filter.smooth(to_smooth)
+        return self._inverse_format_data(means)
+
+    def smooth_update(self, data: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
+        '''Smooth data and update the current state
+        '''
+        to_smooth = self._format_data(data)
+        means, covars = self.kalman_filter.smooth(to_smooth)
+        self.last_mean = self.kalman_filter.initial_state_mean = means[-1]
+        self.last_covar = self.kalman_filter.initial_state_covariance = covars[-1]
         return self._inverse_format_data(means)
 
     def filter(self, data: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
