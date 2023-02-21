@@ -535,16 +535,23 @@ class RotatedKeypointsView(BaseView):
         origin = (int(width // 2), int(height // 2))
 
         for i in range(masks.shape[0]):
-            video[i,:,:,:] = draw_mask(video[i,:,:,:], masks[i], alpha=0.7)
-            video[i,:,:,:] = draw_keypoints(video[i,:,:,:],
-                                            keypoints[i],
-                                            origin=origin,
-                                            keypoint_names=self.dset_meta.keypoint_names,
-                                            keypoint_connection_rules=self.dset_meta.keypoint_connection_rules,
-                                            keypoint_colors=self.dset_meta.keypoint_colors,
-                                            scale=1.5,
-                                            radius=3,
-                                            thickness=1)
+            try:
+                video[i,:,:,:] = draw_mask(video[i,:,:,:], masks[i], alpha=0.7)
+                video[i,:,:,:] = draw_keypoints(video[i,:,:,:],
+                                                keypoints[i],
+                                                origin=origin,
+                                                keypoint_names=self.dset_meta.keypoint_names,
+                                                keypoint_connection_rules=self.dset_meta.keypoint_connection_rules,
+                                                keypoint_colors=self.dset_meta.keypoint_colors,
+                                                scale=1.5,
+                                                radius=3,
+                                                thickness=1)
+            except Exception as e:
+                raise ValueError("Here is a snapshot of data:\n"
+                                 f"iteration: {i}\n"
+                                 f"origin: [{origin[0]}, {origin[1]}]\n"
+                                 f"keypoints: {np.array2string(keypoints[i])}") from e
+
 
         return video
 
