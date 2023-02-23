@@ -189,8 +189,8 @@ def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expec
 @optgroup.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
 @optgroup.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
 @optgroup.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
-def find_roi(input_file, output_dir, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold,
-             bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground):
+def find_roi(input_file, output_dir, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter,
+             bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground):
     '''Finds the ROI and background distance to subtract from frames when extracting.
     '''
 
