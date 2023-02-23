@@ -678,7 +678,7 @@ def clamp_angles(angles: np.ndarray) -> np.ndarray:
     return np.where(angles < 0 , 360 + angles, angles) % 360
 
 
-def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, point_tracker: KalmanTracker, angle_tracker: KalmanTracker, debug: bool = False):
+def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, point_tracker: KalmanTracker, angle_tracker: KalmanTracker, debug: bool = True):
     ''' Detect additional features and perform feature postprocessing
 
     Parameters:
@@ -699,6 +699,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, poi
 
 
     lengths = np.max(features['axis_length'], axis=1)
+    aspects = np.min(features['axis_length'], axis=1) / np.max(features['axis_length'], axis=1)
     angles = features['orientation']
     angles = -np.rad2deg(angles)  # convert angles from radians to degrees
     angles = clamp_angles(angles)  # enforce angles are in the range [0, 360)
@@ -730,10 +731,15 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, poi
         features['centroid'] = s_centroids
         allocentric_keypoints[:, 0, :7, :2] = s_kpts[:, :7, :] # assign back but skip tailtip (inference is better than tracked since it moves so fast!)
 
-
         # apply flips to angles given smoothed keypoint information
         flips, flip_confs = flips_from_keypoints(allocentric_keypoints[:, 0, ...], features['centroid'], angles, lengths)
         angles[flips] = clamp_angles(angles[flips] + 180)  # IMPORTANT! Enforce angles remain within range [0, 360)
+        if DEBUG:
+            post_kp_flip_angles = angles.copy()
+
+        rot_kpts = rotate_points_batch(np.copy(allocentric_keypoints[:, 0, :7, :2]), features['centroid'], angles)
+        kpt_alignment_scores = compute_keypoint_alignment_scores(rot_kpts)
+        kpt_rotations = estimate_keypoint_rotation(rot_kpts)
 
 
         if not angle_tracker.is_initialized:
@@ -746,14 +752,28 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, poi
             # Get the next predicted state from the tracker
             # we are at time t, the tracker is at time t-1, sample 1 into the future (i.e. now)
             p_next_angle, = angle_tracker.sample(1)
-            rel_angle_dist = angle_difference(p_next_angle, angles[[i]])
+            rel_angle_dist = angle_difference(p_next_angle, angles[[i]])[0]
 
             # Potentially intervene here, if predicted angle is completely off from observed angle
-            # Here we choose a threshold of 120 degrees, meaning the difference is 180 +/- 60 degrees,
+            # Here we choose a threshold of 140 degrees, meaning the difference is 180 +/- 40 degrees,
             # or looks approximatly like a flip
-            if np.abs(rel_angle_dist) > 120:
+            if kpt_alignment_scores[i] < 0.4:
+                angles[i] = p_next_angle
+                intervention = 'low kp algn score, defer to sample'
+
+            elif np.abs(rel_angle_dist) > 140:
                 angles[i] = clamp_angles(angles[i] + 180)
                 flips[i] = ~flips[i]
+                intervention = 'flip 180'
+
+            #elif np.abs(rel_angle_dist) > 15:
+            #    angles[i] = clamp_angles(angles[i] - rel_angle_dist)
+            #    intervention = f'nudge by {rel_angle_dist}'
+
+            else:
+                intervention = None
+
+            rel_angle_dist2 = angle_difference(p_next_angle, angles[[i]])[0]
 
             # finally update kalman filter with our (potentially) corrected current angle
             t_angle, = angle_tracker.filter_update([angles[[i]]])
@@ -761,13 +781,18 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, poi
             if DEBUG:
                 flip_info.append({
                     'i': i,
+                    'aspect': aspects[i],
                     'kpt_flip_opinion': flips[i],
                     'kpt_flip_conf': flip_confs[i],
+                    'kpt_align_score': kpt_alignment_scores[i],
+                    'kpt_rotation': kpt_rotations[i],
                     'angle_in': orig_angles[i],
-                    'proc_angle': angles[i],
+                    'post_kp_flip_angle': post_kp_flip_angles[i],
                     'sample_angle': p_next_angle[0],
                     'filt_angle': t_angle[0],
                     'rel_angle_dist': rel_angle_dist,
+                    'rel_angle_dist2': rel_angle_dist2,
+                    'intervention': intervention,
                     'angle_out':angles[i]
                 })
 
@@ -841,6 +866,102 @@ def flips_from_keypoints(keypoints: np.ndarray, centroids: np.ndarray, angles: n
     conf_scores = agree / total
 
     return flips, conf_scores
+
+
+def estimate_keypoint_rotation(keypoints: np.ndarray) -> np.ndarray:
+    '''Estimate the relative rotation between subsequent sets of keypoints
+
+    Parameters:
+    keypoints (np.ndarray): keypoints, of shape (nframes, nkeypoints, at least 2)
+
+    Returns:
+    estimated rotation of object between subsequent frames, given keypoints
+    '''
+    angles = np.arctan2(keypoints[..., 1], keypoints[..., 0])
+    angles = clamp_angles(np.rad2deg(angles))
+    angles = np.diff(angles, axis=0, prepend=angles[0,None,...])
+    angles = angles % 360
+    to_min = angles > 180
+    angles[to_min] = -(360 - angles[to_min])
+    return np.median(angles, axis=1)
+
+
+def calc_keypoint_keypoint_distance(keypoints: np.ndarray, metric: str = 'x') -> np.ndarray:
+    '''Calculate a distance matrix for each keypoint against others
+
+    Parameters:
+    kaypoints (np.ndarray): array of keypoint data, of shape (nkeypoints, [at least 2: x, y]) or (nframes, nkeypoints, [at least 2: x, y])
+    metric (str): one of {euclidean, x, y}, type of distance to calculate
+    '''
+    if len(keypoints.shape) == 3:
+        dist = np.ndarray((keypoints.shape[0], keypoints.shape[1], keypoints.shape[1]), dtype=float)
+    else:
+        dist = np.ndarray((keypoints.shape[0], keypoints.shape[0]), dtype=float)
+
+    for i in range(dist.shape[-1]):
+        for j in range(dist.shape[-1]):
+            if metric == 'euclidean':
+                dist[:, i, j] = np.sqrt(((keypoints[:, i, 0] - keypoints[:, j, 0])**2) + ((keypoints[:, i, 1] - keypoints[:, j, 1])**2))
+
+            elif metric == 'x':
+                dist[..., i, j] = keypoints[..., i, 0] - keypoints[..., j, 0]
+
+            elif metric == 'y':
+                dist[..., i, j] = keypoints[..., i, 1] - keypoints[..., j, 1]
+
+    return dist
+
+
+def compute_keypoint_alignment_scores(keypoints, expected_alignment=None):
+    '''Compute a score indicating how well keypoints match an expected alignment
+    '''
+    if expected_alignment is None:
+        expected_alignment = get_expected_keypoint_alignment()
+
+    # calculate keypoint-keypoint distances, and take only the signs
+    distances = calc_keypoint_keypoint_distance(keypoints)
+    distance_signs = np.sign(distances)
+
+    # mask to zeros keypoint pairs for which we do not have strong expectations
+    masked_distance_signs = np.where(expected_alignment == 0, 0, distance_signs)
+
+    # compute number of keypoint pairs which agree with our expectations, subtracting those which we do not have strong expectations for
+    axis = (1, 2) if len(keypoints.shape) == 3 else None
+    num_expectations_met = np.count_nonzero(masked_distance_signs == expected_alignment, axis=axis) - np.count_nonzero(expected_alignment == 0)
+
+    # generate scores by normalizing to the number of keypoint pairs for which we have a strong expectation
+    scores = num_expectations_met / np.count_nonzero(expected_alignment)
+
+    # finally return scores
+    return scores
+
+
+def get_expected_keypoint_alignment():
+    '''Get a matrix with the default expected alignment
+    '''
+    # construct an array with the expected signs
+    # positive values mean the row node expects to be to the EAST of the column node
+    # negative values mean the row node expects to be to the WEST of the column node
+    # zeros indicate we have no particular expectation of the east-west relation, i.e. they should be approximatly the same position on the EAST-WEST axis
+
+    # 	Nose	LeftEar	RightEar	Neck	LeftHip	RightHip	TailBase
+    # Nose	0	1	1	1	1	1	1
+    # LeftEar	-1	0	0	1	1	1	1
+    # RightEar	-1	0	0	1	1	1	1
+    # Neck	-1	-1	-1	0	1	1	1
+    # LeftHip	-1	-1	-1	-1	0	0	1
+    # RightHip	-1	-1	-1	-1	0	0	1
+    # TailBase	-1	-1	-1	-1	-1	-1	0
+
+    return np.array([
+        [ 0,  1,  1,  1,  1,  1,  1],
+        [-1,  0,  0,  1,  1,  1,  1],
+        [-1,  0,  0,  1,  1,  1,  1],
+        [-1, -1, -1,  0,  1,  1,  1],
+        [-1, -1, -1, -1,  0,  0,  1],
+        [-1, -1, -1, -1,  0,  0,  1],
+        [-1, -1, -1, -1, -1, -1,  0]
+    ])
 
 
 def interpolate_nan_values(data: np.ndarray) -> np.ndarray:

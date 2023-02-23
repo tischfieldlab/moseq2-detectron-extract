@@ -36,14 +36,18 @@ class ProcessFeaturesStep(ProcessPipelineStep):
                                         initialization_delay=0,
                                         hit_counter_max=3)
 
-        # this tracker is used for keypoint/centroid smoothing and flip detection
-        self.point_tracker = KalmanTracker([
-            KalmanTrackerPoint2D(order=3, delta_t=1.0),  # Track centroids
-            KalmanTrackerNPoints2D(8, order=3, delta_t=1.0)  # Track keypoints
-        ])
-        self.angle_tracker = KalmanTracker([
-            KalmanTrackerAngle(order=3, delta_t=1.0, degrees=True),  # Track angles
-        ])
+        if self.config['use_tracking']:
+            # this tracker is used for keypoint/centroid smoothing and flip detection
+            self.point_tracker = KalmanTracker([
+                KalmanTrackerPoint2D(order=3, delta_t=1.0),  # Track centroids
+                KalmanTrackerNPoints2D(8, order=3, delta_t=1.0)  # Track keypoints
+            ])
+            self.angle_tracker = KalmanTracker([
+                KalmanTrackerAngle(order=3, delta_t=1.0, degrees=True),  # Track angles
+            ])
+        else:
+            self.point_tracker = None
+            self.angle_tracker = None
 
         self.instance_log = InstanceLogger(os.path.join(self.config['output_dir'], "instance_log.tsv"))
 
@@ -142,7 +146,7 @@ class ProcessFeaturesStep(ProcessPipelineStep):
 
 
     def __compute_features(self, data):
-        features = instances_to_features(data['inference'], data['chunk'], self.point_tracker, self.angle_tracker)
+        features = instances_to_features(data['inference'], data['chunk'], self.point_tracker, self.angle_tracker, debug=self.config['debug_feature_processing'])
         scalars = self.compute_scalars(data['chunk'] * features['masks'], features['features'])
 
         data['keypoints'] = self.compute_keypoints(features['keypoints'],

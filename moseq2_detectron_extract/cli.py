@@ -261,11 +261,13 @@ def find_roi(input_file, output_dir, bg_roi_dilate, bg_roi_shape, bg_roi_index, 
 @optgroup.option('--chunk-size', default=1000, type=int, help='Number of frames for each processing iteration')
 @optgroup.option('--chunk-overlap', default=0, type=int, help='Frames overlapped in each chunk')
 @optgroup.option('--fps', default=30, type=int, help='Frame rate of camera')
+@optgroup.option('--use-tracking/--no-use-tracking', default=True, help='during feature processing, use tracking models')
+@optgroup.option('--debug-feature-processing', is_flag=True, help='Generate additional reports of internal data during feature processing')
 @click.option("--config-file", type=click.Path())
 def extract(model, input_file, device, checkpoint, batch_size, instance_threshold, expected_instances, allowed_detections, frame_trim, chunk_size, chunk_overlap,
           bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter, bg_roi_gradient_threshold,
           bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground, frame_dtype, output_dir, min_height, max_height, fps, crop_size,
-          report_outliers, config_file):
+          report_outliers, config_file, use_tracking, debug_feature_processing):
     ''' Extract a moseq session with a trained detectron2 model
 
     \b
