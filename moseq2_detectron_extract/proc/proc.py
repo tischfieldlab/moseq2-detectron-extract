@@ -1,4 +1,5 @@
 from typing import Dict, List, Literal, Optional, Sequence, Tuple
+import warnings
 
 import cv2
 import matplotlib.pyplot as plt
@@ -315,6 +316,14 @@ def crop_and_rotate_frame(frame: np.ndarray, center: Tuple[float, float], angle:
     '''
     if np.isnan(angle) or np.any(np.isnan(center)):
         return np.zeros_like(frame, shape=crop_size) # pylint: disable=unexpected-keyword-arg
+
+    if center[0] < 0:
+        warnings.warn(f"Encountered center_x < 0 ({center[0]}). Will set to zero!")
+        center[0] = 0
+
+    if center[1] < 0:
+        warnings.warn(f"Encountered center_y < 0 ({center[1]}). Will set to zero!")
+        center[1] = 0
 
     try:
         xmin = int(center[0] - crop_size[0] // 2) + crop_size[0]
