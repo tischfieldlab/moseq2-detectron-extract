@@ -259,12 +259,16 @@ def draw_keypoints(im: np.ndarray, keypoints: np.ndarray, keypoint_names: Sequen
     for rule in keypoint_connection_rules:
         ki1 = keypoint_names.index(rule[0])
         ki2 = keypoint_names.index(rule[1])
+        if np.isnan(keypoints[ki1, :2]).any() or np.isnan(keypoints[ki2, :2]).any():
+            continue
         x1, y1 = keypoints[ki1, :2].astype(int)
         x2, y2 = keypoints[ki2, :2].astype(int)
         cv2.line(im, (x1 + origin[0], y1 + origin[1]), (x2 + origin[0], y2 + origin[1]), rule[2], thickness, cv2.LINE_AA)
 
     # draw keypoints
     for ki in range(keypoints.shape[0]):
+        if np.isnan(keypoints[ki, :2]).any():
+            continue
         x = keypoints[ki, 0].astype(int) + origin[0]
         y = keypoints[ki, 1].astype(int) + origin[1]
         im = cv2.circle(im, (x,y), radius, keypoint_colors[ki], -1, cv2.LINE_AA)
