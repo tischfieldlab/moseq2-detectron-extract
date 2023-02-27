@@ -321,7 +321,6 @@ def crop_and_rotate_frame(frame: np.ndarray, center: Tuple[float, float], angle:
         warnings.warn(f"Encountered center < 0 ({center[0]}, {center[1]}).")
         return np.zeros_like(frame, shape=crop_size) # pylint: disable=unexpected-keyword-arg
 
-
     try:
         xmin = int(center[0] - crop_size[0] // 2) + crop_size[0]
         xmax = int(center[0] + crop_size[0] // 2) + crop_size[0]
@@ -333,11 +332,12 @@ def crop_and_rotate_frame(frame: np.ndarray, center: Tuple[float, float], angle:
         use_frame = cv2.copyMakeBorder(frame, *border, cv2.BORDER_CONSTANT, 0)
         return cv2.warpAffine(use_frame[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
     except Exception as e:
-        raise ValueError("Here is a snapshot of data:\n"
-                        f"center: [{center[0]}, {center[1]}]\n"
-                        f"crop_size: [{crop_size[0]}, {crop_size[1]}]\n"
-                        f"angle: {angle}\n"
-                        f"extents: [[{xmin}, {xmax}], [{ymin}, {ymax}]]") from e
+        return np.zeros_like(frame, shape=crop_size) # pylint: disable=unexpected-keyword-arg
+        # raise ValueError("Here is a snapshot of data:\n"
+        #                 f"center: [{center[0]}, {center[1]}]\n"
+        #                 f"crop_size: [{crop_size[0]}, {crop_size[1]}]\n"
+        #                 f"angle: {angle}\n"
+        #                 f"extents: [[{xmin}, {xmax}], [{ymin}, {ymax}]]") from e
 
 
 def reverse_crop_and_rotate_frame(frame: np.ndarray, dest_size: Tuple[int, int], center: Tuple[float, float], angle: float):
@@ -729,10 +729,14 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, poi
         # 4) filter and update angle tracking
 
         if not point_tracker.is_initialized:
-            # we need to initialize the point tracker with some data
+            # we need to initialize the point tracker with some data, drop any non-finate values (not supported by kalman em estimation)
+            is_finite = np.logical_and(
+                np.isfinite(features['centroid']).all(axis=-1),
+                np.isfinite(allocentric_keypoints[:, 0, :, :2]).all(axis=(-1, -2))
+            )
             point_tracker.initialize([
-                features['centroid'],
-                allocentric_keypoints[:, 0, :, :2]
+                features['centroid'][is_finite, :],
+                allocentric_keypoints[is_finite, 0, :, :2]
             ])
 
 
