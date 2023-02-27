@@ -174,7 +174,10 @@ class KalmanTrackerPoint1D(KalmanTrackerItem):
 
     def build_init_state_means(self, data: np.ndarray):
         init_state_means = np.zeros((self.order,))
-        init_state_means[0] = data[0]
+        if data.shape[0] > 0:
+            init_state_means[0] = data[0]
+        else:
+            init_state_means[0] = 0
         # Try to estimate initial state means
         #derivitives = self.get_derivitives()
         #for i in range(self.order):
