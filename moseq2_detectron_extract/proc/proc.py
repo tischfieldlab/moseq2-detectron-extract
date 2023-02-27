@@ -316,15 +316,22 @@ def crop_and_rotate_frame(frame: np.ndarray, center: Tuple[float, float], angle:
     if np.isnan(angle) or np.any(np.isnan(center)):
         return np.zeros_like(frame, shape=crop_size) # pylint: disable=unexpected-keyword-arg
 
-    xmin = int(center[0] - crop_size[0] // 2) + crop_size[0]
-    xmax = int(center[0] + crop_size[0] // 2) + crop_size[0]
-    ymin = int(center[1] - crop_size[1] // 2) + crop_size[1]
-    ymax = int(center[1] + crop_size[1] // 2) + crop_size[1]
+    try:
+        xmin = int(center[0] - crop_size[0] // 2) + crop_size[0]
+        xmax = int(center[0] + crop_size[0] // 2) + crop_size[0]
+        ymin = int(center[1] - crop_size[1] // 2) + crop_size[1]
+        ymax = int(center[1] + crop_size[1] // 2) + crop_size[1]
 
-    border = (crop_size[1], crop_size[1], crop_size[0], crop_size[0])
-    rot_mat = cv2.getRotationMatrix2D((crop_size[0] // 2, crop_size[1] // 2), angle, 1)
-    use_frame = cv2.copyMakeBorder(frame, *border, cv2.BORDER_CONSTANT, 0)
-    return cv2.warpAffine(use_frame[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
+        border = (crop_size[1], crop_size[1], crop_size[0], crop_size[0])
+        rot_mat = cv2.getRotationMatrix2D((crop_size[0] // 2, crop_size[1] // 2), angle, 1)
+        use_frame = cv2.copyMakeBorder(frame, *border, cv2.BORDER_CONSTANT, 0)
+        return cv2.warpAffine(use_frame[ymin:ymax, xmin:xmax], rot_mat, (crop_size[0], crop_size[1]))
+    except Exception as e:
+        raise ValueError("Here is a snapshot of data:\n"
+                        f"center: [{center[0]}, {center[1]}]\n"
+                        f"crop_size: [{crop_size[0]}, {crop_size[1]}]\n"
+                        f"angle: {angle}\n"
+                        f"extents: [[{xmin}, {xmax}], [{ymin}, {ymax}]]") from e
 
 
 def reverse_crop_and_rotate_frame(frame: np.ndarray, dest_size: Tuple[int, int], center: Tuple[float, float], angle: float):
