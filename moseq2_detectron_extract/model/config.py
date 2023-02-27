@@ -2,7 +2,7 @@ from detectron2 import model_zoo
 from detectron2.config import CfgNode, get_cfg
 from detectron2.data.catalog import DatasetCatalog, MetadataCatalog
 from moseq2_detectron_extract.io.annot import get_dataset_statistics
-
+from detectron2.projects.point_rend.config import add_pointrend_config
 
 def load_config(config_file: str) -> CfgNode:
     ''' Load a configuration file
@@ -26,10 +26,14 @@ def get_base_config() -> CfgNode:
     '''
     cfg = get_cfg()
 
+
     # USE Keypoint RCNN
     cfg.merge_from_file(model_zoo.get_config_file("COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x.yaml"))
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x.yaml")
     cfg.MODEL.KEYPOINT_ON = True
+
+    add_pointrend_config(cfg)
+    cfg.MODEL.WEIGHTS = "detectron2://PointRend/InstanceSegmentation/pointrend_rcnn_R_50_FPN_3x_coco/164955410/model_final_edd263.pkl"
 
     # Turn on mask detection
     cfg.MODEL.MASK_ON = True
