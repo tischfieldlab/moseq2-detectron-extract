@@ -1,6 +1,8 @@
 import os
+from typing import Optional
 
-from albumentations.augmentations.transforms import GaussNoise
+from albumentations.augmentations.transforms import (GaussNoise, GlassBlur,
+                                                     MotionBlur)
 from detectron2.config.config import CfgNode
 from detectron2.data import (build_detection_test_loader,
                              build_detection_train_loader)
@@ -8,12 +10,13 @@ from detectron2.data.transforms import (FixedSizeCrop, RandomBrightness,
                                         RandomContrast, RandomRotation)
 from detectron2.engine.defaults import DefaultTrainer
 from detectron2.evaluation import COCOEvaluator
+
 from moseq2_detectron_extract.io.util import ensure_dir
 from moseq2_detectron_extract.model.augmentations import (
-    Albumentations, RandomFieldNoiseAugmentation, ScaleAugmentation, ParticleNoiseAugmentation, DoughnutGRFNoiseAugmentation)
+    Albumentations, DoughnutGRFNoiseAugmentation, ParticleNoiseAugmentation,
+    RandomFieldNoiseAugmentation, ScaleAugmentation)
 from moseq2_detectron_extract.model.hooks import LossEvalHook, MemoryUsageHook
 from moseq2_detectron_extract.model.mapper import MoseqDatasetMapper
-from typing import Optional
 
 
 class Trainer(DefaultTrainer):
@@ -36,6 +39,10 @@ class Trainer(DefaultTrainer):
             DoughnutGRFNoiseAugmentation(p=0.5),
             ParticleNoiseAugmentation(p=0.5),
             RandomFieldNoiseAugmentation(p=0.5),
+
+            # did not see much improvement from adding these:
+            # Albumentations(GlassBlur(sigma=0.2, max_delta=1, iterations=1, p=0.5)),
+            # Albumentations(MotionBlur(blur_limit=3, p=0.5)),
         ]
         mapper = MoseqDatasetMapper(cfg, is_train=True, augmentations=augs, use_instance_mask=True, use_keypoint=True, recompute_boxes=True)
         return build_detection_train_loader(cfg, mapper=mapper)
