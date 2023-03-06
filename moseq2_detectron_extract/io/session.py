@@ -183,7 +183,9 @@ class Session():
 
         # Grab the first frame of the video and write it out to a file, but only if we have a place to save it
         ff_filename = os.path.join(cache_dir, 'first_frame.tiff')
-        if use_cache and os.path.exists(ff_filename):
+        if self._first_frame is not None:
+            first_frame = self._first_frame
+        elif use_cache and os.path.exists(ff_filename):
             first_frame = read_tiff_image(ff_filename, scale=True)
         else:
             first_frame = load_movie_data(self.depth_file, 0, tar_object=self.tar)
@@ -193,6 +195,8 @@ class Session():
 
         # compute the background, or load one from the cache
         bg_filename = os.path.join(cache_dir, 'bground.tiff')
+        if self._bground_im is not None:
+            bground_im = self._bground_im
         if use_cache and os.path.exists(bg_filename):
             if verbose:
                 logging.info('Loading background...')
