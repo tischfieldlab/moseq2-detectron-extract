@@ -49,7 +49,7 @@ from moseq2_detectron_extract.model.util import (get_available_device_info,
                                                  get_system_versions)
 from moseq2_detectron_extract.proc.util import check_completion_status
 from moseq2_detectron_extract.quality import find_outliers_h5
-from moseq2_detectron_extract.viz import H5ResultPreviewVideoGenerator
+from moseq2_detectron_extract.viz import H5ResultPreviewVideoGenerator, RawSessionPreviewVideoGenerator
 
 # import warnings
 # warnings.filterwarnings('ignore', category=UserWarning, module='torch') # disable UserWarning: floor_divide is deprecated
@@ -172,6 +172,65 @@ def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expec
 
     evaluator = Evaluator(cfg)
     evaluator()
+
+
+@cli.command(name="visualize-raw", help="Generate a visualization of raw data.")
+@click.argument('input-file', type=click.Path(exists=True, dir_okay=False))
+@optgroup.group('Output')
+@optgroup.option('--output-dir', default=None, help='Output directory to save the extraction output files')
+@optgroup.group('Background Detection')
+@optgroup.option('--bg-subtract/--no-bg-subtract', default=True, type=bool, help='Controls if background should be estimated and subtracted')
+@optgroup.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
+@optgroup.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
+@optgroup.option('--bg-roi-index', default=0, type=int, help='Index of which background mask(s) to use')
+@optgroup.option('--bg-roi-weights', default=(1, .1, 1), type=(float, float, float), help='Feature weighting (area, extent, dist) of the background mask')
+@optgroup.option('--bg-roi-depth-range', default=(650, 750), type=(float, float), help='Range to search for floor of arena (in mm)')
+@optgroup.option('--bg-roi-gradient-filter', default=False, type=bool, help='Exclude walls with gradient filtering')
+@optgroup.option('--bg-roi-gradient-threshold', default=3000, type=float, help='Gradient must be < this to include points')
+@optgroup.option('--bg-roi-gradient-kernel', default=7, type=int, help='Kernel size for Sobel gradient filtering')
+@optgroup.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
+@optgroup.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
+def visualize_raw(input_file, output_dir, bg_subtract, bg_roi_dilate, bg_roi_shape, bg_roi_index, bg_roi_weights, bg_roi_depth_range, bg_roi_gradient_filter,
+                       bg_roi_gradient_threshold, bg_roi_gradient_kernel, bg_roi_fill_holes, use_plane_bground):
+    ''' Generate a movie visualization of the raw data without attempting to extract
+    '''
+    setup_logging(add_defered_file_handler=True)
+    print('') # Empty line to give some breething room
+
+    config = locals()
+
+    session = Session(input_file)
+
+    # set up the output directory
+    if config['output_dir'] is None:
+        output_dir = os.path.join(session.dirname, 'proc')
+        config['output_dir'] = output_dir
+    else:
+        output_dir = config['output_dir']
+    ensure_dir(output_dir)
+
+    # Attach log file to logging module, dependent on having setup output_dir
+    attach_file_logger(os.path.join(output_dir, "raw_preview.log"))
+
+    # Find image background and ROI
+    session.find_roi(bg_roi_dilate=config['bg_roi_dilate'],
+                    bg_roi_shape=config['bg_roi_shape'],
+                    bg_roi_index=config['bg_roi_index'],
+                    bg_roi_weights=config['bg_roi_weights'],
+                    bg_roi_depth_range=config['bg_roi_depth_range'],
+                    bg_roi_gradient_filter=config['bg_roi_gradient_filter'],
+                    bg_roi_gradient_threshold=config['bg_roi_gradient_threshold'],
+                    bg_roi_gradient_kernel=config['bg_roi_gradient_kernel'],
+                    bg_roi_fill_holes=config['bg_roi_fill_holes'],
+                    use_plane_bground=config['use_plane_bground'],
+                    cache_dir=output_dir,
+                    verbose=True)
+    logging.info("")
+
+    register_dataset_metadata('moseq')
+    dest = os.path.join(output_dir, "raw_preview.mp4")
+    video_generator = RawSessionPreviewVideoGenerator(session, background_subtract=bg_subtract)
+    video_generator.generate(dest)
 
 
 @cli.command(name="find-roi", help="Finds the ROI and background distance to subtract from frames when extracting.")

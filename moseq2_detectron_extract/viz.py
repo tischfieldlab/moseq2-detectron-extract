@@ -1,4 +1,5 @@
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 import itertools
 import random
 from typing import Optional, Iterable, Sequence, Tuple
@@ -17,10 +18,11 @@ import h5py
 
 from moseq2_detectron_extract.io.annot import KeypointConnections, DataItem
 from moseq2_detectron_extract.io.image import read_image
+from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import gen_batch_sequence
 from moseq2_detectron_extract.io.video import PreviewVideoWriter
 from moseq2_detectron_extract.proc.keypoints import load_keypoint_data_from_h5
-from moseq2_detectron_extract.proc.proc import colorize_video, reverse_crop_and_rotate_frame, scale_raw_frames, stack_videos
+from moseq2_detectron_extract.proc.proc import colorize_video, prep_raw_frames, reverse_crop_and_rotate_frame, scale_raw_frames, stack_videos
 from moseq2_detectron_extract.proc.roi import get_bbox_size, get_roi_contour
 
 
@@ -345,6 +347,49 @@ def draw_contour(im: np.ndarray, contour: Iterable[np.ndarray], color: Tuple[int
 
 #         video_pipe.close()
 
+class RawSessionPreviewVideoGenerator():
+    ''' Generates a "preview video" from an raw data without inference results
+    '''
+    def __init__(self, session: Session, background_subtract: bool = True, dset_name: str = 'moseq', vmin: float = 0., vmax: float = 100., fps: int = 30,
+                 batch_size: int = 1000) -> None:
+        self.session = session
+        self.background_subtract = background_subtract
+        self.dset_name = dset_name
+        self.vmin = vmin
+        self.vmax = vmax
+        self.fps = fps
+        self.batch_size = batch_size
+
+    def generate(self, dest: str) -> None:
+        ''' Commence generation of the video
+
+        Parameters:
+        dest (str): destination for the video file
+        '''
+        dset_meta = MetadataCatalog.get(self.dset_name)
+        if self.background_subtract:
+            roi = self.session.roi
+        else:
+            roi = None
+        arena_view = ArenaView(roi, scale=2.0, vmin=self.vmin, vmax=self.vmax, dset_meta=dset_meta)
+        video_pipe = PreviewVideoWriter(dest, fps=self.fps, vmin=self.vmin, vmax=self.vmax)
+        prep_frames = partial(prep_raw_frames,
+                              bground_im=self.session.bground_im,
+                              roi=self.session.roi,
+                              vmin=self.vmin,
+                              vmax=self.vmax)
+
+        with tqdm(desc='Generating Frames', total=self.session.nframes) as pbar:
+            for frame_idxs, raw_frames in self.session.iterate(self.batch_size):
+                if self.background_subtract:
+                    raw_frames = prep_frames(raw_frames)
+                out_video = arena_view.generate_frames(raw_frames, None, None, None)
+                video_pipe.write_frames(frame_idxs, out_video)
+                pbar.update(n=len(frame_idxs))
+
+        video_pipe.close()
+
+
 
 class H5ResultPreviewVideoGenerator():
     ''' Generates a "result preview video" from an extracted h5 result file
@@ -492,7 +537,10 @@ class ArenaView(BaseView):
         super().__init__(scale=scale, dset_meta=dset_meta)
         self.vmin = vmin
         self.vmax = vmax
-        self.contour = get_roi_contour(roi, crop=True)
+        if roi is None:
+            self.contour = None
+        else:
+            self.contour = get_roi_contour(roi, crop=True)
 
 
     def generate_frames(self, raw_frames: np.ndarray, keypoints: Optional[np.ndarray] = None, masks: Optional[np.ndarray] = None, boxes: Optional[np.ndarray] = None):
