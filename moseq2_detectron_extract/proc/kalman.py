@@ -314,13 +314,19 @@ class KalmanTracker(object):
         Parameters:
         init_data (Sequence[np.ndarray]): initial data, one element in the sequence for each `KalmanTrackerItem`
         '''
+        if len(init_data) != len(self.items):
+            raise ValueError(f"Length of `init_data` ({len(init_data)}) does not equal length of `items_to_track` ({len(self.items)})")
+
         self.kalman_filter = KalmanFilter(
             transition_matrices=self._build_trans_mat(),
             observation_matrices=self._build_observ_matrix(),
             initial_state_mean=self._build_init_state_means(init_data),
             em_vars=['transition_covariance', 'observation_covariance', 'initial_state_covariance']
         )
-        self.kalman_filter.em(self._format_data(init_data), n_iter=10)
+        formatted_init_data = self._format_data(init_data)
+        finite_values = np.isfinite(formatted_init_data)
+        if np.count_nonzero(finite_values) > 0:
+            self.kalman_filter.em(formatted_init_data[finite_values], n_iter=10)
         self.last_mean = self.kalman_filter.initial_state_mean
         self.last_covar = self.kalman_filter.initial_state_covariance
 

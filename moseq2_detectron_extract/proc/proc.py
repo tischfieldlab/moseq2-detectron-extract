@@ -730,13 +730,9 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, poi
 
         if not point_tracker.is_initialized:
             # we need to initialize the point tracker with some data, drop any non-finate values (not supported by kalman em estimation)
-            is_finite = np.logical_and(
-                np.isfinite(features['centroid']).all(axis=-1),
-                np.isfinite(allocentric_keypoints[:, 0, :, :2]).all(axis=(-1, -2))
-            )
             point_tracker.initialize([
-                features['centroid'][is_finite, :],
-                allocentric_keypoints[is_finite, 0, :, :2]
+                features['centroid'],
+                allocentric_keypoints[:, 0, :, :2]
             ])
 
 
