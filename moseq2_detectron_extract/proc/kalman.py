@@ -357,6 +357,9 @@ class KalmanTracker(object):
         return fmt
 
     def _inverse_format_data(self, data: np.ndarray) -> Sequence[np.ndarray]:
+        if ma.isMaskedArray(data):
+            data = data.data  # convert back to normal array
+
         out = []
         offset = 0
         for itm in self.items:
@@ -384,6 +387,13 @@ class KalmanTracker(object):
         '''Smooth data and update the current state
         '''
         to_smooth = self._format_data(data)
+
+        # check if this is only a single step
+        # if so, instead run `self.filter_update()` instead,
+        # since smooth seems to not support a single observation
+        if to_smooth.shape[0] == 1:
+            return self.filter_update(data)
+
         means, covars = self.kalman_filter.smooth(to_smooth)
         self.last_mean = self.kalman_filter.initial_state_mean = means[-1]
         self.last_covar = self.kalman_filter.initial_state_covariance = covars[-1]
