@@ -71,6 +71,13 @@ class ProcessFeaturesStep(ProcessPipelineStep):
         if len(instances) <= 1:
             return instances
 
+        # we sometimes see instances with a mask having all False's (empty)
+        # filter these out, since later the center of mass calculation will give NaN
+        # and cause trouble for tracking!
+        has_positive_mask = instances.pred_masks.any(dim=1).any(dim=1)
+        instances = instances[has_positive_mask]
+
+
         # process the instances in order of score
         idxs = np.argsort(instances.scores.numpy())
 
