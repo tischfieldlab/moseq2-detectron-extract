@@ -62,6 +62,20 @@ def outputs_to_instances(inputs: List[Dict[str, torch.Tensor]], outputs: List[Di
     return instances
 
 
+def create_empty_instances(width: int, height: int, nkeypoints: int) -> Instances:
+    '''Create a new `Instances` object containing zero instances
+    '''
+    return Instances(
+        (height, width),
+        pred_boxes=Boxes(torch.empty(size=(0, 4), dtype=torch.float32)),
+        scores=torch.empty(size=(0,), dtype=torch.float32),
+        pred_classes=torch.empty(size=(0,), dtype=torch.int64),
+        pred_masks=torch.empty(size=(0, height, width), dtype=torch.bool),
+        pred_keypoints=torch.empty(size=(0, nkeypoints, 3), dtype=torch.float32),
+        pred_keypoints_heatmaps=torch.empty(size=(0, nkeypoints, 28, 28), dtype=torch.float32)
+    )
+
+
 def ensure_spawn_start_method() -> None:
     ''' Ensure that multiprocessing start method is set to spawn
     '''

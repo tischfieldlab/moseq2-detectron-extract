@@ -8,6 +8,7 @@ from norfair import Detection, Tracker
 from scipy.ndimage import center_of_mass
 
 from moseq2_detectron_extract.model.instance_logger import InstanceLogger
+from moseq2_detectron_extract.model.util import create_empty_instances
 from moseq2_detectron_extract.pipeline.pipeline_step import ProcessPipelineStep
 from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict
 from moseq2_detectron_extract.proc.proc import (crop_and_rotate_frame,
@@ -118,6 +119,9 @@ class ProcessFeaturesStep(ProcessPipelineStep):
         for i in range(len(instances)):
             instance = instances[i]
             center = np.array(center_of_mass(instance.pred_masks.cpu().numpy()[0]))
+            if np.isnan(center).any():
+                # fall back to bounding box center?
+                center = instance.pred_boxes.get_centers()[0].cpu().numpy()
             data = {
                 'index': i,
                 'instance': instance
@@ -148,7 +152,11 @@ class ProcessFeaturesStep(ProcessPipelineStep):
             while len(selected_instances) < self.config['expected_instances'] and len(sorted_tracked_objects) > 0:
                 selected_instances.append(sorted_tracked_objects.pop().last_detection.data["instance"])
 
-            frame_instances['instances'] = Instances.cat(selected_instances)
+            if len(selected_instances) > 0:
+                frame_instances['instances'] = Instances.cat(selected_instances)
+            else:
+                # an empty instances
+                frame_instances['instances'] = create_empty_instances(*frame_instances['instances'].image_size, 8)
         return data
 
 
