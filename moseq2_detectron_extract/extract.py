@@ -143,8 +143,8 @@ def log_processing_status(pipeline: Pipeline):
     ''' Log status of pipeline in a way that if friendly to log files
     '''
     try:
-        producer_progress = pipeline.progress.get_stats(pipeline.steps[0].name)
-        complete_progress = pipeline.progress.get_stats(pipeline.steps[-1].name)
+        producer_progress = pipeline.progress.get_stats(pipeline.steps[0].step_name)
+        complete_progress = pipeline.progress.get_stats(pipeline.steps[-1].step_name)
 
         assert producer_progress is not None
         assert complete_progress is not None

@@ -14,8 +14,9 @@ class PipelineStep():
         Takes a single input queue to work on and adds results to one or more output queues
     '''
 
-    def __init__(self, config: dict, name: Optional[str]=None, **kwargs) -> None:
+    def __init__(self, config: dict, name: str, **kwargs) -> None:
         super().__init__()
+        self.step_name = name
         self.is_producer = False
         self.shutdown_event: Union[EventClass, None] = None
         self.progress: Union[Queue, None] = None
@@ -185,7 +186,7 @@ class ProcessPipelineStep(PipelineStep, Process):
 class ProducerPipelineStep(ThreadPipelineStep):
     ''' Pipeline step who only produces
     '''
-    def __init__(self, config: dict, name: Optional[str] = None, **kwargs) -> None:
+    def __init__(self, config: dict, name: str, **kwargs) -> None:
         super().__init__(config, name, **kwargs)
         self.is_producer = True
         self.daemon = True
