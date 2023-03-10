@@ -795,7 +795,7 @@ def generate_extract_config(output_file: str):
 def extract_batch(input_dir, config_file, cluster_type, slurm_partition, slurm_ncpus, slurm_memory, slurm_gres, slurm_wall_time, slurm_preamble, slurm_extra):
     """Generate commmands for batch extraction of raw moseq data.
     """
-    to_extract = recursive_find_unextracted_dirs(input_dir)
+    to_extract = sorted(recursive_find_unextracted_dirs(input_dir))
     #params = read_yaml(config_file)
 
     if cluster_type == "local":
