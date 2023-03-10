@@ -12,7 +12,7 @@ import traceback
 import warnings
 from logging.handlers import MemoryHandler
 from pstats import Stats
-from typing import IO, Any, Optional, Protocol, Union
+from typing import IO, Any, List, Optional, Protocol, Union
 
 import h5py
 import numpy as np
@@ -380,7 +380,7 @@ def recursive_find_unextracted_dirs(root_dir=None,
                                     filename='depth.dat',
                                     yaml_path='proc/results_00.yaml',
                                     metadata_path='metadata.json',
-                                    skip_checks=False):
+                                    skip_checks=False) -> List[str]:
     """Recursively find unextracted directories
     """
     if root_dir is None:
