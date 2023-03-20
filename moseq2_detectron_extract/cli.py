@@ -2,10 +2,11 @@ import datetime
 import json
 import logging
 import os
+import pathlib
 import warnings
 from functools import partial
 from pathlib import Path
-from typing import Union, cast
+from typing import Tuple, Union, cast
 
 import click
 from click_option_group import optgroup
@@ -25,6 +26,7 @@ from moseq2_detectron_extract.io.click import (
     OptionalParamType, click_monkey_patch_option_show_defaults,
     command_with_config, get_command_defaults)
 from moseq2_detectron_extract.io.flips import flip_dataset, read_flips_file
+from moseq2_detectron_extract.io.result import trim_results
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import (attach_file_logger,
                                               backup_existing_file,
@@ -817,6 +819,48 @@ def extract_batch(input_dir, config_file, cluster_type, slurm_partition, slurm_n
     for item in to_extract:
         base_command = f"moseq2-detectron-extract extract --config-file {config_file} {item}"
         print(cluster_wrap(base_command))
+
+
+@cli.command(name="trim-result", short_help="Trim a extraction result.")
+@click.argument('result_h5', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path))
+@click.option("--trim", "-t", type=(int, int), default=(0, -1), help="Range to keep")
+@click.option('--visualize/--no-visualize', default=True, help='Visualize the newly trimmed dataset')
+def trim_result(result_h5: pathlib.Path, trim: Tuple[int, int], visualize: bool):
+    ''' Trim a result file, keeping data from frame indicies given by `--trim`.
+
+        The indicies follow normal python indexing semantics, i.e: [start, stop)
+    '''
+    # setup logging, and point log output to be appended to the
+    # [existing] log file, so that we have a record of the transaction
+    setup_logging(add_defered_file_handler=True)
+    attach_file_logger(result_h5.with_suffix('.log'))
+    logging.info('')
+    logging.info(f'About to trim result file to range [{trim[0]}, {trim[1]}).')
+
+    # create backup of important files
+    logging.info('Backing up files....')
+    exts_to_backup = ['.h5']
+    if visualize:
+        exts_to_backup.append('.mp4')
+    for ext in exts_to_backup:
+        if ext is not None:
+            filename = str(result_h5.with_suffix(ext))
+        else:
+            ext = result_h5.suffix
+            filename = str(result_h5)
+        logging.info(f' -> backed up {ext} file: "{filename}" -> "{backup_existing_file(filename)}"')
+    logging.info('')
+
+    # open h5, crop to start and stop coordinates
+    logging.info('Trimming h5 file....')
+    trim_results(result_h5, trim[0], trim[1])
+
+    # generate visualization movie
+    if visualize:
+        register_dataset_metadata('moseq')
+        vdest = result_h5.with_suffix('.mp4')
+        logging.info(f'Generating preview video: {vdest}')
+        H5ResultPreviewVideoGenerator(result_h5).generate(vdest)
 
 
 if __name__ == '__main__':

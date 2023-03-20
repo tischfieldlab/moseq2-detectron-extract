@@ -1,4 +1,6 @@
 from importlib.metadata import version
+import os
+from typing import Union
 
 import h5py
 from moseq2_detectron_extract.io.click import click_param_annot
@@ -155,3 +157,43 @@ def copy_frame(h5_file: h5py.File, src_frame: int, dst_frame: int) -> None:
     flip_keys = [f'/metadata/extraction/{key}' for key in h5_file['/metadata/extraction'].keys() if key.startswith('flips')]
     for key in flip_keys:
         h5_file[key][dst_frame] = h5_file[key][src_frame]
+
+
+def trim_results(h5_file: Union[str, h5py.File], start: int, stop: int) -> None:
+    ''' Trim all datasets (excluding datasets under `/metadata`) to the range specified by `start` and `stop`
+
+    Parameters:
+    h5_file (str|h5py.File): results file to operate upon
+    start (int): first index to keep
+    stop (int): last index to keep (follows normal python indexing semantics)
+    '''
+    h5: h5py.File
+    need_to_close = False
+    if isinstance(h5_file, (str, os.PathLike)):
+        h5 = h5py.File(h5_file, mode='r+')
+        need_to_close = True
+    elif isinstance(h5_file, h5py.File):
+        h5 = h5_file
+        if h5.mode != 'r+':
+            raise ValueError('Expecting the h5 file to have been opened in writable mode, but it is read-only!')
+    else:
+        raise ValueError(f'Was expecting a string path to h5 file or a h5py.File object, but got {type(h5_file)}')
+
+
+    def _do_trim(name: str, node: Union[h5py.Group, h5py.Dataset]):
+        if isinstance(node, h5py.Dataset):
+            # node is a dataset
+            if 'metadata' not in name:
+                data = node[start:stop]
+                node.resize(stop-start, axis=0)
+                node[:] = data[:]
+        else:
+            # node is a group
+            pass
+
+
+    h5.visititems(_do_trim)
+    h5.flush()
+
+    if need_to_close:
+        h5.close()
