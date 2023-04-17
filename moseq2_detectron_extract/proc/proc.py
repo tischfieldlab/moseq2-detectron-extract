@@ -767,14 +767,16 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, poi
             p_next_angle, = angle_tracker.sample(1)
             rel_angle_dist = angle_difference(p_next_angle, angles[[i]])[0]
 
-            # Potentially intervene here, if predicted angle is completely off from observed angle
-            # Here we choose a threshold of 140 degrees, meaning the difference is 180 +/- 40 degrees,
-            # or looks approximatly like a flip
+            # Potentially intervene here
             if kpt_alignment_scores[i] < 0.4:
+                # if we cannot rely on the angle being properly flipped by the keypoint data
                 angles[i] = p_next_angle
                 intervention = 'low kp algn score, defer to sample'
 
             elif np.abs(rel_angle_dist) > 140:
+                # if predicted angle is completely off from observed angle
+                # Here we choose a threshold of 140 degrees, meaning the difference is 180 +/- 40 degrees,
+                # or looks approximatly like a flip
                 angles[i] = clamp_angles(angles[i] + 180)
                 flips[i] = ~flips[i]
                 intervention = 'flip 180'

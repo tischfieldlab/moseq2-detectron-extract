@@ -1,7 +1,9 @@
 import json
 import logging
 import os
+import pathlib
 import random
+import re
 from typing import (Callable, Dict, Iterable, List, Literal, MutableSequence,
                     Optional, Sequence, Tuple, TypedDict, Union, cast)
 import cv2
@@ -11,6 +13,7 @@ from detectron2.structures import BoxMode
 import numpy as np
 import pycocotools
 from skimage.draw import polygon
+from skimage.measure import points_in_poly
 from tqdm import tqdm
 
 from moseq2_detectron_extract.io.image import read_image
@@ -450,56 +453,59 @@ def get_image_path(entry: dict) -> str:
     ''' Extract image file path from an annotation entry
     '''
     if 'task_path' in entry:
-        return entry['task_path']
+        path = entry['task_path']
     elif 'data' in entry and 'image' in entry['data']:
-        return entry['data']['image']
+        path = entry['data']['image']
     elif 'data' in entry and 'depth_image' in entry['data']:
-        return entry['data']['depth_image']
+        path = entry['data']['depth_image']
     else:
         raise KeyError('Could not locate image path from entry!')
+
+    path = pathlib.Path(path)
+    path = path.with_name(re.sub(r"(\w+-)", "", path.name))
+    return str(path)
 
 
 def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: MaskFormat='polygon',
                               keypoint_names: Optional[List[str]]=None) -> DataItem:
     ''' Fetch annotation data from a task entry
     '''
-    annot: dict = {}
-    kpts = {}
-    original_width: Union[int, None] = None
-    original_height: Union[int, None] = None
-
-
     if len(entry[key]) > 1:
         logging.warning(f"WARNING: Task {entry['id']}: Multiple annotations found, only taking the first")
 
+    # try to find the image height/width
+    original_width: Union[int, None] = None
+    original_height: Union[int, None] = None
     for rslt in entry[key][0]['result']:
-        if 'original_width' in rslt and original_width is None:
+        if 'original_width' in rslt and original_width is None and 'original_height' in rslt and original_height is None:
             original_width = rslt['original_width']
-
-        if 'original_height' in rslt and original_height is None:
             original_height = rslt['original_height']
+            break
 
-        if rslt['type'] == 'polygonlabels':
-            if len(annot.keys()) > 0:
-                logging.warning(f"WARNING: Task {entry['id']}: Polygon has already been parsed, replacing value")
-            annot.update(get_polygon_data(rslt, mask_format=mask_format))
+    # collect any polygons (indicating instances)
+    poly_results = get_results_of_type(entry[key][0]['result'], 'polygonlabels')
+    instances = [get_polygon_data(rslt, mask_format=mask_format) for rslt in poly_results]
+    for instance in instances:
+        instance['keypoints'] = {}
 
-        elif rslt['type'] == 'keypointlabels':
-            if 'points' in rslt['value']:
-                #logging.info('Skipping unexpected points in keypoint', rslt)
-                continue
-            try:
-                kdata = get_keypoint_data(rslt)
-                kname = list(kdata.keys())[0]
-                if kname in kpts:
-                    logging.warning(f"WARNING: Task {entry['id']}: Keypoint \"{kname}\" has already been parsed, replacing value")
-                kpts.update(kdata)
-            except:
-                logging.info(rslt['value'])
-                raise
+    # collect any keypoints, and assign them to instances
+    keypoint_results = get_results_of_type(entry[key][0]['result'], 'keypointlabels')
+    for kpt in keypoint_results:
+        try:
+            kdata = get_keypoint_data(kpt)
+            kname = list(kdata.keys())[0]
+            owner = find_best_poly_overlap(instances, kdata[kname])
+            if kname in owner['keypoints']:
+                logging.warning(f"WARNING: Task {entry['id']}: Keypoint \"{kname}\" has already been parsed, replacing value")
+            owner['keypoints'].update(kdata)
+        except:
+            logging.info(kpt)
+            raise
 
+    # sort keypoints and transform to final format
     if keypoint_names is not None:
-        annot['keypoints'] = sort_keypoints(keypoint_names, kpts)
+        for instance in instances:
+            instance['keypoints'] = sort_keypoints(keypoint_names, instance['keypoints'])
 
     assert original_width is not None
     assert original_height is not None
@@ -509,9 +515,35 @@ def get_annotation_from_entry(entry: dict, key: str='annotations', mask_format: 
         'width': original_width,
         'height': original_height,
         'image_id': entry['id'],
-        'annotations': [cast(KptSegmAnnotation, annot)],
+        'annotations': cast(List[KptSegmAnnotation], instances),
         'rescale_intensity': 1,
     }
+
+
+def find_best_poly_overlap(poly: List[SegmAnnotation], point: KeypointAnnotation):
+    ''' From a list of polygon annotations, find the best (lowest cost) match for a candidate keypoint
+
+    If the point is inside a polygon, choose that polygon, otherwise choose the closest polygon
+    '''
+    scores = []
+    test_point = [[point['x'], point['y']]]
+    for p in poly:
+        is_in_poly = points_in_poly(test_point, np.reshape(p['segmentation'][0], (-1, 2)))[0]
+        if is_in_poly:
+            return p
+
+        distances = np.reshape(p['segmentation'][0], (-1, 2)) - test_point[0]
+        distances = np.sqrt(np.sum(distances ** 2, axis=1))
+        scores.append(np.min(distances))
+
+    return poly[np.argmin(scores)]
+
+
+def get_results_of_type(results: List[dict], annot_type: str):
+    ''' Filter a list of annotation results to those only of type `annot_type`
+    '''
+    return list(filter(lambda rslt: rslt['type'] == annot_type, results))
+
 
 def replace_multiple_data_paths_in_annotations(annotations: List[DataItem], replace_paths: Sequence[Tuple[str, str]]) -> List[DataItem]:
     ''' Replace a series substrings in the filename of annotations.
