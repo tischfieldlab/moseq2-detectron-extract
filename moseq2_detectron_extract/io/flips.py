@@ -144,27 +144,24 @@ def flip_dataset(h5_file: str, flip_mask: Optional[np.ndarray] = None, flip_rang
 
             # get next flips path and write current manual flips to next flips path
             new_flips_path = find_unused_dataset_path(h5_file, flips_path)
-            h5.create_dataset(new_flips_path, data=flip_mask, dtype='bool', compression='gzip')
+            h5.create_dataset(new_flips_path, data=real_flip_mask, dtype='bool', compression='gzip')
             h5[new_flips_path].attrs['description'] = 'Manualally applied flips, False=no flip, True=flip'
             h5[new_flips_path].attrs['creation'] = f'Created by moseq2-detectron-extract, manually applied flips, on {datetime.now()}'
-
-            # recompute `flips` as xor origional flips + new flips and write to `flips_path`
-            h5[flips_path] = recompute_flips(h5, flips_path=flips_path)
 
         else:
             # Manual flips have been applied before
 
             # create and set the manual flips dataset
-            h5.create_dataset(new_flips_path, data=flip_mask, dtype='bool', compression='gzip')
+            h5.create_dataset(new_flips_path, data=real_flip_mask, dtype='bool', compression='gzip')
             h5[new_flips_path].attrs['description'] = 'Manualally applied flips, False=no flip, True=flip'
             h5[new_flips_path].attrs['creation'] = f'Created by moseq2-detectron-extract, manually applied flips, on {datetime.now()}'
 
-            # recompute `flips` as xor origional flips + new flips and write to `flips_path`
-            h5[flips_path] = recompute_flips(h5, flips_path=flips_path)
+        # recompute `flips` as xor origional flips + new flips and write to `flips_path`
+        h5[flips_path][:] = recompute_flips(h5, flips_path=flips_path)
 
         # apply flips to the datasets
-        assert flip_mask is not None
-        flip_locations = np.nonzero(flip_mask)
+        assert real_flip_mask is not None
+        flip_locations = np.nonzero(real_flip_mask)
         h5[frames_path][flip_locations] = flip_horizontal(h5[frames_path][flip_locations])
         h5[frames_mask_path][flip_locations] = flip_horizontal(h5[frames_mask_path][flip_locations])
         h5[angle_path][flip_locations] += np.pi
@@ -175,7 +172,7 @@ def flip_dataset(h5_file: str, flip_mask: Optional[np.ndarray] = None, flip_rang
             h5['/scalars/centroid_x_px'][()],
             h5['/scalars/centroid_y_px'][()]
         ), axis=1)
-        recomputed_keypoints = keypoints_to_dict(ref_keypoints, h5[frames_path][()], centroids, h5[angle_path][()], h5['/metadata/extraction/true_depth'][()])
+        recomputed_keypoints = keypoints_to_dict(ref_keypoints, h5[frames_path][()], centroids, np.rad2deg(h5[angle_path][()]), h5['/metadata/extraction/true_depth'][()])
         # drop any z dimention keys, since they should not change, and the recomputation will be wrong!
         recomputed_keypoints = {k: v for k, v in recomputed_keypoints.items() if '_z_' not in k}
         for key, value in recomputed_keypoints.items():
@@ -195,7 +192,7 @@ def recompute_flips(h5: h5py.File, flips_path: str = '/metadata/extraction/flips
     np.ndarray - xor reduced flips
     '''
     # split into something like ['/metadata/extraction', 'flips']
-    parts = flips_path.rsplit('/', 1)[0]
+    parts = flips_path.rsplit('/', 1)
 
     # Get a sorted list of keys with a suffix matching flips name
     keys = sorted([f'{parts[0]}/{k}' for k in list(h5[parts[0]].keys()) if k.startswith(f'{parts[1]}_')])
