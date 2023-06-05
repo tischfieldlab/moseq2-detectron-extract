@@ -85,7 +85,8 @@ def cli():
     help='Replace path to data image items in `annot_file`. Specify <search> <replace>')
 @click.option('--resume', is_flag=True, help='Resume training from a previous checkpoint')
 @click.option('--auto-cd', is_flag=True, help='treat model_dir as a base directory and create a child dir for this specific run')
-def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd):
+@click.option('--aug_configs', default=None, type=click.Path(), help='Train data augmentation settings file')
+def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd, aug_configs):
     ''' CLI entrypoint for model training '''
     setup_logging(add_defered_file_handler=True)
     logging.info('')
@@ -135,9 +136,10 @@ def train(annot_file, model_dir, config, replace_data_path, resume, auto_cd):
         with open(os.path.join(cfg.OUTPUT_DIR, 'config.yaml'), 'w', encoding='utf-8') as config_file:
             config_file.write(cfg.dump())
 
+    logging.info(f'Augmentatin configs path (aug_configs): {aug_configs}')
     logging.info(cfg)
 
-    trainer = Trainer(cfg)
+    trainer = Trainer(cfg, aug_configs)
     trainer.resume_or_load(resume=resume)
     trainer.train()
 

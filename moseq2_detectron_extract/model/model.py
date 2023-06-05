@@ -1,8 +1,7 @@
 import os
 from typing import Optional
 
-from albumentations.augmentations.transforms import (GaussNoise, GlassBlur,
-                                                     MotionBlur)
+from albumentations.augmentations.transforms import GaussNoise
 from detectron2.config.config import CfgNode
 from detectron2.data import (build_detection_test_loader,
                              build_detection_train_loader)
@@ -17,7 +16,7 @@ from moseq2_detectron_extract.model.augmentations import (
     RandomFieldNoiseAugmentation, ScaleAugmentation)
 from moseq2_detectron_extract.model.hooks import LossEvalHook, MemoryUsageHook
 from moseq2_detectron_extract.model.mapper import MoseqDatasetMapper
-
+import json
 
 class Trainer(DefaultTrainer):
     '''
@@ -28,22 +27,37 @@ class Trainer(DefaultTrainer):
     '''
 
     @classmethod
-    def build_train_loader(cls, cfg: CfgNode):
-        augs = [
-            RandomRotation([0, 359], expand=False, sample_style='range'),
-            ScaleAugmentation(0.75, 1.2, 250, 250),
-            FixedSizeCrop((250, 250), pad=True, pad_value=0),
-            RandomBrightness(0.9, 1.1),
-            RandomContrast(0.9, 1.1),
-            Albumentations(GaussNoise()),
-            DoughnutGRFNoiseAugmentation(p=0.5),
-            ParticleNoiseAugmentation(p=0.5),
-            RandomFieldNoiseAugmentation(p=0.5),
+    def build_train_loader(cls, cfg: CfgNode, aug_configs):
+        
+        print("Inside build_train_loader. aug_configs path: ", aug_configs)
+        with open(aug_configs, 'r') as f:
+            aug_configs_data = json.load(f)
+        augs = []
+        for function in aug_configs_data:
+            if function == "FixedSizeCrop":
+                crop_size_dict = aug_configs_data['FixedSizeCrop']['crop_size']
+                crop_size = (crop_size_dict['h'], crop_size_dict['w'])
+                augs.append(FixedSizeCrop(crop_size, pad=True, pad_value=0))
+            elif function=="Albumentations":
+                augs.append(Albumentations(eval(aug_configs_data["Albumentations"])()))
+            else:
+                augs.append(eval(function)(**aug_configs_data[function]))
+        
+        # augs = [
+        #     RandomRotation([0, 359], expand=False, sample_style='range'),
+        #     ScaleAugmentation(0.75, 1.2, 250, 250),
+        #     FixedSizeCrop((250, 250), pad=True, pad_value=0),
+        #     RandomBrightness(0.9, 1.1),
+        #     RandomContrast(0.9, 1.1),
+        #     Albumentations(GaussNoise()),
+        #     DoughnutGRFNoiseAugmentation(p=0.5),
+        #     ParticleNoiseAugmentation(p=0.5),
+        #     RandomFieldNoiseAugmentation(p=0.5),
 
-            # did not see much improvement from adding these:
-            # Albumentations(GlassBlur(sigma=0.2, max_delta=1, iterations=1, p=0.5)),
-            # Albumentations(MotionBlur(blur_limit=3, p=0.5)),
-        ]
+        #     # did not see much improvement from adding these:
+        #     # Albumentations(GlassBlur(sigma=0.2, max_delta=1, iterations=1, p=0.5)),
+        #     # Albumentations(MotionBlur(blur_limit=3, p=0.5)),
+        # ]
         mapper = MoseqDatasetMapper(cfg, is_train=True, augmentations=augs, use_instance_mask=True, use_keypoint=True, recompute_boxes=True)
         return build_detection_train_loader(cfg, mapper=mapper)
 
