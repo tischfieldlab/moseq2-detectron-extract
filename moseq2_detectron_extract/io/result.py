@@ -183,7 +183,7 @@ def trim_results(h5_file: Union[str, h5py.File], start: int, stop: int) -> None:
     def _do_trim(name: str, node: Union[h5py.Group, h5py.Dataset]):
         if isinstance(node, h5py.Dataset):
             # node is a dataset
-            if 'metadata' not in name:
+            if 'flips' in name or 'metadata' not in name:
                 data = node[start:stop]
                 node.resize(stop-start, axis=0)
                 node[:] = data[:]
