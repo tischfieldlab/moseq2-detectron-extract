@@ -8,6 +8,7 @@ import h5py
 import numpy as np
 from moseq2_detectron_extract.io.util import find_unused_dataset_path
 from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict, load_keypoint_data_from_h5
+from moseq2_detectron_extract.proc.proc import clamp_angles_rad
 
 
 def read_flips_file(file_path: str) -> List[Tuple[int, int]]:
@@ -164,7 +165,7 @@ def flip_dataset(h5_file: str, flip_mask: Optional[np.ndarray] = None, flip_rang
         flip_locations = np.nonzero(real_flip_mask)
         h5[frames_path][flip_locations] = flip_horizontal(h5[frames_path][flip_locations])
         h5[frames_mask_path][flip_locations] = flip_horizontal(h5[frames_mask_path][flip_locations])
-        h5[angle_path][flip_locations] += np.pi
+        h5[angle_path][flip_locations] = clamp_angles_rad(h5[angle_path][flip_locations] + np.pi)
 
         # Recompute keypoints
         ref_keypoints = load_keypoint_data_from_h5(h5, coord_system='reference', units='px')

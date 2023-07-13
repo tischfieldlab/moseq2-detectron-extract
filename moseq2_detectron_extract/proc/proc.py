@@ -685,10 +685,16 @@ def mask_and_keypoints_from_model_output(model_outputs: List[dict]) -> Tuple[np.
     return masks, keypoints, num_instances
 
 
-def clamp_angles(angles: np.ndarray) -> np.ndarray:
+def clamp_angles_deg(angles: np.ndarray) -> np.ndarray:
     ''' Clamp angles so they are always in the range of [0, 360)
     '''
-    return np.where(angles < 0 , 360 + angles, angles) % 360
+    return np.where(angles < 0, 360 + angles, angles) % 360
+
+
+def clamp_angles_rad(angles: np.ndarray) -> np.ndarray:
+    ''' Clamp angles so they are always in the range of [0, 2 * pi)
+    '''
+    return np.where(angles < 0, (2 * np.pi) + angles, angles) % (2 * np.pi)
 
 
 def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, point_tracker: KalmanTracker, angle_tracker: KalmanTracker, debug: bool = True):
@@ -715,7 +721,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, poi
     aspects = np.min(features['axis_length'], axis=1) / np.max(features['axis_length'], axis=1)
     angles = features['orientation']
     angles = -np.rad2deg(angles)  # convert angles from radians to degrees
-    angles = clamp_angles(angles)  # enforce angles are in the range [0, 360)
+    angles = clamp_angles_deg(angles)  # enforce angles are in the range [0, 360)
 
     if DEBUG:
         orig_angles = np.copy(angles)
@@ -746,7 +752,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, poi
 
         # apply flips to angles given smoothed keypoint information
         flips, flip_confs = flips_from_keypoints(allocentric_keypoints[:, 0, ...], features['centroid'], angles, lengths)
-        angles[flips] = clamp_angles(angles[flips] + 180)  # IMPORTANT! Enforce angles remain within range [0, 360)
+        angles[flips] = clamp_angles_deg(angles[flips] + 180)  # IMPORTANT! Enforce angles remain within range [0, 360)
         if DEBUG:
             post_kp_flip_angles = angles.copy()
 
@@ -777,7 +783,7 @@ def instances_to_features(model_outputs: List[dict], raw_frames: np.ndarray, poi
                 # if predicted angle is completely off from observed angle
                 # Here we choose a threshold of 140 degrees, meaning the difference is 180 +/- 40 degrees,
                 # or looks approximatly like a flip
-                angles[i] = clamp_angles(angles[i] + 180)
+                angles[i] = clamp_angles_deg(angles[i] + 180)
                 flips[i] = ~flips[i]
                 intervention = 'flip 180'
 
@@ -893,7 +899,7 @@ def estimate_keypoint_rotation(keypoints: np.ndarray) -> np.ndarray:
     estimated rotation of object between subsequent frames, given keypoints
     '''
     angles = np.arctan2(keypoints[..., 1], keypoints[..., 0])
-    angles = clamp_angles(np.rad2deg(angles))
+    angles = clamp_angles_deg(np.rad2deg(angles))
     angles = np.diff(angles, axis=0, prepend=angles[0,None,...])
     angles = angles % 360
     to_min = angles > 180
