@@ -122,8 +122,8 @@ def write_extracted_chunk_to_h5(h5_file: h5py.File, results: dict) -> None:
     h5_file['frames_mask'][frame_range] = results['mask_frames'][offset:]
 
     # Writing flip classifier results to h5
-    if 'flips' in results and results['flips'] is not None:
-        h5_file['metadata/extraction/flips'][frame_range] = results['features']['flips'][offset:]
+    #if 'flips' in results['features'] and results['features']['flips'] is not None:
+    h5_file['metadata/extraction/flips'][frame_range] = results['features']['flips'][offset:]
 
     # Writing keypoints dataset
     for kp in results['keypoints'].keys():
