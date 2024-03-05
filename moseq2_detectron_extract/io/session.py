@@ -10,7 +10,7 @@ from moseq2_detectron_extract.io.util import (ProgressFileObject,
                                               gen_batch_sequence,
                                               load_metadata, load_timestamps)
 from moseq2_detectron_extract.io.video import get_movie_info, load_movie_data
-from moseq2_detectron_extract.proc.roi import get_bground_im_file, get_roi
+from moseq2_detectron_extract.proc.roi import get_bground_im, get_roi
 from moseq2_detectron_extract.proc.util import select_strel
 
 
@@ -190,7 +190,7 @@ class Session():
         elif use_cache and os.path.exists(ff_filename):
             first_frame = read_tiff_image(ff_filename, scale=True)
         else:
-            first_frame = load_movie_data(self.depth_file, 0, tar_object=self.tar)
+            first_frame = next(self.index([0], streams=(Stream.DEPTH,)))[1]
             if use_cache:
                 write_image(ff_filename, first_frame[0], scale=True, scale_factor=bg_roi_depth_range)
 
@@ -206,7 +206,9 @@ class Session():
         else:
             if verbose:
                 logging.info('Computing background...')
-            bground_im = get_bground_im_file(self.depth_file, tar_object=self.tar)
+
+            bg_frame_idxs = np.arange(0, self.nframes, 500)
+            bground_im = get_bground_im(next(self.index(bg_frame_idxs, chunk_size=len(bg_frame_idxs)+1))[1])
 
             if use_cache and not use_plane_bground:
                 write_image(bg_filename, bground_im, scale=True)

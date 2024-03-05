@@ -290,51 +290,18 @@ def get_roi_contour(roi: np.ndarray, crop: bool=True) -> np.ndarray:
     return contours
 
 
-def get_bground_im(frames: np.ndarray) -> np.ndarray:
+def get_bground_im(frames: np.ndarray, med_scale: int=5) -> np.ndarray:
     ''' Returns background
 
     Parameters:
     frames (3d numpy array): frames x r x c, uncropped mouse
+    med_scale (int): size of the median blur operation, must be odd and greater than 1
 
     Returns:
     bground (2d numpy array):  r x c, background image
     '''
+    for i in range(frames.shape[0]):
+        frames[i, ...] = cv2.medianBlur(frames[i, ...], med_scale)
+
     bground = np.median(frames, axis=0)
     return bground
-
-
-def get_bground_im_file(frames_file: Union[str, TarInfo], frame_stride: int=500, med_scale: int=5, **kwargs) -> np.ndarray:
-    ''' Returns background from file
-
-    Parameters:
-    frames_file (path): path to data with frames
-    frame_stride (int): steps between frames to consider for background
-    med_scale (int): size of the median blur operation, must be odd and greater than 1
-    **kwargs: kwargs passed to read_frames_raw()
-
-    Returns:
-    bground (2d numpy array):  shape (r x c), background image
-    '''
-
-    if isinstance(frames_file, tarfile.TarInfo):
-        fname =  frames_file.name.lower()
-    else:
-        fname = frames_file.lower()
-
-    finfo: Union[FFProbeInfo, RawVideoInfo]
-    if fname.endswith('dat'):
-        finfo = get_raw_info(frames_file)
-    elif fname.endswith('avi'):
-        finfo = get_video_info(frames_file)
-
-    frame_idx = np.arange(0, finfo['nframes'], frame_stride)
-
-    if fname.endswith('dat'):
-        frame_store = read_frames_raw(frames_file, frame_idx, **kwargs).squeeze()
-    elif fname.endswith('avi'):
-        frame_store = read_frames(frames_file, frame_idx, **kwargs).squeeze()
-
-    for i in range(frame_store.shape[0]):
-        frame_store[i, ...] = cv2.medianBlur(frame_store[i, ...], med_scale)
-
-    return get_bground_im(frame_store)
