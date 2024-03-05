@@ -69,8 +69,10 @@ class Session():
             self.rgb_file = os.path.join(self.dirname, 'rgb.mp4')
             self.session_id = os.path.basename(self.dirname)
 
-        self.depth_metadata = get_movie_info(self.depth_file, tar_object=self.tar)
-        self.rgb_metadata = get_movie_info(self.rgb_file, tar_object=self.tar)
+        session_meta = self.load_metadata()
+
+        self.depth_metadata = get_movie_info(self.depth_file, tar_object=self.tar, frame_dims=session_meta['DepthResolution'])
+        self.rgb_metadata = get_movie_info(self.rgb_file, tar_object=self.tar, frame_dims=session_meta['ColorResolution'])
 
 
     def __trim_frames(self, frame_trim: Tuple[int, int]):
@@ -434,10 +436,18 @@ class SessionFramesIterator():
 
         for stream in self.streams:
             if stream == Stream.DEPTH:
-                data = load_movie_data(self.session.depth_file, frame_idxs, tar_object=self.session.tar)
+                data = load_movie_data(self.session.depth_file,
+                                       frame_idxs,
+                                       frame_dims=self.session.depth_metadata['dims'],
+                                       tar_object=self.session.tar)
+
             elif stream == Stream.RGB:
                 # rgb_idxs = self.ts_map.map_index(Stream.RGB, Stream.Depth, frame_idxs)
-                data = load_movie_data(self.session.rgb_file, frame_idxs, pixel_format='rgb24', tar_object=self.session.tar)
+                data = load_movie_data(self.session.rgb_file,
+                                       frame_idxs,
+                                       pixel_format='rgb24',
+                                       frame_dims=self.session.rgb_metadata['dims'],
+                                       tar_object=self.session.tar)
             else:
                 raise ValueError(f'Unsupported stream "{stream}"')
 
