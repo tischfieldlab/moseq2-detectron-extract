@@ -354,7 +354,7 @@ class SessionFramesIterator():
         self.chunk_overlap = chunk_overlap
         self.batches = list(self.generate_samples())
         self.current = 0
-        self.streams: List[Stream] = list(set(streams))
+        self.streams: List[Stream] = list(dict.fromkeys(streams).keys()) # filter duplicates, while preserving order
         self.filters: List[_FilterItem] = []
         self.ts_map = TimestampMapper()
         for stream in streams:
