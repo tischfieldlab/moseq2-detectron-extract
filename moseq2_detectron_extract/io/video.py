@@ -179,9 +179,11 @@ def get_video_info(filename: Union[str, tarfile.TarInfo], tar_object: Optional[t
             tmp_file.write(efile.read())
         tmp_file.close()
         probe_filename = tmp_file.name
+
     elif isinstance(filename, str):
         is_stream = False
         probe_filename = filename
+
     else:
         raise ValueError(f'Was expecting Union[str, tarfile.TarInfo] for parameter filename, got {type(filename)}')
 
@@ -213,7 +215,7 @@ def get_video_info(filename: Union[str, tarfile.TarInfo], tar_object: Optional[t
         'pixel_format': out_lines[3],
         'dims': (int(out_lines[1]), int(out_lines[2])),
         'fps': float(out_lines[4].split('/')[0])/float(out_lines[4].split('/')[1]),
-        'nframes': int(out[5])
+        'nframes': int(out_lines[5])
     }
 
 
