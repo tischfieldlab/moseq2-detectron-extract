@@ -12,6 +12,7 @@ import click
 from click_option_group import optgroup
 from detectron2.structures import Instances
 from detectron2.utils.env import seed_all_rng
+import numpy as np
 from tabulate import tabulate
 from tqdm import tqdm
 
@@ -37,6 +38,7 @@ from moseq2_detectron_extract.io.util import (attach_file_logger,
                                               wrap_command_with_local,
                                               wrap_command_with_slurm,
                                               write_yaml)
+from moseq2_detectron_extract.io.video import write_frames
 from moseq2_detectron_extract.model import Evaluator, Trainer
 from moseq2_detectron_extract.model.config import (add_dataset_cfg,
                                                    get_base_config,
@@ -174,6 +176,45 @@ def evaluate(model_dir, annot_file, replace_data_path, instance_threshold, expec
 
     evaluator = Evaluator(cfg)
     evaluator()
+
+
+@cli.command(name="convert-raw-to-avi", help="Losslessly compresses a raw depth file (dat) into an avi file that is 8x smaller.")
+@click.argument('input-file', type=click.Path(exists=True, resolve_path=False))
+@click.option('-o', '--output-file', type=click.Path(), default=None, help='Path to output file')
+@click.option('-b', '--chunk-size', type=int, default=3000, help='Chunk size')
+@click.option('--fps', type=float, default=30, help='Video FPS')
+@click.option('--delete', is_flag=True, help='Delete raw file if encoding is sucessful')
+@click.option('-t', '--threads', type=int, default=8, help='Number of threads for encoding')
+#@click.option('-m', '--mapping', type=str, default='DEPTH', help='Ffprobe stream selection variable. Default: DEPTH')
+def convert_raw_to_avi(input_file, output_file, chunk_size, fps, delete, threads):
+    '''Losslessly compresses a raw depth file (dat) into an avi file that is 8x smaller.
+    '''
+    if output_file is None:
+        base_filename = os.path.splitext(os.path.basename(input_file))[0]
+        output_file = os.path.join(os.path.dirname(input_file), f'{base_filename}.avi')
+
+    session = Session(input_file)
+
+    pipe = None
+    with tqdm(desc="Encoding Video", total=session.nframes) as pbar:
+        for batch in session.iterate(chunk_size=chunk_size):
+            pipe = write_frames(output_file, batch[1], pipe=pipe, close_pipe=False, threads=threads, fps=fps, tqdm_kwargs={'disable': True})
+            pbar.update(len(batch[0]))
+
+        pipe.communicate()
+
+
+    with tqdm(desc="Verifying integrity", total=session.nframes) as pbar:
+        old_iter = session.iterate(chunk_size=chunk_size)
+        new_iter = Session(output_file).iterate(chunk_size=chunk_size)
+        for batch_old, batch_new in zip(old_iter, new_iter):
+            if not np.array_equal(batch_old[1], batch_new[1]):
+                raise RuntimeError(f'Raw frames and encoded frames not equal from {batch_old[0][0]} to {batch_old[0][-1]}')
+            pbar.update(len(batch_old[0]))
+
+    if delete:
+        print('Deleting', input_file)
+        os.remove(input_file)
 
 
 @cli.command(name="visualize-raw", help="Generate a visualization of raw data.")
