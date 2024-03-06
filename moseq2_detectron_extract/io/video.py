@@ -222,10 +222,13 @@ def get_video_info(filename: Union[str, tarfile.TarInfo], tar_object: Optional[t
 # simple command to pipe frames to an ffv1 file
 def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
                  pixel_format: str='gray16le', codec: str='ffv1', close_pipe: bool=True,
-                 pipe=None, slices: int=24, slicecrc: int=1, frame_size: Optional[str]=None, get_cmd=False):
+                 pipe=None, slices: int=24, slicecrc: int=1, frame_size: Optional[str]=None, get_cmd=False, tqdm_kwargs=None):
     '''
     Write frames to avi file using the ffv1 lossless encoder
     '''
+
+    if tqdm_kwargs is None:
+        tqdm_kwargs = {}
 
     # we probably want to include a warning about multiples of 32 for videos
     # (then we can use pyav and some speedier tools)
@@ -263,7 +266,7 @@ def write_frames(filename: str, frames: np.ndarray, threads: int=6, fps: int=30,
         pipe = subprocess.Popen(
             command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    for i in tqdm.tqdm(range(frames.shape[0])):
+    for i in tqdm.tqdm(range(frames.shape[0]), **tqdm_kwargs):
         pipe.stdin.write(frames[i, ...].astype('uint16').tobytes())
 
     if close_pipe:
