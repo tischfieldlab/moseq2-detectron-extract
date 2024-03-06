@@ -26,10 +26,12 @@ class Session():
     '''
 
     def __init__(self, path: str, frame_trim: Tuple[int, int]=(0, 0)):
-        self.session_path = path
-        self.__init_session(path)
-        self.__trim_frames(frame_trim)
+        ''' Construct a new Session object
 
+        Parameters:
+        path (str): path to the session. If compressed, path to the archive. If uncompressed, path to depth video file
+        frame_trim (tuple[int, int]): specifies the number of frames to trim from the beginning and end of the video, respectively
+        '''
         self.tar: Union[None, tarfile.TarFile]
         self.tar_members: Union[None, List[tarfile.TarInfo]]
         self.depth_file: Union[str, tarfile.TarInfo]
@@ -39,6 +41,11 @@ class Session():
         self._first_frame: Union[None, np.ndarray] = None
         self._bground_im: Union[None, np.ndarray] = None
         self._roi: Union[None, np.ndarray] = None
+
+        self.session_path = path
+        self.__init_session(path)
+        self.__trim_frames(frame_trim)
+
 
     def __init_session(self, input_file: str):
         self.dirname = os.path.dirname(input_file)
