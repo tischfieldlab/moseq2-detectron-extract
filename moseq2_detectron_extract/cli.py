@@ -441,7 +441,7 @@ def extract(model, input_file, device, checkpoint, batch_size, instance_threshol
 @optgroup.option('--bg-roi-fill-holes', default=True, type=bool, help='Fill holes in ROI')
 @optgroup.option('--use-plane-bground', is_flag=True, help='Use a plane fit for the background. Useful for mice that don\'t move much')
 @optgroup.group('Output')
-@optgroup.option('--output-dir', type=click.Path(), help='Output directory to save the results')
+@optgroup.option('--output-dir', type=click.Path(file_okay=False), help='Output directory to save the results')
 @optgroup.option('--min-height', default=0, type=int, help='Min mouse height from floor (mm)')
 @optgroup.option('--max-height', default=100, type=int, help='Max mouse height from floor (mm)')
 @optgroup.option('--stream', default=['depth'], multiple=True, type=click.Choice(['depth', 'rgb']),
