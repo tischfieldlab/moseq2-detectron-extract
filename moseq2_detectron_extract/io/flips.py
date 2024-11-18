@@ -11,7 +11,12 @@ from moseq2_detectron_extract.proc.keypoints import keypoints_to_dict, load_keyp
 from moseq2_detectron_extract.proc.proc import clamp_angles_rad
 
 
-def read_flips_file(file_path: str) -> List[Tuple[int, int]]:
+def count_frames(h5_file: str, frames_path: str = '/frames'):
+    with(h5py.File(h5_file, mode='r')) as h5:
+        return h5[frames_path].shape[0]
+
+
+def read_flips_file(file_path: str, verify: bool = True, verify_vmin: int=0, verify_vmax: int=sys.maxsize) -> List[Tuple[int, int]]:
     ''' Read a file containing flip annotations and return a list of flips
 
     Parameters:
@@ -45,10 +50,11 @@ def read_flips_file(file_path: str) -> List[Tuple[int, int]]:
 
                 flips.append((parts[0], parts[1]))
 
-    try:
-        verify_ranges(flips)
-    except RuntimeError as e:
-        raise RuntimeError(f'File {file_path}:\n{str(e)}') from e
+    if verify:
+        try:
+            verify_ranges(flips, vmin=verify_vmin, vmax=verify_vmax)
+        except RuntimeError as e:
+            raise RuntimeError(f'File {file_path}:\n{str(e)}') from e
 
     return flips
 

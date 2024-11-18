@@ -26,7 +26,7 @@ from moseq2_detectron_extract.io.annot import (
 from moseq2_detectron_extract.io.click import (
     OptionalParamType, click_monkey_patch_option_show_defaults,
     command_with_config, get_command_defaults)
-from moseq2_detectron_extract.io.flips import flip_dataset, read_flips_file
+from moseq2_detectron_extract.io.flips import count_frames, flip_dataset, read_flips_file
 from moseq2_detectron_extract.io.result import trim_results
 from moseq2_detectron_extract.io.session import Session
 from moseq2_detectron_extract.io.util import (attach_file_logger,
@@ -746,7 +746,8 @@ def manual_flip(h5_file: str, flips_file: str, visualize: bool):
     logging.info('')
 
     # read flips file
-    flips = read_flips_file(flips_file)
+    nframes = count_frames(h5_file)
+    flips = read_flips_file(flips_file, verify=True, verify_vmax=nframes)
     logging.info(f'Read {len(flips)} flip ranges, comprising {sum([stop - start for start, stop in flips])} total frames')
 
     # create backup of h5 file
