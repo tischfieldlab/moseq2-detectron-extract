@@ -820,8 +820,10 @@ def generate_extract_config(output_file: str):
 
 
 @cli.command(name='extract-batch', short_help='Generate commands for batch extraction')
-@click.option('-i', '--input-dir', type=click.Path(exists=True, file_okay=False), default=os.getcwd(), help="Path to extraction configuration file")
+@click.option('-i', '--input-dir', type=click.Path(exists=True, file_okay=False), default=os.getcwd(), help="Path to the directory containing raw moseq data")
 @click.option('-c', '--config-file', type=click.Path(exists=True), required=True, help="Path to extraction configuration file")
+@click.option('--depth-name', type=str, default='depth.dat', help="Name of the depth file in each session.")
+@click.option('--session-pattern', type=str, default=r'session_\d+\.(?:tgz|tar\.gz)', help="Pattern to match session file (tar.gz) or directory names.")
 @click.option("--cluster-type", default="local", type=click.Choice(["local", "slurm"]))
 @optgroup.group("SLURM Scheduler Options", help="The following parameters affect how SLURM jobs are requested, ignored unless --cluster-type=slrum")
 @optgroup.option("--slurm-partition", type=str, default="main", help="Partition on which to run jobs. Only for SLURM")
@@ -836,10 +838,10 @@ def generate_extract_config(output_file: str):
     help="Extra commands to run prior to executing job. Useful for activating an environment, if needed",
 )
 @optgroup.option("--slurm-extra", type=str, default="", help="Extra parameters to pass to surm.")
-def extract_batch(input_dir, config_file, cluster_type, slurm_partition, slurm_ncpus, slurm_memory, slurm_gres, slurm_wall_time, slurm_preamble, slurm_extra):
+def extract_batch(input_dir, config_file, depth_name, session_pattern, cluster_type, slurm_partition, slurm_ncpus, slurm_memory, slurm_gres, slurm_wall_time, slurm_preamble, slurm_extra):
     """Generate commmands for batch extraction of raw moseq data.
     """
-    to_extract = sorted(recursive_find_unextracted_dirs(input_dir))
+    to_extract = sorted(recursive_find_unextracted_dirs(root_dir=input_dir, session_pattern=session_pattern, filename=depth_name))
     #params = read_yaml(config_file)
 
     if cluster_type == "local":
