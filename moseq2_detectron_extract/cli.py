@@ -339,7 +339,7 @@ def find_roi(input_file, output_dir, bg_roi_dilate, bg_roi_shape, bg_roi_index, 
 @optgroup.option('--batch-size', default=10, type=int, help='Number of frames for each model inference iteration')
 @optgroup.option('--instance-threshold', default=0.5, type=click.FloatRange(min=0.0, max=1.0), help='Minimum score threshold to filter inference results')
 @optgroup.option('--expected-instances', default=1, type=click.IntRange(min=1), help='Maximum number of instances expected in each frame. Results will contain no more than this number of instances')
-@optgroup.option('--allowed-detections', default=None, type=OptionalParamType(click.IntRange(min=1)), help='Maximum number of detections allowed to be reported by the detector. This will be reduced to at most --expected-instances during post-processing.')
+@optgroup.option('--allowed-detections', default=4, type=OptionalParamType(click.IntRange(min=1)), help='Maximum number of detections allowed to be reported by the detector. This will be reduced to at most --expected-instances during post-processing.')
 @optgroup.group('Background Detection')
 @optgroup.option('--bg-roi-dilate', default=(10, 10), type=(int, int), help='Size of the mask dilation (to include environment walls)')
 @optgroup.option('--bg-roi-shape', default='ellipse', type=str, help='Shape to use for the mask dilation (ellipse or rect)')
