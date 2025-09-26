@@ -399,8 +399,8 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
         '-slicecrc', str(slicecrc),
         '-r', str(fps),
         '-pix_fmt', 'yuv420p',
-        '-tune', 'zerolatency',
-        '-preset', 'ultrafast',
+        #'-tune', 'zerolatency',
+        #'-preset', 'ultrafast',
         filename
     ]
 
@@ -408,7 +408,7 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
         return command
 
     if not pipe:
-        pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+        pipe = subprocess.Popen(command, stdin=subprocess.PIPE)
 
     # scale frames d00d
 
@@ -427,7 +427,7 @@ def write_frames_preview(filename: str, frames=np.empty((0,)), threads: int=6,
 
         if frame_range is not None:
             cv2.putText(disp_img, str(frame_range[i]), txt_pos, font, 1, white, 2, cv2.LINE_AA)
-        pipe.stdin.write(disp_img.astype('uint8').tostring())
+        pipe.stdin.write(disp_img.astype('uint8').tobytes().tostring())
 
     if close_pipe:
         pipe.stdin.close()
